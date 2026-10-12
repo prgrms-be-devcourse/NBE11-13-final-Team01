@@ -78,9 +78,3 @@ cd zipick-backend
 ./gradlew build          # 빌드
 ./gradlew bootRun        # 실행
 ```
-
-## 브랜치와 커밋
-
-- PR 대상 브랜치는 `dev` 이다.
-- 커밋 형식: `유형: 변경 내용` (예: `Feat: 회원가입 구현`)
-- 유형: `Feat` `Fix` `Docs` `Style` `Refactor` `Test` `Chore` `Design` `Comment` `Rename` `Remove` `!BREAKING CHANGE` `!HOTFIX`
