@@ -1,0 +1,12 @@
+# 운영용. 배포 단계에서 RDS 검토 예정이며 모든 접속 정보는 환경 변수로 주입한다.
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      # 운영에서는 스키마를 자동 변경하지 않는다.
+      ddl-auto: validate
+    open-in-view: false
