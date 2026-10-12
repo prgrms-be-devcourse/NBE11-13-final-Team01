@@ -1,0 +1,27 @@
+# Gradle / Java
+zipick-backend/.gradle/
+zipick-backend/build/
+zipick-backend/out/
+*.class
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+
+# Node
+zipick-frontend/node_modules/
+zipick-frontend/dist/
+zipick-frontend/.vite/
+
+# Env / secrets
+.env
+.env.local
+*.env
+!.env.example
+zipick-backend/src/main/resources/application-secret.yml
+.claude/
+zipick-frontend/tsconfig.tsbuildinfo

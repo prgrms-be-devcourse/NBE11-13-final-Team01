@@ -1,0 +1,81 @@
+spring:
+  application:
+    name: zipick-backend
+  profiles:
+    default: local
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        default_batch_fetch_size: 100
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: 8080
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+zipick:
+  recommendation:
+    # 추천 목록 기준
+    min-score: 60
+    max-results: 30
+    max-per-announcement: 5
+    min-results-before-relax: 5
+    # 지원조건 '확인 필요' 배수
+    check-multiplier: 0.7
+    # 보증금 → 월세 환산 이율 (공고문에 값이 없을 때 기본값, 연 %)
+    default-conversion-rate: 6.0
+    # 항목별 기본 가중치 (합 100)
+    base-weights:
+      cost: 35
+      region: 25
+      area: 15
+      infra: 15
+      type: 10
+    # 비용: 예산 초과 비율이 이 값 이상이면 0점
+    cost-over-budget-zero-ratio: 0.3
+    # 지역: 관심 지역 순위별 점수
+    region-scores:
+      rank1: 1.0
+      rank2: 0.8
+      rank3: 0.6
+    # 면적: 범위를 이만큼(㎡) 벗어날 때마다 0.25 감점
+    area-step-m2: 10
+    # 인프라: 만점 거리(m), 0점 거리(m)
+    infra-full-score-m: 500
+    infra-zero-score-m: 1500
+    # 정보 커버리지: 계산 가능한 항목의 기본 가중치 합이 이 비율 미만이면 '정보 부족'으로 제외
+    # (예: 가격·면적이 없으면 35+15=50 → 커버리지 0.5 → 제외)
+    min-coverage: 0.6
+    # 공공임대 유형별 지원조건 (참고용 근사치, 금액 만 원). 최종 자격은 공고문 기준.
+    eligibility:
+      PURCHASE:
+        min-age: 19
+        max-age: 39
+        requires-homeless: true
+        max-monthly-income: 400
+        max-total-assets: 29900
+        max-car-value: 3708
+        married-bypasses-age: false
+      HAPPY:
+        min-age: 19
+        max-age: 39
+        requires-homeless: true
+        max-monthly-income: 400
+        max-total-assets: 36100
+        max-car-value: 3708
+        married-bypasses-age: true
+      DEUNDEUN:
+        requires-homeless: true
