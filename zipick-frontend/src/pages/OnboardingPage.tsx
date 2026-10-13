@@ -5,12 +5,13 @@ import { profileApi } from '../api/profile';
 import { ApiError } from '../api/client';
 import type { HousingType, Region, RentalType, UserPreference, UserProfile } from '../types';
 import { HOUSING_LABEL, RENTAL_LABEL } from '../utils/format';
+import AhpQuestions from '../components/AhpQuestions';
 
-/** 사전 기입: 1단계 기본 정보, 2단계 희망 주거조건. 저장하면 추천이 다시 계산된다. */
+/** 사전 기입: 1단계 기본 정보, 2단계 희망 주거조건, 3단계 우선순위 질문(AHP). 저장하면 추천이 다시 계산된다. */
 export default function OnboardingPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
   const profileQ = useQuery({ queryKey: ['profile'], queryFn: profileApi.get, retry: false });
   const prefQ = useQuery({ queryKey: ['preference'], queryFn: profileApi.getPreference, retry: false });
@@ -24,6 +25,9 @@ export default function OnboardingPage() {
     totalAssets: null,
     carValue: null,
     homeless: true,
+    student: null,
+    subscriptionMonths: null,
+    subscriptionPayments: null,
   });
   const [pref, setPref] = useState<UserPreference>({
     regions: [],
@@ -57,7 +61,7 @@ export default function OnboardingPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['preference'] });
       qc.invalidateQueries({ queryKey: ['recommendations'] });
-      nav('/recommendations');
+      setStep(3);
     },
   });
 
@@ -66,8 +70,15 @@ export default function OnboardingPage() {
   return (
     <div className="onboarding">
       <ol className="steps">
-        <li className={step === 1 ? 'on' : 'done'}>기본 정보</li>
-        <li className={step === 2 ? 'on' : ''}>희망 주거조건</li>
+        <li className={step === 1 ? 'on' : profileQ.data ? 'done' : ''}>
+          <button type="button" className="steps__btn" onClick={() => setStep(1)}>1. 기본 정보</button>
+        </li>
+        <li className={step === 2 ? 'on' : prefQ.data ? 'done' : ''}>
+          <button type="button" className="steps__btn" onClick={() => setStep(2)}>2. 희망 주거조건</button>
+        </li>
+        <li className={step === 3 ? 'on' : ''}>
+          <button type="button" className="steps__btn" onClick={() => setStep(3)} disabled={!prefQ.data}>3. 우선순위</button>
+        </li>
       </ol>
 
       {step === 1 && (
@@ -113,11 +124,30 @@ export default function OnboardingPage() {
             <input type="checkbox" checked={profile.homeless} onChange={(e) => setProfile({ ...profile, homeless: e.target.checked })} />
             무주택 세대구성원이에요
           </label>
+          <label className="toggle">
+            <input type="checkbox" checked={!!profile.student} onChange={(e) => setProfile({ ...profile, student: e.target.checked })} />
+            대학생·취업준비생이에요
+          </label>
+
+          <fieldset className="field">
+            <legend>주택청약저축 (선택)</legend>
+            <div className="grid2">
+              <label>
+                가입 기간 (개월)
+                <input type="number" min={0} max={600} value={profile.subscriptionMonths ?? ''} onChange={(e) => setProfile({ ...profile, subscriptionMonths: numOrNull(e.target.value) })} />
+              </label>
+              <label>
+                납입 횟수
+                <input type="number" min={0} max={600} value={profile.subscriptionPayments ?? ''} onChange={(e) => setProfile({ ...profile, subscriptionPayments: numOrNull(e.target.value) })} />
+              </label>
+            </div>
+            <small className="hint">모르면 비워 두세요. 일부 공고의 순위 확인에 쓰여요.</small>
+          </fieldset>
 
           {err(saveProfile) && <FormError e={err(saveProfile)!} />}
           <div className="form__actions">
             <button className="btn" type="submit" disabled={saveProfile.isPending}>
-              다음
+              저장하고 다음 →
             </button>
           </div>
         </form>
@@ -204,13 +234,24 @@ export default function OnboardingPage() {
           {err(savePref) && <FormError e={err(savePref)!} />}
           <div className="form__actions">
             <button className="btn btn--ghost" type="button" onClick={() => setStep(1)}>
-              이전
+              ← 기본 정보
             </button>
             <button className="btn" type="submit" disabled={savePref.isPending || pref.regions.length === 0}>
-              저장하고 추천 보기
+              저장하고 다음 →
             </button>
           </div>
         </form>
+      )}
+
+      {step === 3 && (
+        <AhpQuestions
+          onDone={() => {
+            qc.invalidateQueries({ queryKey: ['recommendations'] });
+            qc.invalidateQueries({ queryKey: ['rec-profiles'] });
+            nav('/recommendations');
+          }}
+          onSkip={() => nav('/recommendations')}
+        />
       )}
     </div>
   );

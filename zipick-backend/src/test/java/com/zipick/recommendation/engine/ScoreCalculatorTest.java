@@ -98,10 +98,23 @@ class ScoreCalculatorTest {
         }
 
         @Test
+        @DisplayName("유형 = 주택 유형 일치와 공공임대 유형 일치의 평균 (희망: 아파트·다세대 / 매입임대·행복주택)")
         void type() {
             UserContext ctx = TestFixtures.context();
             assertThat(calc.scoreType(ctx, TestFixtures.house(RentalType.PURCHASE, "11440", HousingType.APARTMENT, null, null, null)).score()).isEqualTo(1.0);
-            assertThat(calc.scoreType(ctx, TestFixtures.house(RentalType.PURCHASE, "11440", HousingType.OFFICETEL, null, null, null)).score()).isEqualTo(0.0);
+            assertThat(calc.scoreType(ctx, TestFixtures.house(RentalType.PURCHASE, "11440", HousingType.OFFICETEL, null, null, null)).score()).isEqualTo(0.5);
+            assertThat(calc.scoreType(ctx, TestFixtures.house(RentalType.NATIONAL, "11440", HousingType.APARTMENT, null, null, null)).score()).isEqualTo(0.5);
+            assertThat(calc.scoreType(ctx, TestFixtures.house(RentalType.NATIONAL, "11440", HousingType.OFFICETEL, null, null, null)).score()).isEqualTo(0.0);
+        }
+
+        @Test
+        @DisplayName("주택 유형 정보가 없으면 공공임대 유형만으로 계산")
+        void typeWithoutHousingType() {
+            UserContext ctx = TestFixtures.context();
+            ItemScore s = calc.scoreType(ctx, TestFixtures.house(RentalType.HAPPY, "11440", null, null, null, null));
+            assertThat(s.available()).isTrue();
+            assertThat(s.score()).isEqualTo(1.0);
+            assertThat(s.reason().text()).contains("행복주택");
         }
     }
 

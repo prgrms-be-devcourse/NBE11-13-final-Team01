@@ -22,6 +22,7 @@ public enum ErrorCode {
 
     PROFILE_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "추천 기준은 최대 3개까지 저장할 수 있습니다."),
     ACTIVE_PROFILE_REQUIRED(HttpStatus.CONFLICT, "사용 중인 추천 기준은 삭제할 수 없습니다."),
+    PAIR_ANSWERS_NOT_ENOUGH(HttpStatus.CONFLICT, "두 집 비교 답이 부족합니다."),
 
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 

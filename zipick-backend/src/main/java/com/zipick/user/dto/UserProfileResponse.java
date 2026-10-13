@@ -11,10 +11,14 @@ public record UserProfileResponse(
         Integer monthlyIncome,
         Integer totalAssets,
         Integer carValue,
-        boolean homeless
+        boolean homeless,
+        Boolean student,
+        Integer subscriptionMonths,
+        Integer subscriptionPayments
 ) {
     public static UserProfileResponse from(UserProfile p) {
         return new UserProfileResponse(p.getBirthDate(), p.getJob(), p.isMarried(), p.getHouseholdSize(),
-                p.getMonthlyIncome(), p.getTotalAssets(), p.getCarValue(), p.isHomeless());
+                p.getMonthlyIncome(), p.getTotalAssets(), p.getCarValue(), p.isHomeless(),
+                p.getStudent(), p.getSubscriptionMonths(), p.getSubscriptionPayments());
     }
 }

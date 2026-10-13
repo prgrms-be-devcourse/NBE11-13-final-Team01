@@ -62,6 +62,15 @@ public class RecommendationProfileService {
         return RecommendationProfileResponse.from(p);
     }
 
+    /** 활성 기준의 우선순위만 바꾼다. 기준이 하나도 없으면 "기본"을 만든다. (AHP·쌍대 선택 학습 결과 반영용) */
+    @Transactional
+    public RecommendationProfileResponse applyWeights(Long userId, Map<String, Integer> weights) {
+        RecommendationProfileRequest request = new RecommendationProfileRequest(null, weights, null, null);
+        return repository.findByUserIdAndActiveTrue(userId)
+                .map(p -> update(userId, p.getId(), request))
+                .orElseGet(() -> create(userId, request));
+    }
+
     @Transactional
     public RecommendationProfileResponse activate(Long userId, Long id) {
         RecommendationProfile target = get(userId, id);

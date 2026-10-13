@@ -3,6 +3,7 @@ package com.zipick.recommendation.engine;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.zipick.global.util.JsonUtil;
 import com.zipick.housing.domain.InfraSummary;
+import com.zipick.housing.domain.RentalType;
 import com.zipick.housing.domain.SupplyHouse;
 import com.zipick.recommendation.config.RecommendationProperties;
 import com.zipick.user.domain.UserPreference;
@@ -223,13 +224,33 @@ public class ScoreCalculator {
         return ItemScore.of(INFRA, score, reason);
     }
 
+    /**
+     * 유형 = 주택 유형(아파트·다세대…)과 공공임대 유형(매입임대·행복주택…) 일치도의 평균.
+     * 희망을 고르지 않았거나 집 정보가 없는 쪽은 빼고 계산한다.
+     */
     ItemScore scoreType(UserContext ctx, SupplyHouse h) {
-        if (ctx.preferredHousingTypes().isEmpty()) return ItemScore.unavailable(TYPE, "희망 유형이 없어 유형 점수 제외");
-        if (h.getHousingType() == null) return ItemScore.unavailable(TYPE, "주택 유형 정보 없음");
-        boolean match = ctx.preferredHousingTypes().contains(h.getHousingType());
-        return match
-                ? ItemScore.of(TYPE, 1.0, Reason.pass(TYPE, "희망 주택 유형 일치"))
-                : ItemScore.of(TYPE, 0.0, Reason.partial(TYPE, "희망 주택 유형 아님"));
+        List<Double> parts = new ArrayList<>();
+        List<String> texts = new ArrayList<>();
+        if (!ctx.preferredHousingTypes().isEmpty() && h.getHousingType() != null) {
+            boolean match = ctx.preferredHousingTypes().contains(h.getHousingType());
+            parts.add(match ? 1.0 : 0.0);
+            texts.add(match ? "희망 주택 유형 일치" : "희망 주택 유형 아님");
+        }
+        RentalType rental = h.getAnnouncement() == null ? null : h.getAnnouncement().getRentalType();
+        if (!ctx.preferredRentalTypes().isEmpty() && rental != null) {
+            boolean match = ctx.preferredRentalTypes().contains(rental);
+            parts.add(match ? 1.0 : 0.0);
+            texts.add((match ? "희망 공공임대 유형 일치 (" : "희망 공공임대 유형 아님 (") + rental.getLabel() + ")");
+        }
+        if (parts.isEmpty()) {
+            return ItemScore.unavailable(TYPE, ctx.preferredHousingTypes().isEmpty() && ctx.preferredRentalTypes().isEmpty()
+                    ? "희망 유형이 없어 유형 점수 제외" : "주택 유형 정보 없음");
+        }
+        double score = parts.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        String text = String.join(" · ", texts);
+        return score >= 1.0
+                ? ItemScore.of(TYPE, 1.0, Reason.pass(TYPE, text))
+                : ItemScore.of(TYPE, score, Reason.partial(TYPE, text));
     }
 
     // ---- 보조 계산 ----

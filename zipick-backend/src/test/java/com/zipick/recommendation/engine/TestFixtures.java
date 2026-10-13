@@ -29,6 +29,7 @@ final class TestFixtures {
                 Map.of(
                         RentalType.PURCHASE, new EligibilityRule(19, 39, true, 400, 29900, 3708, false),
                         RentalType.HAPPY, new EligibilityRule(19, 39, true, 400, 36100, 3708, true),
+                        RentalType.NATIONAL, new EligibilityRule(null, null, true, 500, 34500, 3708, null),
                         RentalType.DEUNDEUN, new EligibilityRule(null, null, true, null, null, null, null)));
     }
 

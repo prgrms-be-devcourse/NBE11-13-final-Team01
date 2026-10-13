@@ -1,4 +1,5 @@
 import { SCORE_ITEMS, type ScoreItem } from '../types';
+import { Link } from 'react-router-dom';
 import { ITEM_LABEL } from '../utils/format';
 
 interface Props {
@@ -51,6 +52,9 @@ export default function PrioritySliders({ priorities, onChange, dirty, saving, o
         </button>
       </div>
       {dirty && <small className="hint">저장 전에도 목록에 바로 반영돼요.</small>}
+      <Link to="/tune" className="tune-link">
+        뭘 올려야 할지 모르겠다면? 두 집 비교로 찾기 →
+      </Link>
     </section>
   );
 }

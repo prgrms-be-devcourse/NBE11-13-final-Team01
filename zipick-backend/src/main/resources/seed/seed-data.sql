@@ -8,9 +8,9 @@ INSERT INTO users (id, kakao_id, nickname, role, created_at, updated_at) VALUES
   (3, 'kakao-9999', '운영자', 'ADMIN', NOW(), NOW());
 
 -- 기본 정보 (사용자 1: 27세 미혼 1인, 사용자 2: 31세 기혼 2인·소득 미입력)
-INSERT INTO user_profiles (user_id, birth_date, job, married, household_size, monthly_income, total_assets, car_value, homeless, created_at, updated_at) VALUES
-  (1, '1999-03-14', '사무직', false, 1, 260, 2500, 0, true, NOW(), NOW()),
-  (2, '1995-07-02', '개발자', true, 2, NULL, 8000, 1500, true, NOW(), NOW());
+INSERT INTO user_profiles (user_id, birth_date, job, married, household_size, monthly_income, total_assets, car_value, homeless, student, subscription_months, subscription_payments, created_at, updated_at) VALUES
+  (1, '1999-03-14', '사무직', false, 1, 260, 2500, 0, true, false, 30, 30, NOW(), NOW()),
+  (2, '1995-07-02', '개발자', true, 2, NULL, 8000, 1500, true, NULL, NULL, NULL, NOW(), NOW());
 
 -- 희망 주거조건
 INSERT INTO user_preferences (user_id, regions, deposit_min, deposit_max, rent_min, rent_max, area_min, area_max, housing_types, rental_types, monthly_budget, created_at, updated_at) VALUES
@@ -30,7 +30,9 @@ INSERT INTO announcements (id, external_id, agency, rental_type, title, region, 
   (1, 'LH-2026-P-0301', 'LH', 'PURCHASE', '2026년 제3차 청년 매입임대주택 입주자 모집', '서울', 'RECEIVING', '2026-10-10', '2026-10-22', 'https://example.com/lh-p-0301.pdf', 'https://apply.lh.or.kr/', NOW(), NOW()),
   (2, 'LH-2026-H-0120', 'LH', 'HAPPY', '가좌역 행복주택 입주자 모집', '서울', 'NOTICE', '2026-10-05', '2026-10-30', 'https://example.com/lh-h-0120.pdf', 'https://apply.lh.or.kr/', NOW(), NOW()),
   (3, 'LH-2026-P-0288', 'LH', 'PURCHASE', '2026년 신혼부부 매입임대주택 I 입주자 모집', '서울', 'RECEIVING', '2026-10-08', '2026-10-24', 'https://example.com/lh-p-0288.pdf', 'https://apply.lh.or.kr/', NOW(), NOW()),
-  (4, 'LH-2026-P-0150', 'LH', 'PURCHASE', '2026년 제2차 청년 매입임대주택 (접수마감)', '서울', 'CLOSED', '2026-08-01', '2026-08-20', NULL, 'https://apply.lh.or.kr/', NOW(), NOW());
+  (4, 'LH-2026-P-0150', 'LH', 'PURCHASE', '2026년 제2차 청년 매입임대주택 (접수마감)', '서울', 'CLOSED', '2026-08-01', '2026-08-20', NULL, 'https://apply.lh.or.kr/', NOW(), NOW()),
+  (5, 'SH-2026-N-0042', 'SH', 'NATIONAL', '2026년 하반기 국민임대주택 예비입주자 모집', '서울', 'RECEIVING', '2026-10-06', '2026-10-27', 'https://example.com/sh-n-0042.pdf', 'https://www.i-sh.co.kr/', NOW(), NOW()),
+  (6, 'HUG-2026-D-0007', 'HUG', 'DEUNDEUN', '든든전세주택 7차 입주자 모집', '서울', 'NOTICE', '2026-10-11', '2026-11-04', 'https://example.com/hug-d-0007.pdf', 'https://www.khug.or.kr/', NOW(), NOW());
 
 -- 공급주택
 INSERT INTO supply_houses (id, announcement_id, address, sigungu_code, lat, lng, approximate, housing_type, built_year, floor, exclusive_area, deposit, monthly_rent, conversion_rate, purchase_type, applicants, supply_count, created_at, updated_at) VALUES
@@ -45,7 +47,10 @@ INSERT INTO supply_houses (id, announcement_id, address, sigungu_code, lat, lng,
   (9, 3, '서울 마포구 상암동 ○○로 101', '11440', 37.5790000, 126.8900000, false, 'APARTMENT', 2020, 8, 49.80, 4800, 42, 6.00, '신혼부부 매입임대', NULL, 1, NOW(), NOW()),
   (10, 3, '서울 영등포구 당산동 ○○로 9', '11560', 37.5343000, 126.9020000, false, 'MULTI_HOUSEHOLD', 2017, 3, 42.00, 3000, 40, NULL, '신혼부부 매입임대', NULL, 1, NOW(), NOW()),
   (11, 4, '서울 마포구 연남동 ○○로 2', '11440', 37.5620000, 126.9250000, false, 'MULTI_HOUSEHOLD', 2015, 2, 22.00, 1000, 30, 6.00, '청년 매입임대', NULL, 1, NOW(), NOW()),
-  (12, 1, '서울 마포구 ○○동 (주소 일부 미확인)', '11440', NULL, NULL, true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '청년 매입임대', NULL, 1, NOW(), NOW());
+  (12, 1, '서울 마포구 ○○동 (주소 일부 미확인)', '11440', NULL, NULL, true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '청년 매입임대', NULL, 1, NOW(), NOW()),
+  (13, 5, '서울 마포구 상암동 ○○단지 국민임대', '11440', 37.5815000, 126.8862000, false, 'APARTMENT', 2012, 5, 39.00, 2600, 23, 6.00, NULL, 210, 30, NOW(), NOW()),
+  (14, 5, '서울 은평구 진관동 ○○단지 국민임대', '11380', 37.6370000, 126.9180000, false, 'APARTMENT', 2010, 11, 46.00, 3300, 28, 6.00, NULL, 150, 24, NOW(), NOW()),
+  (15, 6, '서울 서대문구 홍은동 ○○빌라', '11410', 37.5880000, 126.9420000, false, 'MULTI_HOUSEHOLD', 2018, 3, 34.00, 9000, 0, 6.00, NULL, NULL, 1, NOW(), NOW());
 
 -- 주변 인프라 요약 (반경 1km)
 INSERT INTO infra_summaries (supply_house_id, category_counts, nearest, ai_summary, collected_at, created_at, updated_at) VALUES
@@ -78,4 +83,13 @@ INSERT INTO infra_summaries (supply_house_id, category_counts, nearest, ai_summa
       '마트와 학교가 가깝고 역은 도보 12분 정도예요.', NOW(), NOW(), NOW()),
   (10, '{"SW8":1,"CS2":5,"MT1":1,"HP8":4,"SC4":2}',
       '{"SW8":{"name":"당산역","distanceM":300},"CS2":{"name":"세븐일레븐 당산점","distanceM":70},"MT1":{"name":"롯데마트","distanceM":1100},"HP8":{"name":"당산내과","distanceM":250},"SC4":{"name":"당산초","distanceM":450}}',
-      '역과 병원이 가깝고 편의점이 많아요.', NOW(), NOW(), NOW());
+      '역과 병원이 가깝고 편의점이 많아요.', NOW(), NOW(), NOW()),
+  (13, '{"SW8":1,"CS2":3,"MT1":1,"HP8":2,"SC4":2}',
+      '{"SW8":{"name":"디지털미디어시티역","distanceM":900},"CS2":{"name":"GS25 상암단지점","distanceM":110},"MT1":{"name":"홈플러스 상암점","distanceM":650},"HP8":{"name":"상암연세의원","distanceM":400},"SC4":{"name":"상암중","distanceM":350}}',
+      '단지 안에 편의점이 있고 마트가 가까워요. 역은 도보 15분 정도예요.', NOW(), NOW(), NOW()),
+  (14, '{"SW8":1,"CS2":2,"MT1":1,"HP8":2,"SC4":3}',
+      '{"SW8":{"name":"구파발역","distanceM":1200},"CS2":{"name":"CU 진관점","distanceM":200},"MT1":{"name":"롯데몰 은평점","distanceM":1100},"HP8":{"name":"진관내과","distanceM":500},"SC4":{"name":"진관초","distanceM":300}}',
+      '학교가 가깝고 조용한 단지예요. 역과 마트는 조금 멀어요.', NOW(), NOW(), NOW()),
+  (15, '{"SW8":0,"CS2":3,"MT1":0,"HP8":2,"SC4":1}',
+      '{"CS2":{"name":"세븐일레븐 홍은점","distanceM":140},"HP8":{"name":"홍은의원","distanceM":380},"SC4":{"name":"홍은초","distanceM":600}}',
+      '편의점과 병원은 가깝지만 반경 1km 안에 지하철역이 없어요.', NOW(), NOW(), NOW());

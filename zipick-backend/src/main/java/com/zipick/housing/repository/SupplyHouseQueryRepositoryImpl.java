@@ -4,12 +4,16 @@ import static com.zipick.housing.domain.QAnnouncement.announcement;
 import static com.zipick.housing.domain.QSupplyHouse.supplyHouse;
 
 import com.querydsl.core.BooleanBuilder;
+import com.querydsl.core.Tuple;
+import com.querydsl.core.types.dsl.EnumPath;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.ComparableExpressionBase;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.zipick.housing.domain.SupplyHouse;
 import com.zipick.housing.dto.HouseFilter;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
@@ -26,6 +30,36 @@ public class SupplyHouseQueryRepositoryImpl implements SupplyHouseQueryRepositor
                 .orderBy(announcement.closeDate.asc().nullsLast(), supplyHouse.id.asc())
                 .limit(limit)
                 .fetch();
+    }
+
+    @Override
+    public long countByFilter(HouseFilter f) {
+        Long n = query.select(supplyHouse.count())
+                .from(supplyHouse)
+                .join(supplyHouse.announcement, announcement)
+                .where(build(f))
+                .fetchOne();
+        return n == null ? 0 : n;
+    }
+
+    @Override
+    public Map<String, Long> countBy(HouseFilter f, Dimension dimension) {
+        EnumPath<? extends Enum<?>> key = switch (dimension) {
+            case STATUS -> announcement.status;
+            case AGENCY -> announcement.agency;
+            case RENTAL_TYPE -> announcement.rentalType;
+            case HOUSING_TYPE -> supplyHouse.housingType;
+        };
+        Map<String, Long> out = new LinkedHashMap<>();
+        for (Tuple t : query.select(key, supplyHouse.count())
+                .from(supplyHouse)
+                .join(supplyHouse.announcement, announcement)
+                .where(build(f), key.isNotNull())
+                .groupBy(key)
+                .fetch()) {
+            out.put(t.get(key).name(), t.get(supplyHouse.count()));
+        }
+        return out;
     }
 
     private BooleanBuilder build(HouseFilter f) {

@@ -16,5 +16,8 @@ public record UserProfileRequest(
         @Min(0) Integer monthlyIncome,
         @Min(0) Integer totalAssets,
         @Min(0) Integer carValue,
-        @NotNull Boolean homeless
+        @NotNull Boolean homeless,
+        Boolean student,
+        @Min(0) @Max(600) Integer subscriptionMonths,
+        @Min(0) @Max(600) Integer subscriptionPayments
 ) {}

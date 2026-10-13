@@ -37,12 +37,15 @@ public class UserProfileService {
                 .map(p -> {
                     p.update(r.birthDate(), r.job(), r.married(), r.householdSize(), r.monthlyIncome(),
                             r.totalAssets(), r.carValue(), r.homeless());
+                    p.updateExtra(r.student(), r.subscriptionMonths(), r.subscriptionPayments());
                     return p;
                 })
                 .orElseGet(() -> profileRepository.save(UserProfile.builder()
                         .userId(userId).birthDate(r.birthDate()).job(r.job()).married(r.married())
                         .householdSize(r.householdSize()).monthlyIncome(r.monthlyIncome())
                         .totalAssets(r.totalAssets()).carValue(r.carValue()).homeless(r.homeless())
+                        .student(r.student()).subscriptionMonths(r.subscriptionMonths())
+                        .subscriptionPayments(r.subscriptionPayments())
                         .build()));
         events.publishEvent(new UserConditionChangedEvent(userId));
         return UserProfileResponse.from(profile);

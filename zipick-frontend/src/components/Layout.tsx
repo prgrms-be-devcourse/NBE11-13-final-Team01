@@ -14,6 +14,9 @@ export default function Layout() {
         </NavLink>
         <nav className="nav">
           <NavLink to="/recommendations">추천</NavLink>
+          <NavLink to="/map">지도</NavLink>
+          <NavLink to="/calendar">일정</NavLink>
+          <NavLink to="/tune">취향 찾기</NavLink>
           <NavLink to="/onboarding">내 조건</NavLink>
         </nav>
         <label className="dev-user" title="로그인 연동 전 임시 사용자 전환">

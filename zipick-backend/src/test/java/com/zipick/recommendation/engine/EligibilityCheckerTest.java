@@ -67,4 +67,16 @@ class EligibilityCheckerTest {
         UserContext ctx = UserContext.of(p, TestFixtures.mapoPreference(), null, TestFixtures.props().baseWeights());
         assertThat(checker.check(ctx, TestFixtures.goodHouse()).excluded()).isTrue();
     }
+
+    @Test
+    @DisplayName("국민임대는 연령 제한이 없다 (45세도 통과)")
+    void nationalHasNoAgeLimit() {
+        UserProfile p = UserProfile.builder().userId(1L).birthDate(LocalDate.now().minusYears(45))
+                .married(false).householdSize(1).monthlyIncome(260).totalAssets(2500).carValue(0).homeless(true)
+                .build();
+        UserContext ctx = UserContext.of(p, TestFixtures.mapoPreference(), null, TestFixtures.props().baseWeights());
+        EligibilityResult r = checker.check(ctx, TestFixtures.house(RentalType.NATIONAL, "11440",
+                HousingType.APARTMENT, "39", 2000, 25));
+        assertThat(r.status()).isEqualTo(EligibilityResult.Status.PASS);
+    }
 }

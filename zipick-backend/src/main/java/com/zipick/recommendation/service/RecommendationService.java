@@ -25,7 +25,9 @@ import com.zipick.user.repository.UserPreferenceRepository;
 import com.zipick.user.repository.UserProfileRepository;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -90,6 +92,37 @@ public class RecommendationService {
         return RecommendedHouseResponse.from(s, calculator.monthlyCost(house));
     }
 
+    // ---- 우선순위 찾기(RecommendationTuningService)용 ----
+
+    /** 모집 중 공고 전체를 지금 기준으로 점수 매긴 결과. 제외된 집도 포함한다. */
+    public List<HouseScore> scoredCandidates(Long userId) {
+        return run(userId, HouseFilter.openOnly()).scored();
+    }
+
+    /** 집 여러 곳의 점수. 마감·숨김 여부와 관계없이 계산한다. */
+    public Map<Long, HouseScore> scoreHouses(Long userId, Collection<Long> houseIds) {
+        if (houseIds.isEmpty()) return Map.of();
+        UserContext ctx = buildContext(userId);
+        List<SupplyHouse> houses = houseRepository.findAllById(houseIds);
+        Map<Long, InfraSummary> infra = infraRepository.findAllBySupplyHouseIdIn(
+                        houses.stream().map(SupplyHouse::getId).toList())
+                .stream().collect(Collectors.toMap(i -> i.getSupplyHouse().getId(), Function.identity()));
+        return houses.stream().collect(Collectors.toMap(SupplyHouse::getId,
+                h -> calculator.score(ctx, h, infra.get(h.getId()))));
+    }
+
+    public RecommendedHouseResponse toResponse(HouseScore s) {
+        return RecommendedHouseResponse.from(s, calculator.monthlyCost(s.house()));
+    }
+
+    /** 활성 추천 기준의 우선순위 (없으면 전부 3) */
+    public Map<String, Integer> currentPriorities(Long userId) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        Map<String, Integer> w = buildContext(userId).weights();
+        for (String item : ScoreCalculator.ITEMS) out.put(item, w.getOrDefault(item, 3));
+        return out;
+    }
+
     /** 추천이 적을 때 조건 하나씩 풀어 보고 늘어나는 개수를 알려준다. */
     public RelaxSuggestionResponse relaxSuggestions(Long userId, HouseFilter filter) {
         Pipeline base = run(userId, filter);
@@ -124,6 +157,13 @@ public class RecommendationService {
             int n = countWith(base, c -> withoutHousingTypes(c));
             if (n > current) out.add(new RelaxSuggestionResponse.Suggestion("housingTypes",
                     "희망 주택 유형 조건 해제", n));
+        }
+        // 5) 희망 공공임대 유형 해제
+        if (!base.ctx().preferredRentalTypes().isEmpty()) {
+            int n = countWith(base, c -> new UserContext(c.profile(), c.preference(), c.regionRanks(),
+                    c.preferredHousingTypes(), Set.of(), c.weights(), c.rules(), c.infraWeights(), c.today()));
+            if (n > current) out.add(new RelaxSuggestionResponse.Suggestion("rentalTypes",
+                    "희망 공공임대 유형 조건 해제", n));
         }
         return new RelaxSuggestionResponse(current, out);
     }
@@ -182,7 +222,7 @@ public class RecommendationService {
                 .housingTypes(p.getHousingTypes()).rentalTypes(p.getRentalTypes())
                 .monthlyBudget(p.getMonthlyBudget() == null ? null : p.getMonthlyBudget() + deltaRent)
                 .build();
-        return new UserContext(c.profile(), copy, c.regionRanks(), c.preferredHousingTypes(), c.weights(),
+        return new UserContext(c.profile(), copy, c.regionRanks(), c.preferredHousingTypes(), c.preferredRentalTypes(), c.weights(),
                 c.rules(), c.infraWeights(), c.today());
     }
 
@@ -198,7 +238,7 @@ public class RecommendationService {
                 .housingTypes(p.getHousingTypes()).rentalTypes(p.getRentalTypes())
                 .monthlyBudget(p.getMonthlyBudget())
                 .build();
-        return new UserContext(c.profile(), copy, c.regionRanks(), c.preferredHousingTypes(), c.weights(),
+        return new UserContext(c.profile(), copy, c.regionRanks(), c.preferredHousingTypes(), c.preferredRentalTypes(), c.weights(),
                 c.rules(), c.infraWeights(), c.today());
     }
 
@@ -206,11 +246,11 @@ public class RecommendationService {
         Map<String, String> rules = new HashMap<>(c.rules());
         rules.put(item, "PREFER");
         return new UserContext(c.profile(), c.preference(), c.regionRanks(), c.preferredHousingTypes(),
-                c.weights(), rules, c.infraWeights(), c.today());
+                c.preferredRentalTypes(), c.weights(), rules, c.infraWeights(), c.today());
     }
 
     private UserContext withoutHousingTypes(UserContext c) {
-        return new UserContext(c.profile(), c.preference(), c.regionRanks(), Set.of(), c.weights(),
+        return new UserContext(c.profile(), c.preference(), c.regionRanks(), Set.of(), c.preferredRentalTypes(), c.weights(),
                 c.rules(), c.infraWeights(), c.today());
     }
 }

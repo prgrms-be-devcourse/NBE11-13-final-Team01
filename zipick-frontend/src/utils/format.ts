@@ -11,6 +11,7 @@ export const ITEM_LABEL: Record<ScoreItem, string> = {
 export const RENTAL_LABEL: Record<RentalType, string> = {
   PURCHASE: '매입임대',
   HAPPY: '행복주택',
+  NATIONAL: '국민임대',
   DEUNDEUN: '든든전세',
 };
 

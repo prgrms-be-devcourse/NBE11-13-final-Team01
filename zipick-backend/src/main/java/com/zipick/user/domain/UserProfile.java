@@ -50,11 +50,26 @@ public class UserProfile extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean homeless;
 
+    /** 대학생·취업준비생 여부 (선택) */
+    private Boolean student;
+
+    /** 주택청약저축 가입 기간(개월)·납입 횟수 (선택). 지금은 저장·표시만 하고 판정에는 쓰지 않는다 */
+    private Integer subscriptionMonths;
+    private Integer subscriptionPayments;
+
     @Builder
     public UserProfile(Long userId, LocalDate birthDate, String job, boolean married, int householdSize,
-                       Integer monthlyIncome, Integer totalAssets, Integer carValue, boolean homeless) {
+                       Integer monthlyIncome, Integer totalAssets, Integer carValue, boolean homeless,
+                       Boolean student, Integer subscriptionMonths, Integer subscriptionPayments) {
         this.userId = userId;
         update(birthDate, job, married, householdSize, monthlyIncome, totalAssets, carValue, homeless);
+        updateExtra(student, subscriptionMonths, subscriptionPayments);
+    }
+
+    public void updateExtra(Boolean student, Integer subscriptionMonths, Integer subscriptionPayments) {
+        this.student = student;
+        this.subscriptionMonths = subscriptionMonths;
+        this.subscriptionPayments = subscriptionPayments;
     }
 
     public void update(LocalDate birthDate, String job, boolean married, int householdSize,
