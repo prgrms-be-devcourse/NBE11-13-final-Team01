@@ -1,0 +1,37 @@
+package com.zipick.external.myhome.dto;
+
+public record MyHomeNotice(
+        String suplyHoCo,
+        String pblancId,
+        Long houseSn,
+        String sttusNm,
+        String pblancNm,
+        String suplyInsttNm,
+        String houseTyNm,
+        String suplyTyNm,
+        String beforePblancId,
+        String rcritPblancDe,
+        String przwnerPresnatnDe,
+        String refrnc,
+        String url,
+        String pcUrl,
+        String mobileUrl,
+        String hsmpNm,
+        String brtcNm,
+        String signguNm,
+        String fullAdres,
+        String rnCodeNm,
+        String refrnLegaldongNm,
+        String pnu,
+        String heatMthdNm,
+        String totHshldCo,
+        Long sumSuplyCo,
+        Long rentGtn,
+        Long enty,
+        Long prtpay,
+        Long surlus,
+        Long mtRntchrg,
+        String beginDe,
+        String endDe
+) {
+}
