@@ -29,6 +29,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class InfraSummary extends BaseTimeEntity {
 
+    /** JSON 문자열 컬럼. MySQL에서 text(64KB)로 만든다 (길이를 안 주면 @Lob 이 tinytext 255바이트가 될 수 있다) */
+    private static final int JSON_COLUMN_LENGTH = 65_535;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -38,10 +41,11 @@ public class InfraSummary extends BaseTimeEntity {
     private SupplyHouse supplyHouse;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = JSON_COLUMN_LENGTH)
     private String categoryCounts;
 
     @Lob
+    @Column(length = JSON_COLUMN_LENGTH)
     private String nearest;
 
     @Column(length = 500)

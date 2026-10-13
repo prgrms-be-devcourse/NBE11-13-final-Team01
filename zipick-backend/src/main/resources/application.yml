@@ -1,15 +1,8 @@
 spring:
   application:
-    name: zipick-backend
+    name: zipick
   profiles:
     default: local
-  jpa:
-    open-in-view: false
-    properties:
-      hibernate:
-        default_batch_fetch_size: 100
-  jackson:
-    default-property-inclusion: non_null
 
 server:
   port: 8080
@@ -19,12 +12,6 @@ springdoc:
     path: /swagger-ui.html
   api-docs:
     path: /v3/api-docs
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
 
 zipick:
   recommendation:

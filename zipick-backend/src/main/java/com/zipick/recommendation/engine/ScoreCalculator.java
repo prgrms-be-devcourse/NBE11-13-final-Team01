@@ -1,6 +1,6 @@
 package com.zipick.recommendation.engine;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import tools.jackson.core.type.TypeReference;
 import com.zipick.global.util.JsonUtil;
 import com.zipick.housing.domain.InfraSummary;
 import com.zipick.housing.domain.RentalType;

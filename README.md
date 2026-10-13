@@ -1,36 +1,111 @@
-# ZIPICK
+# ZIPICK (집픽)
 
-내 조건 맞춤 공공임대를 찾고 지원까지 챙기는 지도.
+공공임대 공급주택을 지도에서 탐색하고, 사용자 자격정보와 희망 주거조건을 바탕으로 추천 점수와 근거를 제공하는 서비스.
 
-## 구성
-
-| 폴더 | 내용 | 기술 |
-| --- | --- | --- |
-| `zipick-backend` | Spring Boot API | Java 25, Spring Boot 3.5, JPA, QueryDSL, H2(로컬)/MySQL(운영) |
-| `zipick-frontend` | 웹 화면 | React 18, TypeScript, Vite, TanStack Query |
-
-## 로컬 실행
-
-```bash
-# 백엔드 (H2 인메모리 + 시드 데이터, Docker 불필요)
-cd zipick-backend && ./gradlew bootRun
-# Swagger: http://localhost:8080/swagger-ui.html
-# H2 콘솔: http://localhost:8080/h2-console (JDBC URL: jdbc:h2:mem:zipick, 사용자 sa)
-
-# 프론트엔드
-cd zipick-frontend && npm install && npm run dev
-# http://localhost:5173  (/api 요청은 8080으로 프록시)
+```
+zipick-backend/    Java 25 / Spring Boot 4.1.1 / Spring Security / JPA / MySQL
+zipick-frontend/   React / TypeScript / Vite
 ```
 
-운영 프로필(`--spring.profiles.active=prod`)은 MySQL을 쓴다. `docker compose up -d`로 MySQL을 띄울 수 있다.
+## 백엔드 로컬 실행
 
-### 임시 인증
+### 1. 사전 준비
 
-로그인(카카오·JWT)이 붙기 전까지 백엔드는 `X-User-Id` 헤더로 사용자를 식별한다.
+- JDK 25 (Gradle toolchain 이 사용한다)
+- 로컬 MySQL
+
+Gradle 은 wrapper(9.3)를 사용하므로 별도 설치가 필요 없다.
+
+### 2. 스키마 생성
+
+```sql
+CREATE DATABASE IF NOT EXISTS zipick
+  DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+### 3. 환경 변수 설정
+
+아래 표를 참고해 환경 변수를 설정한다. **실제 값은 Git 에 커밋하지 않는다.**
+
+| 이름 | 용도 | 필수 | 기본값 |
+| --- | --- | --- | --- |
+| `DB_HOST` | MySQL 호스트 | 선택 | `localhost` |
+| `DB_PORT` | MySQL 포트 | 선택 | `3306` |
+| `DB_NAME` | 스키마 이름 | 선택 | `zipick` |
+| `DB_USERNAME` | MySQL 계정 | **필수** | 없음 |
+| `DB_PASSWORD` | MySQL 비밀번호 | **필수** | 없음 |
+
+> 인증 기능 구현 단계에서 JWT 서명용 `JWT_SECRET` 이 추가될 예정이다. 추가되면 이 표를 함께 갱신한다.
+
+설정 예시 — 아래 `{...}` 자리에 본인 값을 넣는다.
+
+**IntelliJ** — Run/Debug Configurations > Environment variables
+
+```text
+DB_USERNAME={your_mysql_user};DB_PASSWORD={your_mysql_password}
+```
+
+**Windows PowerShell**
+
+```powershell
+$env:DB_USERNAME = "{your_mysql_user}"
+$env:DB_PASSWORD = "{your_mysql_password}"
+```
+
+**macOS / Linux**
+
+```bash
+export DB_USERNAME="{your_mysql_user}"
+export DB_PASSWORD="{your_mysql_password}"
+```
+
+### 4. 스키마 초기화
+
+로컬 프로파일은 `ddl-auto: validate` 라 테이블을 자동 생성하지 않는다.
+초기화 DDL 을 직접 실행한다.
+
+```bash
+mysql -u {your_mysql_user} -p zipick < zipick-backend/db/local-init.sql
+```
+
+> `zipick-backend/db/local-init.sql` 은 기존 테이블을 DROP 후 재생성하므로 **데이터가 모두 삭제된다. 로컬 전용이며 운영 DB 에는 적용하지 않는다.**
+> 엔티티가 추가·변경되면 초기화 DDL 도 함께 갱신해 커밋한다.
+
+### 5. 실행
+
+```bash
+cd zipick-backend
+./gradlew build          # 빌드
+./gradlew bootRun        # 실행
+```
+
+### 6. 예시 데이터 (선택)
+
+추천·필터를 바로 확인하려면 스키마 초기화 뒤 예시 데이터를 넣는다. 공고·주소는 모두 가짜다.
+
+```bash
+mysql -u {your_mysql_user} -p zipick < zipick-backend/db/local-seed.sql
+```
+
+- Swagger UI: http://localhost:8080/swagger-ui.html
+
+## 프론트엔드 로컬 실행
+
+```bash
+cd zipick-frontend
+npm install
+npm run dev     # http://localhost:5173 (/api 요청은 8080으로 프록시)
+```
+
+## 추천 · 기본 필터링 (안서호)
+
+### 임시 인증 (추천 기능 개발용)
+
+로그인(카카오·JWT)이 붙기 전까지 `SecurityConfig`가 모든 API를 열어 두고, 백엔드는 `X-User-Id` 헤더로 사용자를 식별한다.
 프론트 헤더 오른쪽의 "사용자" 드롭다운으로 시드 사용자 1·2를 바꿔 볼 수 있다.
-JWT가 완성되면 `CurrentUserArgumentResolver`(백엔드)와 `api/client.ts`의 인터셉터(프론트)만 교체하면 된다.
+JWT가 완성되면 `SecurityConfig`, `CurrentUserArgumentResolver`(백엔드)와 `api/client.ts`의 인터셉터(프론트)를 교체하면 된다.
 
-## 추천 알고리즘 (안서호)
+### 추천 알고리즘
 
 사전 기입 정보(기본 정보 + 희망 주거조건)로 공급주택마다 0~100점 추천도를 계산한다.
 

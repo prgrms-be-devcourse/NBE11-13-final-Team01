@@ -1,6 +1,6 @@
 package com.zipick.recommendation.dto;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import tools.jackson.core.type.TypeReference;
 import com.zipick.global.util.JsonUtil;
 import com.zipick.recommendation.domain.RecommendationProfile;
 import java.util.Map;

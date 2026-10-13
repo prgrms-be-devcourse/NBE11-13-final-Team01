@@ -1,4 +1,5 @@
--- 로컬 개발용 시드 데이터 (H2, local 프로필에서만 로드)
+-- 로컬 개발용 예시 데이터 (가짜 데이터). local-init.sql 실행 뒤에 넣는다.
+--   mysql -u {your_mysql_user} -p zipick < zipick-backend/db/local-seed.sql
 -- 금액은 만 원, 면적은 ㎡. 카카오 카테고리: SW8 지하철역, MT1 대형마트, CS2 편의점, HP8 병원, SC4 학교
 
 -- 사용자

@@ -1,14 +1,14 @@
 package com.zipick.global.util;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 import java.util.Collections;
 import java.util.Map;
 
-/** 엔티티의 JSON 컬럼 직렬화/역직렬화 헬퍼. */
+/** 엔티티의 JSON 컬럼 직렬화/역직렬화 헬퍼. (Boot 4 = Jackson 3, 패키지 tools.jackson) */
 public final class JsonUtil {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
     private JsonUtil() {}
 

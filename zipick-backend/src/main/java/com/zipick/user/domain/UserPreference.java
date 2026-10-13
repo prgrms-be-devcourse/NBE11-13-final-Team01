@@ -25,6 +25,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class UserPreference extends BaseTimeEntity {
 
+    /** JSON 문자열 컬럼. MySQL에서 text(64KB)로 만든다 (길이를 안 주면 @Lob 이 tinytext 255바이트가 될 수 있다) */
+    private static final int JSON_COLUMN_LENGTH = 65_535;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -33,7 +36,7 @@ public class UserPreference extends BaseTimeEntity {
     private Long userId;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = JSON_COLUMN_LENGTH)
     private String regions;
 
     private Integer depositMin;
@@ -48,9 +51,11 @@ public class UserPreference extends BaseTimeEntity {
     private BigDecimal areaMax;
 
     @Lob
+    @Column(length = JSON_COLUMN_LENGTH)
     private String housingTypes;
 
     @Lob
+    @Column(length = JSON_COLUMN_LENGTH)
     private String rentalTypes;
 
     /** 월 환산 비용 예산(만 원). 비우면 보증금·월세 범위로 계산 */
