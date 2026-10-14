@@ -23,11 +23,39 @@
 -- 1. DROP : 자식 테이블부터 삭제해 FK 제약 충돌을 피한다.
 -- -----------------------------------------------------------------------------
 
--- (아직 엔티티가 없어 비어 있다. 엔티티 추가 시 이곳에 DROP TABLE 문을 작성한다.)
+DROP TABLE IF EXISTS refresh_token;
+DROP TABLE IF EXISTS users;
 
 
 -- -----------------------------------------------------------------------------
 -- 2. CREATE : 참조 대상 테이블부터 생성한다.
 -- -----------------------------------------------------------------------------
 
--- (아직 엔티티가 없어 비어 있다. 엔티티 추가 시 이곳에 CREATE TABLE 문을 작성한다.)
+CREATE TABLE users
+(
+    user_id    BIGINT       NOT NULL AUTO_INCREMENT,
+    email      VARCHAR(255) NOT NULL,
+    password   VARCHAR(255) NOT NULL,
+    role       VARCHAR(30)  NOT NULL,
+    created_at DATETIME     NOT NULL,
+    updated_at DATETIME     NOT NULL,
+    PRIMARY KEY (user_id),
+    UNIQUE KEY uk_users_email (email)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE refresh_token
+(
+    refresh_token_id BIGINT       NOT NULL AUTO_INCREMENT,
+    user_id          BIGINT       NOT NULL,
+    token            VARCHAR(512) NOT NULL,
+    expires_at       DATETIME     NOT NULL,
+    created_at       DATETIME     NOT NULL,
+    updated_at       DATETIME     NOT NULL,
+    PRIMARY KEY (refresh_token_id),
+    UNIQUE KEY uk_refresh_token_user_id (user_id),
+    CONSTRAINT fk_refresh_token_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
