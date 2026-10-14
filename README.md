@@ -27,22 +27,31 @@ CREATE DATABASE IF NOT EXISTS zipick
 
 아래 표를 참고해 환경 변수를 설정한다. **실제 값은 Git 에 커밋하지 않는다.**
 
-| 이름 | 용도 | 필수 | 기본값 |
-| --- | --- | --- | --- |
-| `DB_HOST` | MySQL 호스트 | 선택 | `localhost` |
-| `DB_PORT` | MySQL 포트 | 선택 | `3306` |
-| `DB_NAME` | 스키마 이름 | 선택 | `zipick` |
-| `DB_USERNAME` | MySQL 계정 | **필수** | 없음 |
-| `DB_PASSWORD` | MySQL 비밀번호 | **필수** | 없음 |
+| 이름 | 용도 | 필수     | 기본값         |
+| --- | --- |--------|-------------|
+| `DB_HOST` | MySQL 호스트 | 선택     | `localhost` |
+| `DB_PORT` | MySQL 포트 | 선택     | `3306`      |
+| `DB_NAME` | 스키마 이름 | 선택     | `zipick`    |
+| `DB_USERNAME` | MySQL 계정 | 선택     | `root`       |
+| `DB_PASSWORD` | MySQL 비밀번호 | **필수** | 없음          |
+| `JWT_SECRET` | JWT(HS256) 서명 키 | **필수** | 없음          |
 
-> 인증 기능 구현 단계에서 JWT 서명용 `JWT_SECRET` 이 추가될 예정이다. 추가되면 이 표를 함께 갱신한다.
+`JWT_SECRET` 은 **Base64 로 인코딩된 문자열**이어야 하며, 디코딩한 결과가 **32바이트(256비트) 이상**이어야 한다.
+Base64 가 아니거나 길이가 모자라면 애플리케이션 기동 시 오류가 발생한다.
+아래 명령으로 생성한 값을 그대로 사용한다.
+
+```bash
+openssl rand -base64 32 | tr -d '\n'
+```
+
+생성한 값은 각자 로컬 환경 변수로만 설정하고 Git 에 커밋하지 않는다.
 
 설정 예시 — 아래 `{...}` 자리에 본인 값을 넣는다.
 
 **IntelliJ** — Run/Debug Configurations > Environment variables
 
 ```text
-DB_USERNAME={your_mysql_user};DB_PASSWORD={your_mysql_password}
+DB_USERNAME={your_mysql_user};DB_PASSWORD={your_mysql_password};JWT_SECRET={your_jwt_secret}
 ```
 
 **Windows PowerShell**
@@ -50,6 +59,7 @@ DB_USERNAME={your_mysql_user};DB_PASSWORD={your_mysql_password}
 ```powershell
 $env:DB_USERNAME = "{your_mysql_user}"
 $env:DB_PASSWORD = "{your_mysql_password}"
+$env:JWT_SECRET = "{your_jwt_secret}"
 ```
 
 **macOS / Linux**
@@ -57,6 +67,7 @@ $env:DB_PASSWORD = "{your_mysql_password}"
 ```bash
 export DB_USERNAME="{your_mysql_user}"
 export DB_PASSWORD="{your_mysql_password}"
+export JWT_SECRET="{your_jwt_secret}"
 ```
 
 ### 4. 스키마 초기화
