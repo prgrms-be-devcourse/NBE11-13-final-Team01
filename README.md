@@ -73,14 +73,22 @@ export JWT_SECRET="{your_jwt_secret}"
 ### 4. 스키마 초기화
 
 로컬 프로파일은 `ddl-auto: validate` 라 테이블을 자동 생성하지 않는다.
-초기화 DDL 을 직접 실행한다.
+아래 **두 파일을 순서대로** 실행한다. 둘 다 실행해야 전체 엔티티 스키마가 갖춰진다.
 
 ```bash
 mysql -u {your_mysql_user} -p zipick < zipick-backend/db/local-init.sql
+mysql -u {your_mysql_user} -p zipick < zipick-backend/db/notice-init.sql
 ```
 
-> `zipick-backend/db/local-init.sql` 은 기존 테이블을 DROP 후 재생성하므로 **데이터가 모두 삭제된다. 로컬 전용이며 운영 DB 에는 적용하지 않는다.**
-> 엔티티가 추가·변경되면 초기화 DDL 도 함께 갱신해 커밋한다.
+| 파일 | 테이블 |
+| --- | --- |
+| `local-init.sql` | 인증·사용자(`users`, `refresh_token`, `user_profiles`, `user_preferences`), 추천(`recommendation_*`), 공급주택(`announcements`, `supply_houses`, `infra_summaries`) |
+| `notice-init.sql` | 공고 수집(`agency`, `notice`, `housing`, `housing_supply`) |
+
+`local-init.sql` 만 실행하면 기동 시 `Schema-validation: missing table [agency]` 로 실패한다.
+
+> 두 파일 모두 기존 테이블을 DROP 후 재생성하므로 **데이터가 모두 삭제된다. 로컬 전용이며 운영 DB 에는 적용하지 않는다.**
+> 엔티티가 추가·변경되면 해당 DDL 도 함께 갱신해 커밋한다.
 
 ### 5. 실행
 
@@ -108,13 +116,59 @@ npm install
 npm run dev     # http://localhost:5173 (/api 요청은 8080으로 프록시)
 ```
 
+## 회원가입 · 로그인 및 인증 · 인가 (한채희)
+
+이메일 + 비밀번호 로그인, JWT 기반 인증. 소셜 로그인은 쓰지 않는다.
+
+| Method | URI | 인증 | 설명 |
+| --- | --- | --- | --- |
+| POST | /api/auth/signup | X | 회원가입 (201) |
+| POST | /api/auth/login | X | 로그인. Access Token 은 응답 바디, Refresh Token 은 HttpOnly 쿠키 |
+| POST | /api/auth/reissue | 쿠키 | Access Token 재발급 (Rotation) |
+| POST | /api/auth/logout | O | 로그아웃 (204). 저장된 Refresh Token 삭제 + 쿠키 만료 |
+| GET | /api/users/me | O | 내 계정 정보 |
+
+### 토큰 정책
+
+```
+Access Token   1시간,  Authorization: Bearer 헤더로 전달
+Refresh Token  7일,    HttpOnly 쿠키로 전달, refresh_token 테이블에 저장
+```
+
+- 사용자당 유효한 Refresh Token 을 **1개만** 유지한다 (`refresh_token.user_id` UNIQUE). 로그인하면 기존 토큰을 교체한다.
+- 재발급은 **2단 검증**이다. JWT 서명·만료·발급자 검증을 통과해도 DB 저장값과 다르면 거부한다.
+  그래서 로그아웃했거나 이미 교체된 토큰은 유효기간이 남아 있어도 쓸 수 없다.
+- 재발급 시 Refresh Token 도 새로 발급해 교체한다(Rotation). 이전 토큰은 그 즉시 무효가 된다.
+- 토큰에 용도(`type`) 클레임을 담아, Refresh Token 으로는 일반 API 에 접근할 수 없다.
+- 서명 알고리즘 HS256. `JWT_SECRET` 은 Base64 인코딩된 32바이트 이상 키여야 한다.
+
+### 쿠키 · CORS 설정
+
+환경마다 달라지는 값은 프로파일로 분리했다.
+
+| 설정 | local | prod |
+| --- | --- | --- |
+| `cookie.secure` | `false` (HTTP) | `true` (HTTPS 필수) |
+| `cookie.same-site` | `Lax` | `Lax` — 프론트·백엔드 도메인이 다르면 `None` 으로 바꿔야 한다 |
+| `cors.allowed-origins` | `http://localhost:5173` | **배포 전 설정 필요** (`application-prod.yml` TODO) |
+
+`HttpOnly` 는 항상 켠다. CORS 는 `SecurityConfig` 의 `CorsConfigurationSource` 한 곳에서만 관리한다.
+
 ## 추천 · 기본 필터링 (안서호)
 
-### 임시 인증 (추천 기능 개발용)
+### 인증 연동 (2026-10-14 갱신)
 
-로그인(카카오·JWT)이 붙기 전까지 `SecurityConfig`가 모든 API를 열어 두고, 백엔드는 `X-User-Id` 헤더로 사용자를 식별한다.
-프론트 헤더 오른쪽의 "사용자" 드롭다운으로 시드 사용자 1·2를 바꿔 볼 수 있다.
-JWT가 완성되면 `SecurityConfig`, `CurrentUserArgumentResolver`(백엔드)와 `api/client.ts`의 인터셉터(프론트)를 교체하면 된다.
+임시 인증(`X-User-Id` 헤더)은 **JWT 인증으로 교체되었다.** `CurrentUserArgumentResolver` 가 헤더 대신
+`SecurityContext` 에서 사용자를 읽으므로, `@CurrentUser Long userId` 를 쓰는 컨트롤러는 수정할 필요가 없다.
+
+- 로그인 후 받은 Access Token 을 `Authorization: Bearer {accessToken}` 헤더로 보내면 된다.
+- 인증이 필요한 API 를 토큰 없이 호출하면 `401` 과 함께 `{"success":false,"error":{"code":"AUTH_REQUIRED",...}}` 가 내려온다.
+- 비로그인 조회 가능: `GET /api/v1/houses/**`, `GET /api/notices/**`
+
+**프론트는 아직 교체가 필요하다.** `api/client.ts` 의 `X-User-Id` 인터셉터를 Access Token 전송으로 바꾸고,
+Refresh Token 쿠키를 주고받도록 요청에 `credentials: 'include'`(axios 는 `withCredentials: true`)를 켜야 한다.
+
+인증 API 는 아래 "회원가입·로그인 및 인증·인가 (한채희)" 항목 참고.
 
 ### 추천 알고리즘
 
