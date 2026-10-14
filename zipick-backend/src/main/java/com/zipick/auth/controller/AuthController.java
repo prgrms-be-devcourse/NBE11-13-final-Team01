@@ -9,6 +9,7 @@ import com.zipick.auth.jwt.JwtProperties;
 import com.zipick.auth.service.AuthService;
 import com.zipick.auth.userdetails.CustomUserDetails;
 import com.zipick.auth.service.TokenService;
+import com.zipick.global.response.ApiResponse;
 import com.zipick.global.util.CookieUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -34,12 +35,12 @@ public class AuthController {
 
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.CREATED)
-    public SignupResponse signup(@Valid @RequestBody SignupRequest request) {
-        return authService.signup(request);
+    public ApiResponse<SignupResponse> signup(@Valid @RequestBody SignupRequest request) {
+        return ApiResponse.ok(authService.signup(request));
     }
 
     @PostMapping("/login")
-    public LoginResponse login(
+    public ApiResponse<LoginResponse> login(
             @Valid @RequestBody LoginRequest request,
             HttpServletResponse response
     ) {
@@ -54,11 +55,11 @@ public class AuthController {
                 jwtProperties.refreshTokenExpiration()
         );
 
-        return new LoginResponse(tokenPair.accessToken());
+        return ApiResponse.ok(new LoginResponse(tokenPair.accessToken()));
     }
 
     @PostMapping("/reissue")
-    public TokenResponse reissue(HttpServletRequest request, HttpServletResponse response) {
+    public ApiResponse<TokenResponse> reissue(HttpServletRequest request, HttpServletResponse response) {
 
         String refreshToken = cookieUtil.getCookieValue(request, CookieUtil.REFRESH_TOKEN_COOKIE);
 
@@ -72,7 +73,7 @@ public class AuthController {
                 jwtProperties.refreshTokenExpiration()
         );
 
-        return new TokenResponse(tokenPair.accessToken());
+        return ApiResponse.ok(new TokenResponse(tokenPair.accessToken()));
     }
 
     @PostMapping("/logout")

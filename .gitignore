@@ -1,3 +1,29 @@
+# IDE
 .idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+
+# Gradle / Java
 .gradle/
 build/
+out/
+*.class
+*.log
+
+# Node
+zipick-frontend/node_modules/
+zipick-frontend/dist/
+zipick-frontend/.vite/
+zipick-frontend/tsconfig.tsbuildinfo
+
+# Env / secrets
+.env
+.env.local
+*.env
+!.env.example
+zipick-backend/src/main/resources/application-secret.yml
+
+# 로컬 도구
+.claude/

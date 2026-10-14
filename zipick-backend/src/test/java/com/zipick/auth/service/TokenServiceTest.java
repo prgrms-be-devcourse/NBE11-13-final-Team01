@@ -12,6 +12,8 @@ import com.zipick.auth.jwt.JwtProvider;
 import com.zipick.auth.jwt.TokenStatus;
 import com.zipick.auth.jwt.TokenType;
 import com.zipick.auth.repository.RefreshTokenRepository;
+import com.zipick.global.error.BusinessException;
+import com.zipick.global.error.ErrorCode;
 import com.zipick.user.entity.Role;
 import com.zipick.user.entity.User;
 import com.zipick.user.repository.UserRepository;
@@ -27,7 +29,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
 class TokenServiceTest {
@@ -59,8 +60,8 @@ class TokenServiceTest {
     }
 
     private static void assertUnauthorized(Throwable thrown) {
-        assertThat(thrown).isInstanceOf(ResponseStatusException.class);
-        assertThat(((ResponseStatusException) thrown).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(thrown).isInstanceOf(BusinessException.class);
+        assertThat(((BusinessException) thrown).getErrorCode().getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Nested
@@ -149,7 +150,7 @@ class TokenServiceTest {
             given(jwtProvider.validateToken(STORED_TOKEN, TokenType.REFRESH)).willReturn(TokenStatus.EXPIRED);
 
             assertThatThrownBy(() -> tokenService.reissue(STORED_TOKEN))
-                    .isInstanceOf(ResponseStatusException.class)
+                    .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("만료된 Refresh Token");
         }
 

@@ -24,38 +24,226 @@
 -- -----------------------------------------------------------------------------
 
 DROP TABLE IF EXISTS refresh_token;
+DROP TABLE IF EXISTS recommendation_pair_choices;
+DROP TABLE IF EXISTS recommendation_feedbacks;
+DROP TABLE IF EXISTS recommendation_profiles;
+DROP TABLE IF EXISTS user_preferences;
+DROP TABLE IF EXISTS user_profiles;
 DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS infra_summaries;
+DROP TABLE IF EXISTS supply_houses;
+DROP TABLE IF EXISTS announcements;
 
 
 -- -----------------------------------------------------------------------------
 -- 2. CREATE : 참조 대상 테이블부터 생성한다.
 -- -----------------------------------------------------------------------------
 
-CREATE TABLE users
-(
-    user_id    BIGINT       NOT NULL AUTO_INCREMENT,
-    email      VARCHAR(255) NOT NULL,
-    password   VARCHAR(255) NOT NULL,
-    role       VARCHAR(30)  NOT NULL,
-    created_at DATETIME     NOT NULL,
-    updated_at DATETIME     NOT NULL,
-    PRIMARY KEY (user_id),
-    UNIQUE KEY uk_users_email (email)
-) ENGINE = InnoDB
-  DEFAULT CHARSET = utf8mb4
-  COLLATE = utf8mb4_unicode_ci;
+-- Hibernate(MySQLDialect)가 엔티티에서 만든 DDL을 그대로 옮겼다. ddl-auto: validate 와 일치한다.
+-- 엔티티를 바꾸면 아래처럼 다시 뽑아 교체한다 (DB 연결 없이 동작).
+--   DB_USERNAME=none DB_PASSWORD=none ./gradlew bootRun --args="--spring.jpa.hibernate.ddl-auto=none \
+--     --spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQLDialect \
+--     --spring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access=false \
+--     --spring.jpa.properties.jakarta.persistence.schema-generation.scripts.action=create \
+--     --spring.jpa.properties.jakarta.persistence.schema-generation.scripts.create-target=build/ddl/create.sql \
+--     --spring.jpa.properties.hibernate.hbm2ddl.delimiter=; --spring.jpa.properties.hibernate.format_sql=true"
+--
+-- 테이블 담당: users = 인증, announcements·supply_houses = 공고·공급주택, infra_summaries = 주변 인프라,
+--             user_profiles·user_preferences·recommendation_* = 추천 (각 담당자가 엔티티를 확장하면 함께 갱신)
 
-CREATE TABLE refresh_token
-(
-    refresh_token_id BIGINT       NOT NULL AUTO_INCREMENT,
-    user_id          BIGINT       NOT NULL,
-    token            VARCHAR(512) NOT NULL,
-    expires_at       DATETIME     NOT NULL,
-    created_at       DATETIME     NOT NULL,
-    updated_at       DATETIME     NOT NULL,
-    PRIMARY KEY (refresh_token_id),
-    UNIQUE KEY uk_refresh_token_user_id (user_id),
-    CONSTRAINT fk_refresh_token_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
-) ENGINE = InnoDB
-  DEFAULT CHARSET = utf8mb4
-  COLLATE = utf8mb4_unicode_ci;
+create table announcements (
+    close_date date,
+    notice_date date,
+    created_at datetime(6),
+    id bigint not null auto_increment,
+    updated_at datetime(6),
+    external_id varchar(30) not null,
+    region varchar(50),
+    title varchar(200) not null,
+    detail_url varchar(500),
+    pdf_url varchar(500),
+    agency enum ('GH','HUG','LH','SH') not null,
+    rental_type enum ('DEUNDEUN','HAPPY','NATIONAL','PURCHASE') not null,
+    status enum ('CLOSED','NOTICE','RECEIVING') not null,
+    primary key (id)
+) engine=InnoDB;
+
+create table infra_summaries (
+    collected_at datetime(6),
+    created_at datetime(6),
+    id bigint not null auto_increment,
+    supply_house_id bigint not null,
+    updated_at datetime(6),
+    ai_summary varchar(500),
+    category_counts text not null,
+    nearest text,
+    primary key (id)
+) engine=InnoDB;
+
+create table recommendation_feedbacks (
+    created_at datetime(6),
+    id bigint not null auto_increment,
+    supply_house_id bigint not null,
+    updated_at datetime(6),
+    user_id bigint not null,
+    reason enum ('ETC','EXPENSIVE','INFRA','OLD','REGION','SMALL'),
+    type enum ('DISLIKE','HIDE') not null,
+    primary key (id)
+) engine=InnoDB;
+
+create table recommendation_pair_choices (
+    created_at datetime(6),
+    id bigint not null auto_increment,
+    left_house_id bigint not null,
+    right_house_id bigint not null,
+    updated_at datetime(6),
+    user_id bigint not null,
+    choice enum ('LEFT','RIGHT','TIE') not null,
+    primary key (id)
+) engine=InnoDB;
+
+create table recommendation_profiles (
+    active bit not null,
+    version integer not null,
+    created_at datetime(6),
+    id bigint not null auto_increment,
+    updated_at datetime(6),
+    user_id bigint not null,
+    name varchar(30) not null,
+    infra_weights text,
+    rules text,
+    weights text not null,
+    primary key (id)
+) engine=InnoDB;
+
+create table supply_houses (
+    applicants integer,
+    approximate bit not null,
+    built_year integer,
+    conversion_rate decimal(5,2),
+    deposit integer,
+    exclusive_area decimal(6,2),
+    floor integer,
+    lat decimal(10,7),
+    lng decimal(10,7),
+    monthly_rent integer,
+    supply_count integer,
+    announcement_id bigint not null,
+    created_at datetime(6),
+    id bigint not null auto_increment,
+    updated_at datetime(6),
+    sigungu_code varchar(10),
+    purchase_type varchar(30),
+    address varchar(200) not null,
+    housing_type enum ('APARTMENT','ETC','MULTI_HOUSEHOLD','OFFICETEL','ROW_HOUSE'),
+    primary key (id)
+) engine=InnoDB;
+
+create table user_preferences (
+    area_max decimal(6,2),
+    area_min decimal(6,2),
+    deposit_max integer,
+    deposit_min integer,
+    monthly_budget integer,
+    rent_max integer,
+    rent_min integer,
+    created_at datetime(6),
+    id bigint not null auto_increment,
+    updated_at datetime(6),
+    user_id bigint not null,
+    housing_types text,
+    regions text not null,
+    rental_types text,
+    primary key (id)
+) engine=InnoDB;
+
+create table user_profiles (
+    birth_date date not null,
+    car_value integer,
+    homeless bit not null,
+    household_size integer not null,
+    married bit not null,
+    monthly_income integer,
+    student bit,
+    subscription_months integer,
+    subscription_payments integer,
+    total_assets integer,
+    created_at datetime(6),
+    id bigint not null auto_increment,
+    updated_at datetime(6),
+    user_id bigint not null,
+    job varchar(30),
+    primary key (id)
+) engine=InnoDB;
+
+create table users (
+    created_at datetime(6),
+    updated_at datetime(6),
+    user_id bigint not null auto_increment,
+    email varchar(255) not null,
+    password varchar(255) not null,
+    role varchar(30) not null,
+    primary key (user_id)
+) engine=InnoDB;
+
+create table refresh_token (
+    created_at datetime(6),
+    updated_at datetime(6),
+    expires_at datetime(6) not null,
+    refresh_token_id bigint not null auto_increment,
+    user_id bigint not null,
+    token varchar(512) not null,
+    primary key (refresh_token_id)
+) engine=InnoDB;
+
+alter table announcements
+   add constraint UKn4aj5scxqnr845itouw7hg9c9 unique (external_id);
+
+alter table infra_summaries
+   add constraint UK5dc2g54ecqq7vy5v2jme8klax unique (supply_house_id);
+
+create index idx_rec_feedback_user
+   on recommendation_feedbacks (user_id);
+
+create index idx_rec_pair_user
+   on recommendation_pair_choices (user_id);
+
+create index idx_rec_profile_user
+   on recommendation_profiles (user_id);
+
+create index idx_supply_house_announcement
+   on supply_houses (announcement_id);
+
+create index idx_supply_house_latlng
+   on supply_houses (lat, lng);
+
+create index idx_supply_house_sigungu
+   on supply_houses (sigungu_code);
+
+alter table user_preferences
+   add constraint UKqy8dkrkc8b34dcgwoq2km43rd unique (user_id);
+
+alter table user_profiles
+   add constraint UKe5h89rk3ijvdmaiig4srogdc6 unique (user_id);
+
+alter table users
+   add constraint uk_users_email unique (email);
+
+alter table refresh_token
+   add constraint uk_refresh_token_user_id unique (user_id);
+
+alter table refresh_token
+   add constraint fk_refresh_token_user
+   foreign key (user_id)
+   references users (user_id)
+   on delete cascade;
+
+alter table infra_summaries
+   add constraint FK1swmbn5ufconr0ntq600qf7j1
+   foreign key (supply_house_id)
+   references supply_houses (id);
+
+alter table supply_houses
+   add constraint FKl08h482tixet0vfxivk0coy4q
+   foreign key (announcement_id)
+   references announcements (id);

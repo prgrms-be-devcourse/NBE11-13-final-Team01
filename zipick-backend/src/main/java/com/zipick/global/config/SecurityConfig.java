@@ -2,14 +2,15 @@ package com.zipick.global.config;
 
 import com.zipick.auth.filter.TokenAuthenticationFilter;
 import com.zipick.auth.jwt.JwtProvider;
+import com.zipick.global.error.ErrorCode;
+import com.zipick.global.response.ApiResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -55,11 +56,17 @@ public class SecurityConfig {
                                 "/api/auth/login",
                                 "/api/auth/reissue",
                                 "/error",
-                                "/actuator/**"
+                                "/actuator/**",
+                                // API 문서
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**"
                         ).permitAll()
-                        // TODO 담당자 구현 시 조정. api-spec 기준 비로그인도 조회 가능한 엔드포인트
-                        .requestMatchers("/api/housings/recommendations").authenticated()
-                        .requestMatchers("/api/housings/**", "/api/notices/**").permitAll()
+                        // 비로그인도 조회 가능한 엔드포인트. 담당자 구현에 맞춰 조정한다.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/houses", "/api/v1/houses/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/notices", "/api/notices/**").permitAll()
+                        // TODO 내부·외부 연동 API. 운영에서는 별도 보호가 필요하다.
+                        .requestMatchers("/api/internal/**", "/api/external/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(new TokenAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)
@@ -99,23 +106,19 @@ public class SecurityConfig {
 
     @Bean
     public AuthenticationEntryPoint authenticationEntryPoint() {
-        return (request, response, authException) ->
-                sendError(response, HttpStatus.UNAUTHORIZED, "인증이 필요합니다.");
+        return (request, response, authException) -> sendError(response, ErrorCode.AUTH_REQUIRED);
     }
 
     @Bean
     public AccessDeniedHandler accessDeniedHandler() {
-        return (request, response, accessDeniedException) ->
-                sendError(response, HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
+        return (request, response, accessDeniedException) -> sendError(response, ErrorCode.FORBIDDEN);
     }
 
-    // TODO 공통 예외 처리 구조가 마련되면 공통 ErrorResponse 형식으로 교체한다.
-    private void sendError(HttpServletResponse response, HttpStatus status, String message) throws IOException {
-        response.setStatus(status.value());
+    // 필터 단계 오류는 GlobalExceptionHandler를 타지 않으므로 여기서 같은 형식으로 직접 쓴다.
+    private void sendError(HttpServletResponse response, ErrorCode errorCode) throws IOException {
+        response.setStatus(errorCode.getStatus().value());
         response.setContentType("application/json;charset=UTF-8");
-        objectMapper.writeValue(response.getWriter(), Map.of(
-                "status", status.value(),
-                "message", message
-        ));
+        objectMapper.writeValue(response.getWriter(),
+                ApiResponse.fail(errorCode, errorCode.getDefaultMessage()));
     }
 }

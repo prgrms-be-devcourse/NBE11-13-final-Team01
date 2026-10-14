@@ -62,8 +62,8 @@ class UserControllerTest {
         mockMvc.perform(get("/api/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.userId").value(1))
-                .andExpect(jsonPath("$.email").value("test@example.com"));
+                .andExpect(jsonPath("$.data.userId").value(1))
+                .andExpect(jsonPath("$.data.email").value("test@example.com"));
     }
 
     @Test
@@ -71,8 +71,8 @@ class UserControllerTest {
     void withoutToken() throws Exception {
         mockMvc.perform(get("/api/users/me"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.status").value(401))
-                .andExpect(jsonPath("$.message").value("인증이 필요합니다."));
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("AUTH_REQUIRED"));
     }
 
     @Test

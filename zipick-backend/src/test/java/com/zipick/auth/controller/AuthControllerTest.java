@@ -16,6 +16,9 @@ import com.zipick.auth.jwt.JwtProperties;
 import com.zipick.auth.service.AuthService;
 import com.zipick.auth.service.TokenService;
 import com.zipick.global.config.CookieProperties;
+import com.zipick.global.error.BusinessException;
+import com.zipick.global.error.ErrorCode;
+import com.zipick.global.error.GlobalExceptionHandler;
 import com.zipick.global.util.CookieUtil;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
@@ -29,17 +32,15 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.web.server.ResponseStatusException;
 
 // 보안 필터는 따로 검증하므로 여기서는 컨트롤러 계약만 확인한다.
 @WebMvcTest(AuthController.class)
 @AutoConfigureMockMvc(addFilters = false)
-@Import({CookieUtil.class, AuthControllerTest.TestConfig.class})
+@Import({CookieUtil.class, GlobalExceptionHandler.class, AuthControllerTest.TestConfig.class})
 class AuthControllerTest {
 
     @Autowired
@@ -83,8 +84,8 @@ class AuthControllerTest {
 
             perform("/api/auth/signup", "{\"email\": \"test@example.com\", \"password\": \"password1234\"}")
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.userId").value(1))
-                    .andExpect(jsonPath("$.email").value("test@example.com"));
+                    .andExpect(jsonPath("$.data.userId").value(1))
+                    .andExpect(jsonPath("$.data.email").value("test@example.com"));
         }
 
         @Test
@@ -131,7 +132,7 @@ class AuthControllerTest {
 
             perform("/api/auth/login", VALID_BODY)
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.accessToken").value("access-token"))
+                    .andExpect(jsonPath("$.data.accessToken").value("access-token"))
                     .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("refreshToken=refresh-token")))
                     .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")))
                     .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("SameSite=Lax")));
@@ -144,7 +145,7 @@ class AuthControllerTest {
                     .willReturn(new TokenService.TokenPair("access-token", "refresh-token"));
 
             perform("/api/auth/login", VALID_BODY)
-                    .andExpect(jsonPath("$.refreshToken").doesNotExist());
+                    .andExpect(jsonPath("$.data.refreshToken").doesNotExist());
         }
 
         @Test
@@ -176,7 +177,7 @@ class AuthControllerTest {
             mockMvc.perform(post("/api/auth/reissue")
                             .cookie(new Cookie(CookieUtil.REFRESH_TOKEN_COOKIE, "old-refresh-token")))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.accessToken").value("new-access-token"))
+                    .andExpect(jsonPath("$.data.accessToken").value("new-access-token"))
                     .andExpect(header().string(HttpHeaders.SET_COOKIE,
                             containsString("refreshToken=new-refresh-token")))
                     .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")));
@@ -186,7 +187,7 @@ class AuthControllerTest {
         @DisplayName("쿠키가 없으면 서비스에 null을 넘겨 401로 거부된다")
         void withoutCookie() throws Exception {
             given(tokenService.reissue(null))
-                    .willThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Refresh Token이 없습니다."));
+                    .willThrow(new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND));
 
             mockMvc.perform(post("/api/auth/reissue"))
                     .andExpect(status().isUnauthorized());
@@ -196,7 +197,7 @@ class AuthControllerTest {
         @DisplayName("유효하지 않은 Refresh Token이면 401을 반환하고 쿠키를 교체하지 않는다")
         void invalidToken() throws Exception {
             given(tokenService.reissue("invalid-token"))
-                    .willThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효하지 않은 Refresh Token입니다."));
+                    .willThrow(new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
             mockMvc.perform(post("/api/auth/reissue")
                             .cookie(new Cookie(CookieUtil.REFRESH_TOKEN_COOKIE, "invalid-token")))

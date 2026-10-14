@@ -1,5 +1,6 @@
 package com.zipick.auth.entity;
 
+import com.zipick.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -10,15 +11,13 @@ import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 // 사용자당 1개만 유지한다. user_id의 UNIQUE 제약으로 DB에서도 보장한다.
 @Entity
 @Table(name = "refresh_token")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class RefreshToken {
+public class RefreshToken extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -33,14 +32,6 @@ public class RefreshToken {
 
     @Column(nullable = false)
     private LocalDateTime expiresAt;
-
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     public static RefreshToken of(Long userId, String token, LocalDateTime expiresAt) {
         RefreshToken refreshToken = new RefreshToken();

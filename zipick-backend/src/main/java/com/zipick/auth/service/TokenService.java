@@ -5,6 +5,8 @@ import com.zipick.auth.jwt.JwtProvider;
 import com.zipick.auth.jwt.TokenStatus;
 import com.zipick.auth.jwt.TokenType;
 import com.zipick.auth.repository.RefreshTokenRepository;
+import com.zipick.global.error.BusinessException;
+import com.zipick.global.error.ErrorCode;
 import com.zipick.user.entity.User;
 import com.zipick.user.repository.UserRepository;
 import java.time.Instant;
@@ -12,10 +14,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Slf4j
 @Service
@@ -52,33 +52,33 @@ public class TokenService {
     public TokenPair reissue(String refreshToken) {
 
         if (refreshToken == null) {
-            throw unauthorized("Refresh Token이 없습니다.");
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND);
         }
 
         // 1. JWT 자체 검증. 서명·만료·발급자·토큰 용도를 확인한다.
         TokenStatus status = jwtProvider.validateToken(refreshToken, TokenType.REFRESH);
 
         if (status == TokenStatus.EXPIRED) {
-            throw unauthorized("만료된 Refresh Token입니다.");
+            throw new BusinessException(ErrorCode.EXPIRED_REFRESH_TOKEN);
         }
         if (status != TokenStatus.VALID) {
-            throw unauthorized("유효하지 않은 Refresh Token입니다.");
+            throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
 
         Long userId = jwtProvider.getUserId(refreshToken);
 
         // 2. 저장된 값과 대조한다. 로그아웃했거나 이미 교체된 토큰을 막는다.
         RefreshToken stored = refreshTokenRepository.findByUserId(userId)
-                .orElseThrow(() -> unauthorized("유효하지 않은 Refresh Token입니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
         if (!stored.matches(refreshToken)) {
             log.warn("[AUTH] 저장된 Refresh Token과 일치하지 않습니다. userId: {}", userId);
-            throw unauthorized("유효하지 않은 Refresh Token입니다.");
+            throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
 
         // 3. 토큰의 정보는 오래됐을 수 있으므로 현재 사용자를 다시 조회한다.
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> unauthorized("유효하지 않은 Refresh Token입니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
         TokenPair tokenPair = issueToken(user);
 
@@ -107,10 +107,5 @@ public class TokenService {
                         stored -> stored.update(token, expiresAt),
                         () -> refreshTokenRepository.save(RefreshToken.of(userId, token, expiresAt))
                 );
-    }
-
-    // TODO 공통 예외 처리 구조가 마련되면 BusinessException 등으로 교체한다.
-    private ResponseStatusException unauthorized(String message) {
-        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, message);
     }
 }

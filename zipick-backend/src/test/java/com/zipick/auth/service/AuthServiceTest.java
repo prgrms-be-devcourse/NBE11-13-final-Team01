@@ -12,6 +12,8 @@ import com.zipick.auth.dto.request.LoginRequest;
 import com.zipick.auth.dto.request.SignupRequest;
 import com.zipick.auth.dto.response.SignupResponse;
 import com.zipick.auth.userdetails.CustomUserDetails;
+import com.zipick.global.error.BusinessException;
+import com.zipick.global.error.ErrorCode;
 import com.zipick.user.entity.Role;
 import com.zipick.user.entity.User;
 import com.zipick.user.repository.UserRepository;
@@ -23,13 +25,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -108,9 +108,9 @@ class AuthServiceTest {
             given(userRepository.existsByEmail(EMAIL)).willReturn(true);
 
             assertThatThrownBy(() -> authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD)))
-                    .isInstanceOf(ResponseStatusException.class)
-                    .extracting(e -> ((ResponseStatusException) e).getStatusCode())
-                    .isEqualTo(HttpStatus.CONFLICT);
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.DUPLICATE_EMAIL);
 
             verify(userRepository, never()).save(any(User.class));
         }
@@ -142,9 +142,9 @@ class AuthServiceTest {
                     .given(authenticationManager).authenticate(any(Authentication.class));
 
             assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, "wrong-password")))
-                    .isInstanceOf(ResponseStatusException.class)
-                    .extracting(e -> ((ResponseStatusException) e).getStatusCode())
-                    .isEqualTo(HttpStatus.UNAUTHORIZED);
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_LOGIN);
 
             verify(tokenService, never()).issueToken(any(User.class));
         }
@@ -156,7 +156,7 @@ class AuthServiceTest {
                     .given(authenticationManager).authenticate(any(Authentication.class));
 
             assertThatThrownBy(() -> authService.login(new LoginRequest("none@example.com", RAW_PASSWORD)))
-                    .isInstanceOf(ResponseStatusException.class)
+                    .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("이메일 또는 비밀번호가 올바르지 않습니다.");
         }
     }
