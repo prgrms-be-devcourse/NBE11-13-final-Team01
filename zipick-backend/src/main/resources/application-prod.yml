@@ -10,3 +10,14 @@ spring:
       # 운영에서는 스키마를 자동 변경하지 않는다.
       ddl-auto: validate
     open-in-view: false
+
+# TODO 배포 전 반드시 설정한다. 비워두면 application.yml의 로컬 주소(http://localhost:5173)가 그대로 쓰인다.
+#cors:
+#  allowed-origins:
+#    - https://{배포된 프론트엔드 주소}
+
+cookie:
+  # 운영은 HTTPS 전제. 프론트와 백엔드 도메인이 다르면 same-site를 None으로 바꿔야 하며,
+  # None은 secure: true 가 반드시 함께 필요하다.
+  secure: true
+  same-site: Lax
