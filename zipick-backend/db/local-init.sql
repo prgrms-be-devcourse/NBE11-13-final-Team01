@@ -229,6 +229,18 @@ alter table user_profiles
 alter table users
    add constraint uk_users_email unique (email);
 
+-- 사전 입력정보는 사용자에 종속된다. 없는 사용자로 저장되는 것을 DB에서 막는다.
+-- 엔티티는 Long userId 를 그대로 쓴다 (ddl-auto: validate 는 FK 제약을 검증하지 않는다).
+alter table user_profiles
+   add constraint fk_user_profiles_user
+   foreign key (user_id)
+   references users (user_id);
+
+alter table user_preferences
+   add constraint fk_user_preferences_user
+   foreign key (user_id)
+   references users (user_id);
+
 alter table refresh_token
    add constraint uk_refresh_token_user_id unique (user_id);
 
