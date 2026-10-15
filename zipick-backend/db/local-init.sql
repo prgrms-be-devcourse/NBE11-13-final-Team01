@@ -23,6 +23,7 @@
 -- 1. DROP : 자식 테이블부터 삭제해 FK 제약 충돌을 피한다.
 -- -----------------------------------------------------------------------------
 
+DROP TABLE IF EXISTS refresh_token;
 DROP TABLE IF EXISTS recommendation_pair_choices;
 DROP TABLE IF EXISTS recommendation_feedbacks;
 DROP TABLE IF EXISTS recommendation_profiles;
@@ -177,12 +178,22 @@ create table user_profiles (
 
 create table users (
     created_at datetime(6),
-    id bigint not null auto_increment,
     updated_at datetime(6),
-    nickname varchar(30) not null,
-    kakao_id varchar(50) not null,
-    role enum ('ADMIN','USER') not null,
-    primary key (id)
+    user_id bigint not null auto_increment,
+    email varchar(255) not null,
+    password varchar(255) not null,
+    role varchar(30) not null,
+    primary key (user_id)
+) engine=InnoDB;
+
+create table refresh_token (
+    created_at datetime(6),
+    updated_at datetime(6),
+    expires_at datetime(6) not null,
+    refresh_token_id bigint not null auto_increment,
+    user_id bigint not null,
+    token varchar(512) not null,
+    primary key (refresh_token_id)
 ) engine=InnoDB;
 
 alter table announcements
@@ -216,7 +227,16 @@ alter table user_profiles
    add constraint UKe5h89rk3ijvdmaiig4srogdc6 unique (user_id);
 
 alter table users
-   add constraint UKk4ycaj27putgcujmehwbsrmmc unique (kakao_id);
+   add constraint uk_users_email unique (email);
+
+alter table refresh_token
+   add constraint uk_refresh_token_user_id unique (user_id);
+
+alter table refresh_token
+   add constraint fk_refresh_token_user
+   foreign key (user_id)
+   references users (user_id)
+   on delete cascade;
 
 alter table infra_summaries
    add constraint FK1swmbn5ufconr0ntq600qf7j1

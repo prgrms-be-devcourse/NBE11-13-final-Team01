@@ -7,6 +7,23 @@ spring:
 server:
   port: 8080
 
+jwt:
+  issuer: zipick
+  # Base64로 인코딩된 32바이트 이상 키를 환경 변수로 주입한다. 생성: openssl rand -base64 32
+  secret: ${JWT_SECRET}
+  access-token-expiration: 1h
+  refresh-token-expiration: 7d
+
+cors:
+  # 프론트엔드 개발 서버 주소. 배포 시 application-prod.yml에서 재정의한다.
+  allowed-origins:
+    - http://localhost:5173
+
+cookie:
+  # 기본값은 안전한 쪽으로 둔다. 로컬은 HTTP라 application-local.yml에서 false로 내린다.
+  secure: true
+  same-site: Lax
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html

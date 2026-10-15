@@ -1,0 +1,163 @@
+package com.zipick.auth.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+
+import com.zipick.auth.dto.request.LoginRequest;
+import com.zipick.auth.dto.request.SignupRequest;
+import com.zipick.auth.dto.response.SignupResponse;
+import com.zipick.auth.userdetails.CustomUserDetails;
+import com.zipick.global.error.BusinessException;
+import com.zipick.global.error.ErrorCode;
+import com.zipick.user.entity.Role;
+import com.zipick.user.entity.User;
+import com.zipick.user.repository.UserRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+@ExtendWith(MockitoExtension.class)
+class AuthServiceTest {
+
+    private static final String EMAIL = "test@example.com";
+    private static final String RAW_PASSWORD = "password1234";
+    private static final String ENCODED_PASSWORD = "encoded-password";
+    private static final User USER = User.of(1L, EMAIL, ENCODED_PASSWORD, Role.ROLE_USER);
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private AuthenticationManager authenticationManager;
+
+    @Mock
+    private TokenService tokenService;
+
+    @InjectMocks
+    private AuthService authService;
+
+    @Nested
+    @DisplayName("회원가입")
+    class Signup {
+
+        private void givenNewUser() {
+            given(userRepository.existsByEmail(EMAIL)).willReturn(false);
+            given(passwordEncoder.encode(RAW_PASSWORD)).willReturn(ENCODED_PASSWORD);
+            given(userRepository.save(any(User.class))).willReturn(USER);
+        }
+
+        private User savedUser() {
+            ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+            verify(userRepository).save(captor.capture());
+            return captor.getValue();
+        }
+
+        @Test
+        @DisplayName("성공하면 생성된 식별자와 이메일을 반환한다")
+        void signup() {
+            givenNewUser();
+
+            SignupResponse response = authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD));
+
+            assertThat(response.userId()).isEqualTo(1L);
+            assertThat(response.email()).isEqualTo(EMAIL);
+        }
+
+        @Test
+        @DisplayName("비밀번호는 암호화해서 저장한다")
+        void encodePassword() {
+            givenNewUser();
+
+            authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD));
+
+            assertThat(savedUser().getPassword()).isEqualTo(ENCODED_PASSWORD);
+            assertThat(savedUser().getPassword()).isNotEqualTo(RAW_PASSWORD);
+        }
+
+        @Test
+        @DisplayName("가입 시 일반 사용자 권한을 부여한다")
+        void defaultRole() {
+            givenNewUser();
+
+            authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD));
+
+            assertThat(savedUser().getRole()).isEqualTo(Role.ROLE_USER);
+        }
+
+        @Test
+        @DisplayName("이미 가입된 이메일이면 409로 거부하고 저장하지 않는다")
+        void duplicateEmail() {
+            given(userRepository.existsByEmail(EMAIL)).willReturn(true);
+
+            assertThatThrownBy(() -> authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD)))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.DUPLICATE_EMAIL);
+
+            verify(userRepository, never()).save(any(User.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("로그인")
+    class Login {
+
+        @Test
+        @DisplayName("성공하면 Access Token과 Refresh Token을 발급한다")
+        void login() {
+            Authentication authentication = new UsernamePasswordAuthenticationToken(
+                    new CustomUserDetails(USER), null);
+            given(authenticationManager.authenticate(any(Authentication.class))).willReturn(authentication);
+            given(tokenService.issueToken(USER))
+                    .willReturn(new TokenService.TokenPair("access-token", "refresh-token"));
+
+            TokenService.TokenPair tokenPair = authService.login(new LoginRequest(EMAIL, RAW_PASSWORD));
+
+            assertThat(tokenPair.accessToken()).isEqualTo("access-token");
+            assertThat(tokenPair.refreshToken()).isEqualTo("refresh-token");
+        }
+
+        @Test
+        @DisplayName("비밀번호가 틀리면 401로 거부하고 토큰을 발급하지 않는다")
+        void wrongPassword() {
+            willThrow(new BadCredentialsException("bad credentials"))
+                    .given(authenticationManager).authenticate(any(Authentication.class));
+
+            assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, "wrong-password")))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_LOGIN);
+
+            verify(tokenService, never()).issueToken(any(User.class));
+        }
+
+        @Test
+        @DisplayName("가입되지 않은 이메일도 같은 401 메시지로 응답한다")
+        void unknownEmail() {
+            willThrow(new BadCredentialsException("bad credentials"))
+                    .given(authenticationManager).authenticate(any(Authentication.class));
+
+            assertThatThrownBy(() -> authService.login(new LoginRequest("none@example.com", RAW_PASSWORD)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("이메일 또는 비밀번호가 올바르지 않습니다.");
+        }
+    }
+}
