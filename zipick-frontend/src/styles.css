@@ -42,8 +42,10 @@ h3 { font-size: 15px; margin: 0; }
 .nav { display: flex; gap: 16px; }
 .nav a { color: var(--muted); padding: 6px 2px; border-bottom: 2px solid transparent; white-space: nowrap; }
 .nav a.active { color: var(--ink); border-color: var(--accent); }
-.dev-user { margin-left: auto; color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
-.dev-user select { font-size: 12px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line); }
+.auth-box { margin-left: auto; color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.auth-box input { font-size: 12px; padding: 5px 8px; width: 140px; border-radius: 6px; border: 1px solid var(--line); }
+.auth-box__email { color: var(--ink); }
+.auth-box__error { color: var(--bad); }
 .main { flex: 1; padding: 20px 24px; max-width: 1280px; width: 100%; margin: 0 auto; }
 
 .layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }

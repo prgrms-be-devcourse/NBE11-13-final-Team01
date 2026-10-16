@@ -90,6 +90,19 @@ mysql -u {your_mysql_user} -p zipick < zipick-backend/db/notice-init.sql
 > 두 파일 모두 기존 테이블을 DROP 후 재생성하므로 **데이터가 모두 삭제된다. 로컬 전용이며 운영 DB 에는 적용하지 않는다.**
 > 엔티티가 추가·변경되면 해당 DDL 도 함께 갱신해 커밋한다.
 
+**(2026-10-16) `user_profiles` · `user_preferences` 에 `users` FK 가 추가되었다.** 위 순서대로 다시 실행하면
+그대로 반영된다. DB 를 새로 만들지 않고 기존 DB 에 제약만 추가하려면 아래 두 문장을 실행한다.
+
+```sql
+alter table user_profiles
+   add constraint fk_user_profiles_user foreign key (user_id) references users (user_id);
+alter table user_preferences
+   add constraint fk_user_preferences_user foreign key (user_id) references users (user_id);
+```
+
+`users` 에 없는 `user_id` 로 저장된 행이 남아 있으면 이 `ALTER` 가 실패한다. 그 경우 해당 행을 지우거나
+`local-init.sql` 로 다시 초기화한다. 엔티티는 `Long userId` 를 그대로 쓰므로 Java 코드 변경은 없다.
+
 ### 5. 실행
 
 ```bash
@@ -106,6 +119,12 @@ cd zipick-backend
 mysql -u {your_mysql_user} -p zipick < zipick-backend/db/local-seed.sql
 ```
 
+> **[주의] `local-seed.sql` 은 현재 스키마와 맞지 않아 실행되지 않는다.** 첫 `INSERT INTO users` 가
+> 소셜 로그인 시절 컬럼(`id`, `kakao_id`, `nickname`)을 쓰고 있어 `Unknown column 'id'` 로 중단되고,
+> mysql 은 첫 오류에서 멈추므로 **뒤따르는 공고·공급주택 데이터까지 전부 들어가지 않는다.**
+> 공급주택·공고 테이블 정리와 함께 seed 파일을 교체할 예정이라 지금은 수정하지 않았다.
+> 당장 데이터가 필요하면 `users` 부분만 `(email, password, role)` 로 바꿔 직접 넣는다.
+
 - Swagger UI: http://localhost:8080/swagger-ui.html
 
 ## 프론트엔드 로컬 실행
@@ -115,6 +134,16 @@ cd zipick-frontend
 npm install
 npm run dev     # http://localhost:5173 (/api 요청은 8080으로 프록시)
 ```
+
+로그인 화면은 아직 없고, 헤더 우측의 **임시 로그인 입력란**으로 인증한다. 회원가입 UI 도 없으므로
+계정은 API 로 먼저 만든다.
+
+```bash
+curl -X POST http://localhost:8080/api/auth/signup   -H "Content-Type: application/json"   -d '{"email":"test@example.com","password":"password1234"}'
+```
+
+Access Token 은 메모리에만 두고 localStorage 에 저장하지 않는다. 새로고침하면 HttpOnly 쿠키의
+Refresh Token 으로 자동 재발급해 로그인이 유지된다.
 
 ## 회원가입 · 로그인 및 인증 · 인가 (한채희)
 
@@ -156,17 +185,32 @@ Refresh Token  7일,    HttpOnly 쿠키로 전달, refresh_token 테이블에 �
 
 ## 추천 · 기본 필터링 (안서호)
 
-### 인증 연동 (2026-10-14 갱신)
+### 인증 연동 (2026-10-16 갱신)
 
-임시 인증(`X-User-Id` 헤더)은 **JWT 인증으로 교체되었다.** `CurrentUserArgumentResolver` 가 헤더 대신
-`SecurityContext` 에서 사용자를 읽으므로, `@CurrentUser Long userId` 를 쓰는 컨트롤러는 수정할 필요가 없다.
+임시 인증(`X-User-Id` 헤더)은 **백엔드·프론트 모두 JWT 인증으로 교체 완료**되었다.
+`CurrentUserArgumentResolver` 가 헤더 대신 `SecurityContext` 에서 사용자를 읽으므로,
+`@CurrentUser Long userId` 를 쓰는 컨트롤러는 수정할 필요가 없다.
 
 - 로그인 후 받은 Access Token 을 `Authorization: Bearer {accessToken}` 헤더로 보내면 된다.
 - 인증이 필요한 API 를 토큰 없이 호출하면 `401` 과 함께 `{"success":false,"error":{"code":"AUTH_REQUIRED",...}}` 가 내려온다.
 - 비로그인 조회 가능: `GET /api/v1/houses/**`, `GET /api/notices/**`
 
-**프론트는 아직 교체가 필요하다.** `api/client.ts` 의 `X-User-Id` 인터셉터를 Access Token 전송으로 바꾸고,
-Refresh Token 쿠키를 주고받도록 요청에 `credentials: 'include'`(axios 는 `withCredentials: true`)를 켜야 한다.
+**프론트에서 새 API 를 추가할 때 인증 관련으로 따로 할 일은 없다.** `api/client.ts` 의 공용 `api`
+인스턴스를 쓰면 토큰 주입과 만료 시 재발급이 자동으로 처리된다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `hooks/useAuth.ts` | Access Token(메모리) · 로그인 사용자 상태. `useAuth()` 로 구독 |
+| `api/client.ts` | 공용 axios. Bearer 주입 / `withCredentials` / 401 → 재발급 후 1회 재시도 |
+| `api/auth.ts` | `login` · `logout` · `bootstrapAuth`. 정식 로그인 화면을 만들 때 그대로 재사용 |
+
+- Access Token 은 **메모리에만** 둔다 (localStorage 저장 안 함). 새로고침 시 `main.tsx` 가
+  `bootstrapAuth()` 로 `POST /api/auth/reissue` 를 한 번 호출해 되살린다.
+- 여러 요청이 동시에 `401` 이어도 재발급은 **한 번만** 수행하고 나머지는 그 결과를 기다린다
+  (Refresh Token Rotation 이라 동시에 재발급하면 서로를 무효화한다).
+- `login` · `signup` · `reissue` 는 자동 재발급 대상에서 제외한다. `logout` 은 Access Token 이 필요한
+  보호 API 라 일반 요청과 동일하게 재발급 후 재시도한다.
+- 헤더의 사용자 1/2 선택 UI(`hooks/useCurrentUser.ts`)는 제거했다. 임시 로그인 입력란으로 대체된다.
 
 인증 API 는 아래 "회원가입·로그인 및 인증·인가 (한채희)" 항목 참고.
 

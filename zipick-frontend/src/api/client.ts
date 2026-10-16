@@ -1,48 +1,76 @@
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from '../types';
-import { getCurrentUserId } from '../hooks/useCurrentUser';
+import { clearSession, getAccessToken, setAccessToken } from '../hooks/useAuth';
+
+// 기존 import 경로(`from '../api/client'`)를 유지하려고 다시 내보낸다.
+export { ApiError, unwrap } from './http';
+
+const baseURL = import.meta.env.VITE_API_BASE_URL || '';
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '',
+  baseURL,
   timeout: 10_000,
+  // Refresh Token(HttpOnly 쿠키)을 주고받으려면 필요하다. 프록시를 쓰면 동일 출처라 없어도 되지만,
+  // VITE_API_BASE_URL을 채워 교차 출처가 되는 순간 쿠키가 빠지므로 항상 켜 둔다.
+  withCredentials: true,
 });
 
-// 임시 인증: 로그인(한채희 담당)이 붙기 전까지 X-User-Id 헤더로 사용자를 식별한다.
-// JWT가 완성되면 이 인터셉터만 Authorization 헤더로 바꾸면 된다.
+// 재발급 전용 인스턴스. 인터셉터를 달지 않아 reissue 응답이 다시 401 처리를 타지 않는다.
+const refreshHttp = axios.create({ baseURL, timeout: 10_000, withCredentials: true });
+
+// 자동 재발급에서 뺄 엔드포인트.
+// login/signup의 401은 토큰 만료가 아니라 자격 증명 오류이고, reissue는 재발급 그 자체다.
+// logout은 Access Token이 필요한 보호 API이므로 일반 요청과 똑같이 재발급 후 재시도한다.
+const NO_REFRESH = ['/api/auth/login', '/api/auth/signup', '/api/auth/reissue'];
+
 api.interceptors.request.use((config) => {
-  const userId = getCurrentUserId();
-  if (userId) config.headers['X-User-Id'] = String(userId);
+  const token = getAccessToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-export class ApiError extends Error {
-  code: string;
-  fields?: Record<string, string>;
-  status?: number;
-  constructor(code: string, message: string, status?: number, fields?: Record<string, string>) {
-    super(message);
-    this.code = code;
-    this.status = status;
-    this.fields = fields;
+// Refresh Token Rotation이라 동시에 여러 번 재발급하면 서로를 무효화한다.
+// 먼저 시작한 요청 하나만 보내고 나머지는 그 결과를 기다린다(single-flight).
+let inflight: Promise<string | null> | null = null;
+
+export function refreshOnce(): Promise<string | null> {
+  if (!inflight) {
+    inflight = refreshHttp
+      .post<ApiResponse<{ accessToken: string }>>('/api/auth/reissue')
+      .then((res) => {
+        const token = res.data?.data?.accessToken ?? null;
+        if (token) setAccessToken(token);
+        return token;
+      })
+      .catch(() => null)
+      .finally(() => {
+        inflight = null;
+      });
   }
+  return inflight;
 }
 
-/** 공통 응답 형식을 풀어 data만 돌려주고, 실패는 ApiError로 던진다. */
-export async function unwrap<T>(p: Promise<{ data: ApiResponse<T> }>): Promise<T> {
-  try {
-    const res = await p;
-    if (!res.data.success || res.data.error) {
-      const e = res.data.error;
-      throw new ApiError(e?.code ?? 'UNKNOWN', e?.message ?? '알 수 없는 오류', undefined, e?.fields);
-    }
-    return res.data.data;
-  } catch (err) {
-    if (err instanceof ApiError) throw err;
-    const ax = err as AxiosError<ApiResponse<unknown>>;
-    const body = ax.response?.data;
-    if (body?.error) {
-      throw new ApiError(body.error.code, body.error.message, ax.response?.status, body.error.fields);
-    }
-    throw new ApiError('NETWORK', '서버에 연결할 수 없습니다.', ax.response?.status);
+type RetriableConfig = InternalAxiosRequestConfig & { _retry?: boolean };
+
+api.interceptors.response.use(undefined, async (error: AxiosError) => {
+  const config = error.config as RetriableConfig | undefined;
+
+  const skip =
+    !config ||
+    error.response?.status !== 401 ||
+    config._retry ||
+    NO_REFRESH.some((path) => (config.url ?? '').startsWith(path));
+
+  if (skip) throw error;
+
+  config._retry = true; // 재시도는 요청당 최대 1회
+
+  const token = await refreshOnce();
+  if (!token) {
+    clearSession();
+    throw error;
   }
-}
+
+  // 재요청하면 요청 인터셉터가 새 토큰을 다시 붙인다.
+  return api(config);
+});

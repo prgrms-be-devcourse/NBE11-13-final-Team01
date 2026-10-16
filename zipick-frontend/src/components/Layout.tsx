@@ -1,11 +1,83 @@
+import { useState, type FormEvent } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCurrentUser } from '../hooks/useCurrentUser';
+import { login, logout } from '../api/auth';
+import { ApiError } from '../api/client';
+import { useAuth } from '../hooks/useAuth';
+
+// 임시 로그인 UI. 인증 흐름 확인용이며 정식 로그인 화면이 생기면 이 컴포넌트만 걷어내면 된다.
+// 인증 호출과 상태는 api/auth, hooks/useAuth에 있어 그대로 재사용할 수 있다.
+function AuthBox() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // 사용자가 바뀌면 이전 사용자의 추천·조건 캐시를 버린다.
+  const resetCache = () => qc.clear();
+
+  if (user) {
+    return (
+      <div className="auth-box">
+        <span className="auth-box__email">{user.email}</span>
+        <button
+          type="button"
+          className="btn btn--small btn--ghost"
+          onClick={async () => {
+            await logout();
+            resetCache();
+          }}
+        >
+          로그아웃
+        </button>
+      </div>
+    );
+  }
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await login(email, password);
+      setPassword('');
+      resetCache();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '로그인에 실패했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="auth-box" onSubmit={submit}>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="이메일"
+        autoComplete="username"
+        required
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="비밀번호"
+        autoComplete="current-password"
+        required
+      />
+      <button type="submit" className="btn btn--small" disabled={busy}>
+        로그인
+      </button>
+      {error && <span className="auth-box__error">{error}</span>}
+    </form>
+  );
+}
 
 export default function Layout() {
-  const { userId, setUserId } = useCurrentUser();
-  const qc = useQueryClient();
-
   return (
     <div className="app">
       <header className="header">
@@ -19,19 +91,7 @@ export default function Layout() {
           <NavLink to="/tune">취향 찾기</NavLink>
           <NavLink to="/onboarding">내 조건</NavLink>
         </nav>
-        <label className="dev-user" title="로그인 연동 전 임시 사용자 전환">
-          사용자
-          <select
-            value={userId}
-            onChange={(e) => {
-              setUserId(Number(e.target.value));
-              qc.clear();
-            }}
-          >
-            <option value={1}>1 · 지우 (27세 1인)</option>
-            <option value={2}>2 · 현우 (31세 기혼)</option>
-          </select>
-        </label>
+        <AuthBox />
       </header>
       <main className="main">
         <Outlet />
