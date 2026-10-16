@@ -139,6 +139,15 @@ cd zipick-backend
 
 ## 프론트엔드 로컬 실행
 
+`zipick-frontend/.env.example`을 `zipick-frontend/.env.local`로 복사하고
+카카오 Developers에서 발급받은 JavaScript 키를 설정한다.
+
+```env
+VITE_KAKAO_MAP_KEY={your_kakao_javascript_key}
+```
+
+실제 키가 들어가는 `.env.local`은 Git에 커밋하지 않는다.
+
 ```bash
 cd zipick-frontend
 npm install
