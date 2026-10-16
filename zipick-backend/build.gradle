@@ -34,6 +34,8 @@ dependencies {
     // 주소가 없는 LH 공고의 공급주택 목록(XLS/XLSX, 텍스트 PDF)을 읽는다.
     implementation 'org.apache.poi:poi-ooxml:5.5.1'
     implementation 'org.apache.pdfbox:pdfbox:3.0.8'
+    // HWP v5 첨부문서에서 텍스트를 추출한다.
+    implementation 'org.apache.tika:tika-parsers-standard-package:4.1.0'
 
     // JWT 생성·검증. api만 컴파일 시점에 노출하고 구현체는 런타임에만 둔다.
     implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
@@ -48,7 +50,7 @@ dependencies {
     // API 문서 (Swagger UI: /swagger-ui.html). Boot 4는 springdoc 3.x
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
 
-    runtimeOnly 'com.mysql:mysql-connector-j'
+    runtimeOnly 'org.postgresql:postgresql'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

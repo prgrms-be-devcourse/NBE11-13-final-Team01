@@ -27,17 +27,20 @@ public class MyHomeSyncService {
     private final MyHomeNoticeAggregator aggregator;
     private final HousingDetailEnricher detailEnricher;
     private final NoticeSyncPersistenceService persistenceService;
+    private final HousingGeocodingService geocodingService;
 
     public MyHomeSyncService(
             MyHomeNoticeCollector collector,
             MyHomeNoticeAggregator aggregator,
             HousingDetailEnricher detailEnricher,
-            NoticeSyncPersistenceService persistenceService
+            NoticeSyncPersistenceService persistenceService,
+            HousingGeocodingService geocodingService
     ) {
         this.collector = collector;
         this.aggregator = aggregator;
         this.detailEnricher = detailEnricher;
         this.persistenceService = persistenceService;
+        this.geocodingService = geocodingService;
     }
 
     public NoticeSyncResponse synchronize() {
@@ -50,6 +53,7 @@ public class MyHomeSyncService {
             List<MyHomeNotice> rows = collector.collectAll(allNoticesQuery());
             List<NoticeSyncCommand> commands = createCommands(rows);
             NoticeSyncResult result = persistenceService.synchronize(commands, startedAt);
+            geocodingService.enrichMissingCoordinates();
             return NoticeSyncResponse.from(rows.size(), result, startedAt, Instant.now());
         } finally {
             syncLock.unlock();

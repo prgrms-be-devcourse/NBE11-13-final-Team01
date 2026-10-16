@@ -13,9 +13,11 @@ public record NoticeHousingResponse(
         String pnu,
         String heatingMethodName,
         String totalHouseholdCount,
-        List<NoticeSupplyResponse> supplies
+        List<NoticeSupplyResponse> supplies,
+        List<HousingMediaResponse> media
 ) {
     public NoticeHousingResponse {
         supplies = supplies == null ? List.of() : List.copyOf(supplies);
+        media = media == null ? List.of() : List.copyOf(media);
     }
 }

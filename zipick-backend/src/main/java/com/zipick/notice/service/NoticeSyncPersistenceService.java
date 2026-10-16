@@ -3,15 +3,20 @@ package com.zipick.notice.service;
 import com.zipick.notice.domain.Agency;
 import com.zipick.notice.domain.Housing;
 import com.zipick.notice.domain.HousingSupply;
+import com.zipick.notice.domain.HousingMedia;
 import com.zipick.notice.domain.Notice;
+import com.zipick.notice.domain.NoticeAttachment;
 import com.zipick.notice.domain.NoticeStatus;
 import com.zipick.notice.dto.NoticeHousingResponse;
+import com.zipick.notice.dto.NoticeAttachmentResponse;
 import com.zipick.notice.dto.NoticeResponse;
 import com.zipick.notice.dto.NoticeSupplyResponse;
 import com.zipick.notice.repository.AgencyRepository;
 import com.zipick.notice.repository.HousingRepository;
 import com.zipick.notice.repository.HousingSupplyRepository;
+import com.zipick.notice.repository.HousingMediaRepository;
 import com.zipick.notice.repository.NoticeRepository;
+import com.zipick.notice.repository.NoticeAttachmentRepository;
 import com.zipick.notice.support.AddressNormalizer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,23 +54,29 @@ public class NoticeSyncPersistenceService {
 
     private final AgencyRepository agencyRepository;
     private final NoticeRepository noticeRepository;
+    private final NoticeAttachmentRepository noticeAttachmentRepository;
     private final HousingRepository housingRepository;
     private final HousingSupplyRepository housingSupplyRepository;
+    private final HousingMediaRepository housingMediaRepository;
     private final NoticeStatusEvaluator statusEvaluator;
     private final NoticeTypeClassifier noticeTypeClassifier;
 
     public NoticeSyncPersistenceService(
             AgencyRepository agencyRepository,
             NoticeRepository noticeRepository,
+            NoticeAttachmentRepository noticeAttachmentRepository,
             HousingRepository housingRepository,
             HousingSupplyRepository housingSupplyRepository,
+            HousingMediaRepository housingMediaRepository,
             NoticeStatusEvaluator statusEvaluator,
             NoticeTypeClassifier noticeTypeClassifier
     ) {
         this.agencyRepository = agencyRepository;
         this.noticeRepository = noticeRepository;
+        this.noticeAttachmentRepository = noticeAttachmentRepository;
         this.housingRepository = housingRepository;
         this.housingSupplyRepository = housingSupplyRepository;
+        this.housingMediaRepository = housingMediaRepository;
         this.statusEvaluator = statusEvaluator;
         this.noticeTypeClassifier = noticeTypeClassifier;
     }
@@ -125,11 +136,32 @@ public class NoticeSyncPersistenceService {
                     collectedAt
             );
             Notice savedNotice = noticeRepository.save(notice);
+            synchronizeAttachments(savedNotice, sourceNotice.attachments());
             synchronizeHousings(savedNotice, sourceNotice.houses(), collectedAt, collectionDate, counters);
         }
 
         markMissingNotices(existingNotices, seenNoticeIds, collectionDate, counters);
         return counters.toResult();
+    }
+
+    private void synchronizeAttachments(
+            Notice notice,
+            List<NoticeAttachmentResponse> sourceAttachments
+    ) {
+        for (NoticeAttachmentResponse source : sourceAttachments) {
+            if (!StringUtils.hasText(source.sourceKey()) || !StringUtils.hasText(source.sourceUrl())) {
+                continue;
+            }
+            NoticeAttachment attachment = noticeAttachmentRepository
+                    .findByNoticeIdAndSourceKey(notice.getId(), source.sourceKey())
+                    .orElseGet(() -> new NoticeAttachment(
+                            notice, source.sourceKey(), source.attachmentType(), source.sourceUrl()
+                    ));
+            attachment.synchronize(
+                    source.attachmentType(), source.fileName(), source.sourceUrl(), source.rawPayload()
+            );
+            noticeAttachmentRepository.save(attachment);
+        }
     }
 
     private void synchronizeHousings(
@@ -176,6 +208,7 @@ public class NoticeSyncPersistenceService {
             Housing savedHousing = housingRepository.save(housing);
             counters.synchronizedHousings++;
             synchronizeSupplies(savedHousing, sourceHousing.supplies(), collectedAt, collectionDate, counters);
+            synchronizeMedia(savedHousing, sourceHousing.media());
         }
 
         for (Housing housing : existingHousings.values()) {
@@ -185,6 +218,21 @@ public class NoticeSyncPersistenceService {
                 }
                 markAllSuppliesMissing(housing, collectionDate, counters);
             }
+        }
+    }
+
+    private void synchronizeMedia(Housing housing, List<com.zipick.notice.dto.HousingMediaResponse> sourceMedia) {
+        for (com.zipick.notice.dto.HousingMediaResponse source : sourceMedia) {
+            if (!StringUtils.hasText(source.sourceKey()) || !StringUtils.hasText(source.sourceUrl())) {
+                continue;
+            }
+            HousingMedia media = housingMediaRepository.findByHousingIdAndSourceKey(
+                            housing.getId(), source.sourceKey())
+                    .orElseGet(() -> new HousingMedia(
+                            housing, source.sourceKey(), source.mediaType(), source.sourceUrl()
+                    ));
+            media.synchronize(source.mediaType(), source.fileName(), source.sourceUrl(), source.rawPayload());
+            housingMediaRepository.save(media);
         }
     }
 

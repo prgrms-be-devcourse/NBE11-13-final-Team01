@@ -98,7 +98,7 @@ public class HousingSupply extends BaseTimeEntity {
     private LocalDate lastMissingCheckedOn;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "raw_payload", columnDefinition = "json")
+    @Column(name = "raw_payload", columnDefinition = "jsonb")
     private String rawPayload;
 
     protected HousingSupply() {
@@ -205,6 +205,14 @@ public class HousingSupply extends BaseTimeEntity {
 
     public Long getMonthlyRent() {
         return monthlyRent;
+    }
+
+    public Integer getSupplyCount() {
+        return supplyCount;
+    }
+
+    public Integer getSupplyHouseCount() {
+        return supplyHouseCount;
     }
 
     public String getBuildingDong() {
