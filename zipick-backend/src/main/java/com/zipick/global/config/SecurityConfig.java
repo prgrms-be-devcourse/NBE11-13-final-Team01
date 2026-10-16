@@ -64,6 +64,7 @@ public class SecurityConfig {
                         ).permitAll()
                         // 비로그인도 조회 가능한 엔드포인트. 담당자 구현에 맞춰 조정한다.
                         .requestMatchers(HttpMethod.GET, "/api/v1/houses", "/api/v1/houses/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/map/housings", "/api/v1/map/housings/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/notices", "/api/notices/**").permitAll()
                         // TODO 내부·외부 연동 API. 운영에서는 별도 보호가 필요하다.
                         .requestMatchers("/api/internal/**", "/api/external/**").permitAll()

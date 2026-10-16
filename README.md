@@ -3,7 +3,7 @@
 공공임대 공급주택을 지도에서 탐색하고, 사용자 자격정보와 희망 주거조건을 바탕으로 추천 점수와 근거를 제공하는 서비스.
 
 ```
-zipick-backend/    Java 25 / Spring Boot 4.1.1 / Spring Security / JPA / MySQL
+zipick-backend/    Java 25 / Spring Boot 4.1.1 / Spring Security / JPA / PostgreSQL
 zipick-frontend/   React / TypeScript / Vite
 ```
 
@@ -12,28 +12,29 @@ zipick-frontend/   React / TypeScript / Vite
 ### 1. 사전 준비
 
 - JDK 25 (Gradle toolchain 이 사용한다)
-- 로컬 MySQL
+- 로컬 PostgreSQL
 
 Gradle 은 wrapper(9.3)를 사용하므로 별도 설치가 필요 없다.
 
 ### 2. 스키마 생성
 
 ```sql
-CREATE DATABASE IF NOT EXISTS zipick
-  DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE zipick;
 ```
 
-### 3. 환경 변수 설정
+### 3. 환경 변수 및 외부 API 키 설정
+
+#### 3-1. 환경 변수
 
 아래 표를 참고해 환경 변수를 설정한다. **실제 값은 Git 에 커밋하지 않는다.**
 
 | 이름 | 용도 | 필수     | 기본값         |
 | --- | --- |--------|-------------|
-| `DB_HOST` | MySQL 호스트 | 선택     | `localhost` |
-| `DB_PORT` | MySQL 포트 | 선택     | `3306`      |
-| `DB_NAME` | 스키마 이름 | 선택     | `zipick`    |
-| `DB_USERNAME` | MySQL 계정 | 선택     | `root`       |
-| `DB_PASSWORD` | MySQL 비밀번호 | **필수** | 없음          |
+| `DB_HOST` | PostgreSQL 호스트 | 선택     | `localhost` |
+| `DB_PORT` | PostgreSQL 포트 | 선택     | `5432`      |
+| `DB_NAME` | 데이터베이스 이름 | 선택     | `zipick`    |
+| `DB_USERNAME` | PostgreSQL 계정 | **필수** | 없음          |
+| `DB_PASSWORD` | PostgreSQL 비밀번호 | **필수** | 없음          |
 | `JWT_SECRET` | JWT(HS256) 서명 키 | **필수** | 없음          |
 
 `JWT_SECRET` 은 **Base64 로 인코딩된 문자열**이어야 하며, 디코딩한 결과가 **32바이트(256비트) 이상**이어야 한다.
@@ -51,24 +52,56 @@ openssl rand -base64 32 | tr -d '\n'
 **IntelliJ** — Run/Debug Configurations > Environment variables
 
 ```text
-DB_USERNAME={your_mysql_user};DB_PASSWORD={your_mysql_password};JWT_SECRET={your_jwt_secret}
+DB_USERNAME={your_postgresql_user};DB_PASSWORD={your_postgresql_password};JWT_SECRET={your_jwt_secret}
 ```
 
 **Windows PowerShell**
 
 ```powershell
-$env:DB_USERNAME = "{your_mysql_user}"
-$env:DB_PASSWORD = "{your_mysql_password}"
+$env:DB_USERNAME = "{your_postgresql_user}"
+$env:DB_PASSWORD = "{your_postgresql_password}"
 $env:JWT_SECRET = "{your_jwt_secret}"
 ```
 
 **macOS / Linux**
 
 ```bash
-export DB_USERNAME="{your_mysql_user}"
-export DB_PASSWORD="{your_mysql_password}"
+export DB_USERNAME="{your_postgresql_user}"
+export DB_PASSWORD="{your_postgresql_password}"
 export JWT_SECRET="{your_jwt_secret}"
 ```
+
+#### 3-2. 외부 API 키
+
+**백엔드 — 마이홈·Kakao Local API**
+
+`zipick-backend/config/application-secret.example.yml`을
+`zipick-backend/config/application-secret.yml`로 복사하고 본인의 키를 입력한다.
+실제 키가 들어가는 `application-secret.yml`은 Git에 커밋하지 않는다.
+
+```yaml
+myhome:
+  api:
+    service-key: "{your_data_go_kr_decoding_key}"
+
+kakao:
+  local:
+    rest-api-key: "{your_kakao_rest_api_key}"
+```
+
+- `myhome.api.service-key`: LH 공공임대 공고·주택 수집
+- `kakao.local.rest-api-key`: 수집된 주소의 표준 주소·좌표 보완
+
+**프론트엔드 — Kakao Maps JavaScript SDK**
+
+`zipick-frontend/.env.example`을 `zipick-frontend/.env.local`로 복사하고
+카카오 Developers에서 발급받은 JavaScript 키를 설정한다.
+
+```env
+VITE_KAKAO_MAP_KEY={your_kakao_javascript_key}
+```
+
+실제 키가 들어가는 `.env.local`은 Git에 커밋하지 않는다.
 
 ### 4. 스키마 초기화
 
@@ -76,8 +109,8 @@ export JWT_SECRET="{your_jwt_secret}"
 아래 **두 파일을 순서대로** 실행한다. 둘 다 실행해야 전체 엔티티 스키마가 갖춰진다.
 
 ```bash
-mysql -u {your_mysql_user} -p zipick < zipick-backend/db/local-init.sql
-mysql -u {your_mysql_user} -p zipick < zipick-backend/db/notice-init.sql
+psql -U {your_postgresql_user} -d zipick -f zipick-backend/db/local-init.sql
+psql -U {your_postgresql_user} -d zipick -f zipick-backend/db/notice-init.sql
 ```
 
 | 파일 | 테이블 |
@@ -111,19 +144,9 @@ cd zipick-backend
 ./gradlew bootRun        # 실행
 ```
 
-### 6. 예시 데이터 (선택)
+### 6. 예시 데이터
 
-추천·필터를 바로 확인하려면 스키마 초기화 뒤 예시 데이터를 넣는다. 공고·주소는 모두 가짜다.
-
-```bash
-mysql -u {your_mysql_user} -p zipick < zipick-backend/db/local-seed.sql
-```
-
-> **[주의] `local-seed.sql` 은 현재 스키마와 맞지 않아 실행되지 않는다.** 첫 `INSERT INTO users` 가
-> 소셜 로그인 시절 컬럼(`id`, `kakao_id`, `nickname`)을 쓰고 있어 `Unknown column 'id'` 로 중단되고,
-> mysql 은 첫 오류에서 멈추므로 **뒤따르는 공고·공급주택 데이터까지 전부 들어가지 않는다.**
-> 공급주택·공고 테이블 정리와 함께 seed 파일을 교체할 예정이라 지금은 수정하지 않았다.
-> 당장 데이터가 필요하면 `users` 부분만 `(email, password, role)` 로 바꿔 직접 넣는다.
+현재 스키마와 일치하는 공용 예시 데이터 파일은 제공하지 않는다.
 
 - Swagger UI: http://localhost:8080/swagger-ui.html
 

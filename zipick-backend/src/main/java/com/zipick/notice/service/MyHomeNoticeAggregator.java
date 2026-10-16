@@ -51,7 +51,8 @@ public class MyHomeNoticeAggregator {
                 firstText(rows, MyHomeNotice::url),
                 firstText(rows, MyHomeNotice::pcUrl),
                 firstText(rows, MyHomeNotice::mobileUrl),
-                aggregateHouses(rows)
+                aggregateHouses(rows),
+                List.of()
         );
     }
 
@@ -118,7 +119,8 @@ public class MyHomeNoticeAggregator {
                 firstText(rows, MyHomeNotice::pnu),
                 firstText(rows, MyHomeNotice::heatMthdNm),
                 firstText(rows, MyHomeNotice::totHshldCo),
-                aggregateSupplies(rows)
+                aggregateSupplies(rows),
+                List.of()
         );
     }
 

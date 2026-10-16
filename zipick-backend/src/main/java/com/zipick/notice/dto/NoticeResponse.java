@@ -17,9 +17,11 @@ public record NoticeResponse(
         String url,
         String pcUrl,
         String mobileUrl,
-        List<NoticeHousingResponse> houses
+        List<NoticeHousingResponse> houses,
+        List<NoticeAttachmentResponse> attachments
 ) {
     public NoticeResponse {
         houses = houses == null ? List.of() : List.copyOf(houses);
+        attachments = attachments == null ? List.of() : List.copyOf(attachments);
     }
 }

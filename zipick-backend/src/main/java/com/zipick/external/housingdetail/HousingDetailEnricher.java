@@ -1,8 +1,10 @@
 package com.zipick.external.housingdetail;
 
 import com.zipick.notice.dto.NoticeHousingResponse;
+import com.zipick.notice.dto.NoticeAttachmentResponse;
 import com.zipick.notice.dto.NoticeResponse;
 import com.zipick.notice.dto.NoticeSupplyResponse;
+import com.zipick.notice.dto.HousingMediaResponse;
 import com.zipick.notice.support.AddressNormalizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,44 +33,43 @@ public class HousingDetailEnricher {
     }
 
     public NoticeResponse enrich(NoticeResponse notice) {
-        boolean needsEnrichment = notice.houses().stream()
-                .anyMatch(housing -> !StringUtils.hasText(housing.fullAddress())
-                        || !StringUtils.hasText(housing.complexName())
-                        || !StringUtils.hasText(housing.roadName()));
-        if (!needsEnrichment) {
-            return notice;
-        }
-
         List<NoticeHousingResponse> addressed = notice.houses().stream()
                 .filter(housing -> StringUtils.hasText(housing.fullAddress()))
                 .toList();
-        List<DetailedHousingUnit> units = extract(notice);
-        List<NoticeHousingResponse> enriched = mergeByAddress(addressed, toHousings(units));
-        return copyWithHousings(notice, enriched);
+        HousingDetailResult detail = extract(notice);
+        List<NoticeHousingResponse> enriched = mergeByAddress(
+                addressed,
+                toHousings(detail.housings(), detail.mediaByUnitKey())
+        );
+        return copyWithDetails(notice, enriched, detail.attachments());
     }
 
-    private List<DetailedHousingUnit> extract(NoticeResponse notice) {
+    private HousingDetailResult extract(NoticeResponse notice) {
         for (HousingDetailSource source : sources) {
             if (!source.supports(notice)) {
                 continue;
             }
             try {
-                List<DetailedHousingUnit> units = source.extract(notice);
-                if (!units.isEmpty()) {
-                    log.info("상세 주택 보완 성공: noticeId={}, units={}", notice.noticeId(), units.size());
-                    return units;
+                HousingDetailResult result = source.extract(notice);
+                if (!result.housings().isEmpty() || !result.attachments().isEmpty()) {
+                    log.info("상세 주택 보완 성공: noticeId={}, units={}, attachments={}",
+                            notice.noticeId(), result.housings().size(), result.attachments().size());
+                    return result;
                 }
             } catch (RuntimeException exception) {
                 log.warn("상세 주택 보완 실패: noticeId={}, source={}, reason={}",
                         notice.noticeId(), source.getClass().getSimpleName(), exception.getMessage());
             }
         }
-        log.warn("주소 없는 공고를 주택 테이블에서 제외합니다: noticeId={}, url={}",
+        log.info("상세 주택 보완 자료가 없습니다: noticeId={}, url={}",
                 notice.noticeId(), notice.url());
-        return List.of();
+        return HousingDetailResult.empty();
     }
 
-    private List<NoticeHousingResponse> toHousings(List<DetailedHousingUnit> units) {
+    private List<NoticeHousingResponse> toHousings(
+            List<DetailedHousingUnit> units,
+            Map<String, List<DetailedHousingMedia>> mediaByUnitKey
+    ) {
         Map<String, List<DetailedHousingUnit>> byAddress = new LinkedHashMap<>();
         for (DetailedHousingUnit unit : units) {
             if (!StringUtils.hasText(unit.address())) {
@@ -84,6 +85,14 @@ public class HousingDetailEnricher {
             List<NoticeSupplyResponse> supplies = addressUnits.stream()
                     .map(this::toSupply)
                     .toList();
+            Map<String, HousingMediaResponse> media = new LinkedHashMap<>();
+            for (DetailedHousingUnit unit : addressUnits) {
+                for (DetailedHousingMedia item : mediaByUnitKey.getOrDefault(unit.sourceUnitKey(), List.of())) {
+                    media.putIfAbsent(item.sourceKey(), new HousingMediaResponse(
+                            item.sourceKey(), item.mediaType(), item.fileName(), item.sourceUrl(), item.rawPayload()
+                    ));
+                }
+            }
             result.add(new NoticeHousingResponse(
                     "DETAIL:ADDRESS:" + shortHash(entry.getKey()),
                     first.complexName(),
@@ -95,7 +104,8 @@ public class HousingDetailEnricher {
                     null,
                     null,
                     null,
-                    supplies
+                    supplies,
+                    List.copyOf(media.values())
             ));
         }
         return List.copyOf(result);
@@ -150,7 +160,8 @@ public class HousingDetailEnricher {
                     firstText(previous.pnu(), housing.pnu()),
                     firstText(previous.heatingMethodName(), housing.heatingMethodName()),
                     firstText(previous.totalHouseholdCount(), housing.totalHouseholdCount()),
-                    housing.supplies()
+                    housing.supplies(),
+                    mergeMedia(previous.media(), housing.media())
             ));
         }
         return List.copyOf(merged.values());
@@ -168,11 +179,26 @@ public class HousingDetailEnricher {
                 housing.pnu(),
                 housing.heatingMethodName(),
                 housing.totalHouseholdCount(),
-                housing.supplies()
+                housing.supplies(),
+                housing.media()
         );
     }
 
-    private NoticeResponse copyWithHousings(NoticeResponse notice, List<NoticeHousingResponse> houses) {
+    private List<HousingMediaResponse> mergeMedia(
+            List<HousingMediaResponse> primary,
+            List<HousingMediaResponse> supplement
+    ) {
+        Map<String, HousingMediaResponse> merged = new LinkedHashMap<>();
+        primary.forEach(item -> merged.put(item.sourceKey(), item));
+        supplement.forEach(item -> merged.putIfAbsent(item.sourceKey(), item));
+        return List.copyOf(merged.values());
+    }
+
+    private NoticeResponse copyWithDetails(
+            NoticeResponse notice,
+            List<NoticeHousingResponse> houses,
+            List<NoticeAttachmentResponse> attachments
+    ) {
         return new NoticeResponse(
                 notice.source(),
                 notice.noticeId(),
@@ -188,7 +214,8 @@ public class HousingDetailEnricher {
                 notice.url(),
                 notice.pcUrl(),
                 notice.mobileUrl(),
-                houses
+                houses,
+                attachments
         );
     }
 

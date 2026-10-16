@@ -95,7 +95,7 @@ public class Housing extends BaseTimeEntity {
     private LocalDate lastMissingCheckedOn;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "raw_payload", columnDefinition = "json")
+    @Column(name = "raw_payload", columnDefinition = "jsonb")
     private String rawPayload;
 
     protected Housing() {
@@ -116,6 +116,33 @@ public class Housing extends BaseTimeEntity {
     public void updateCoordinates(BigDecimal latitude, BigDecimal longitude) {
         this.latitude = latitude;
         this.longitude = longitude;
+    }
+
+    public void enrichAddress(
+            String normalizedAddress,
+            String provinceName,
+            String districtName,
+            String legalDongName,
+            String roadName,
+            String buildingName,
+            BigDecimal latitude,
+            BigDecimal longitude
+    ) {
+        // address는 수집 원문이므로 변경하지 않는다. normalizedAddress만 카카오 표준 주소로 갱신한다.
+        this.normalizedAddress = keepExistingWhenBlank(normalizedAddress, this.normalizedAddress);
+        this.provinceName = fillWhenBlank(this.provinceName, provinceName);
+        this.districtName = fillWhenBlank(this.districtName, districtName);
+        this.legalDongName = fillWhenBlank(this.legalDongName, legalDongName);
+        this.roadName = fillWhenBlank(this.roadName, roadName);
+        this.name = fillWhenBlank(this.name, buildingName);
+        if (this.latitude == null || this.longitude == null) {
+            this.latitude = latitude;
+            this.longitude = longitude;
+        }
+    }
+
+    public boolean hasCoordinates() {
+        return latitude != null && longitude != null;
     }
 
     public void synchronize(
@@ -171,6 +198,12 @@ public class Housing extends BaseTimeEntity {
         return newValue == null || newValue.isBlank() ? existingValue : newValue.trim();
     }
 
+    private String fillWhenBlank(String existingValue, String fallbackValue) {
+        return existingValue == null || existingValue.isBlank()
+                ? keepExistingWhenBlank(fallbackValue, existingValue)
+                : existingValue;
+    }
+
     public Long getId() {
         return id;
     }
@@ -191,8 +224,28 @@ public class Housing extends BaseTimeEntity {
         return name;
     }
 
+    public String getProvinceName() {
+        return provinceName;
+    }
+
+    public String getDistrictName() {
+        return districtName;
+    }
+
     public String getAddress() {
         return address;
+    }
+
+    public String getNormalizedAddress() {
+        return normalizedAddress;
+    }
+
+    public String getRoadName() {
+        return roadName;
+    }
+
+    public String getLegalDongName() {
+        return legalDongName;
     }
 
     public BigDecimal getLatitude() {
@@ -201,6 +254,22 @@ public class Housing extends BaseTimeEntity {
 
     public BigDecimal getLongitude() {
         return longitude;
+    }
+
+    public String getHeatingMethod() {
+        return heatingMethod;
+    }
+
+    public Integer getTotalHouseholdCount() {
+        return totalHouseholdCount;
+    }
+
+    public Integer getBuildYear() {
+        return buildYear;
+    }
+
+    public Integer getFloor() {
+        return floor;
     }
 
     public boolean isActive() {

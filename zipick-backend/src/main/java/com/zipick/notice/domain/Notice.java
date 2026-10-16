@@ -104,7 +104,7 @@ public class Notice extends BaseTimeEntity {
     private String reference;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "raw_payload", columnDefinition = "json")
+    @Column(name = "raw_payload", columnDefinition = "jsonb")
     private String rawPayload;
 
     @Column(name = "collected_at", nullable = false)
@@ -218,6 +218,14 @@ public class Notice extends BaseTimeEntity {
 
     public String getTitle() {
         return title;
+    }
+
+    public String getNoticeType() {
+        return noticeType;
+    }
+
+    public String getRentalType() {
+        return rentalType;
     }
 
     public NoticeStatus getStatus() {
