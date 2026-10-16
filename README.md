@@ -73,6 +73,8 @@ export JWT_SECRET="{your_jwt_secret}"
 
 #### 3-2. 외부 API 키
 
+**백엔드 — 마이홈·Kakao Local API**
+
 `zipick-backend/config/application-secret.example.yml`을
 `zipick-backend/config/application-secret.yml`로 복사하고 본인의 키를 입력한다.
 실제 키가 들어가는 `application-secret.yml`은 Git에 커밋하지 않는다.
@@ -89,6 +91,17 @@ kakao:
 
 - `myhome.api.service-key`: LH 공공임대 공고·주택 수집
 - `kakao.local.rest-api-key`: 수집된 주소의 표준 주소·좌표 보완
+
+**프론트엔드 — Kakao Maps JavaScript SDK**
+
+`zipick-frontend/.env.example`을 `zipick-frontend/.env.local`로 복사하고
+카카오 Developers에서 발급받은 JavaScript 키를 설정한다.
+
+```env
+VITE_KAKAO_MAP_KEY={your_kakao_javascript_key}
+```
+
+실제 키가 들어가는 `.env.local`은 Git에 커밋하지 않는다.
 
 ### 4. 스키마 초기화
 
@@ -138,15 +151,6 @@ cd zipick-backend
 - Swagger UI: http://localhost:8080/swagger-ui.html
 
 ## 프론트엔드 로컬 실행
-
-`zipick-frontend/.env.example`을 `zipick-frontend/.env.local`로 복사하고
-카카오 Developers에서 발급받은 JavaScript 키를 설정한다.
-
-```env
-VITE_KAKAO_MAP_KEY={your_kakao_javascript_key}
-```
-
-실제 키가 들어가는 `.env.local`은 Git에 커밋하지 않는다.
 
 ```bash
 cd zipick-frontend
