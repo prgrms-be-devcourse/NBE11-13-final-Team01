@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getMapHousingDetail, getOpenMapHousings } from '../api/mapHousing';
 import type { MapHousingSupply } from '../api/mapHousing';
-import { MapPanel, RoadviewPanel, toMapPins } from '../features/map';
+import { HousingInfraSection, MapPanel, RoadviewPanel, toMapPins } from '../features/map';
 
 function valueOrDash(value?: string | number | null) {
   return value == null || value === '' ? '정보 없음' : String(value);
@@ -103,6 +103,8 @@ export default function MapPage() {
                   <div><dt>난방방식</dt><dd>{valueOrDash(detail.heatingMethod)}</dd></div>
                   <div><dt>총 세대수</dt><dd>{detail.totalHouseholdCount == null ? '정보 없음' : `${detail.totalHouseholdCount}세대`}</dd></div>
                 </dl>
+
+                <HousingInfraSection housingId={detail.housingId} />
 
                 <h3>공급 조건</h3>
                 {detail.supplies.length === 0

@@ -31,6 +31,31 @@ springdoc:
     path: /v3/api-docs
 
 zipick:
+  # 공급주택 주변 생활 인프라 (카카오 로컬 카테고리 검색)
+  infra:
+    # 인프라는 자주 바뀌지 않아 길게 잡는다. 만료되면 배치가 다시 수집한다.
+    cache-ttl: 30d
+    collection:
+      enabled: true
+      # 이전 실행이 끝난 뒤부터 센다(fixedDelay). 300000ms = 5분
+      interval-ms: 300000
+      # 기동 후 첫 실행까지. 빈 DB를 빨리 채우도록 짧게 둔다. 10000ms = 10초
+      initial-delay-ms: 10000
+      # 한 회차에 처리할 최대 주택 수. 현재 대상(모집 중 + 좌표 보유)은 한 회차에 모두 들어간다.
+      batch-size: 100
+      # 카카오 호출이 연속으로 이 횟수만큼 실패하면 회차를 중단한다(전체 장애로 판단).
+      # 특정 주택의 응답 데이터 문제는 여기 해당하지 않고 그 주택만 건너뛴다.
+      api-failure-threshold: 3
+    # 수집 카테고리와 반경. 화면 표시 순서도 이 순서를 따른다.
+    # 값을 바꾸면 policy_signature가 달라져 다음 배치에서 전체가 재수집된다.
+    categories:
+      - { code: SUBWAY,            kakao-code: SW8, label: 지하철역, radius-m: 1500 }
+      - { code: MART,              kakao-code: MT1, label: 대형마트, radius-m: 1000 }
+      - { code: CONVENIENCE_STORE, kakao-code: CS2, label: 편의점,   radius-m: 1000 }
+      - { code: HOSPITAL,          kakao-code: HP8, label: 병원,     radius-m: 1000 }
+      - { code: PHARMACY,          kakao-code: PM9, label: 약국,     radius-m: 1000 }
+      - { code: SCHOOL,            kakao-code: SC4, label: 학교,     radius-m: 1000 }
+
   recommendation:
     # 추천 목록 기준
     min-score: 60
