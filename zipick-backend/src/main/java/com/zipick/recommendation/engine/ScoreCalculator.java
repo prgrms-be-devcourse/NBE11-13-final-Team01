@@ -204,7 +204,8 @@ public class ScoreCalculator {
     ItemScore scoreInfra(UserContext ctx, Map<String, Integer> nearest) {
         if (nearest == null || nearest.isEmpty()) return ItemScore.unavailable(INFRA, "주변 시설 정보 없음");
 
-        // 가중치가 없으면 수집된 모든 카테고리를 같은 비중으로 본다
+        // 가중치가 없으면 수집 대상 카테고리 전체를 같은 비중으로 본다.
+        // nearest 는 반경 안에 없던 카테고리도 값 null 로 담고 있어, 그 카테고리는 아래에서 0점이 된다.
         Map<String, Integer> weights = ctx.infraWeights().isEmpty()
                 ? nearest.keySet().stream().collect(LinkedHashMap::new, (m, k) -> m.put(k, 1), Map::putAll)
                 : ctx.infraWeights();
@@ -215,6 +216,7 @@ public class ScoreCalculator {
             int w = clampPriority(e.getValue());
             Integer d = nearest.get(e.getKey());
             double s;
+            // 값이 없다 = 반경 안에 그 시설이 없다. 계산에서 빼지 않고 0점으로 센다
             if (d == null) {
                 s = 0;
                 far.add(categoryName(e.getKey()) + " 없음");

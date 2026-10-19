@@ -9,6 +9,7 @@ import com.zipick.infrastructure.repository.HousingInfraSnapshotRepository;
 import com.zipick.infrastructure.service.InfraCollectionResult.CollectedCategory;
 import com.zipick.infrastructure.service.InfraCollectionResult.NearestPlace;
 import com.zipick.notice.domain.Housing;
+import com.zipick.housing.dto.HouseFilter;
 import com.zipick.notice.domain.Notice;
 import com.zipick.notice.domain.NoticeStatus;
 import org.junit.jupiter.api.DisplayName;
@@ -135,8 +136,9 @@ class HousingInfraCollectionSchedulerTest {
     }
 
     private void givenTargets(List<Housing> targets) {
+        // 추천 후보와 같은 상태 집합(공고 예정 + 접수 중)으로 조회하는지 함께 확인한다
         given(snapshotRepository.findCollectionTargets(
-                eq(NoticeStatus.OPEN), any(Instant.class), any(String.class), any(Pageable.class)
+                eq(HouseFilter.OPEN_STATUSES), any(Instant.class), any(String.class), any(Pageable.class)
         )).willReturn(targets);
     }
 

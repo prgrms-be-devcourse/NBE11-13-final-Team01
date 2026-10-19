@@ -56,13 +56,15 @@ zipick:
       api-failure-threshold: 3
     # 수집 카테고리와 반경. 화면 표시 순서도 이 순서를 따른다.
     # 값을 바꾸면 policy_signature가 달라져 다음 배치에서 전체가 재수집된다.
+    # 반경은 추천의 infra-zero-score-m(1500)과 맞춘다. 더 좁게 잡으면 반경 밖 시설이
+    # '없음'(0점)으로 떨어져 점수가 불연속이 된다.
     categories:
       - { code: SUBWAY,            kakao-code: SW8, label: 지하철역, radius-m: 1500 }
-      - { code: MART,              kakao-code: MT1, label: 대형마트, radius-m: 1000 }
-      - { code: CONVENIENCE_STORE, kakao-code: CS2, label: 편의점,   radius-m: 1000 }
-      - { code: HOSPITAL,          kakao-code: HP8, label: 병원,     radius-m: 1000 }
-      - { code: PHARMACY,          kakao-code: PM9, label: 약국,     radius-m: 1000 }
-      - { code: SCHOOL,            kakao-code: SC4, label: 학교,     radius-m: 1000 }
+      - { code: MART,              kakao-code: MT1, label: 대형마트, radius-m: 1500 }
+      - { code: CONVENIENCE_STORE, kakao-code: CS2, label: 편의점,   radius-m: 1500 }
+      - { code: HOSPITAL,          kakao-code: HP8, label: 병원,     radius-m: 1500 }
+      - { code: PHARMACY,          kakao-code: PM9, label: 약국,     radius-m: 1500 }
+      - { code: SCHOOL,            kakao-code: SC4, label: 학교,     radius-m: 1500 }
 
   # 기관별 공고 수집 설정
   sources:

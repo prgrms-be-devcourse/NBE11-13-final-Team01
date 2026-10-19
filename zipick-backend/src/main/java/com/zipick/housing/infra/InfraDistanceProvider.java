@@ -13,7 +13,13 @@ import java.util.Map;
 public interface InfraDistanceProvider {
 
     /**
-     * @return 주택 id → (카카오 카테고리 코드 → 최단 거리 m). 예: {12: {"SW8": 420, "CS2": 120}}
+     * 반환 Map 은 세 가지 상태를 구분한다. 인프라 점수를 정확히 매기려면 이 구분이 필요하다.
+     *   1) 주택 id 가 없음        → 수집 전이거나 쓸 수 없는 데이터. 인프라 점수를 계산하지 않는다(가중치 재분배)
+     *   2) key 는 있고 값이 null  → 조회는 했지만 반경 안에 그 시설이 없다. 0점으로 센다
+     *   3) key 와 거리 값이 있음  → 그 거리로 점수를 매긴다
+     * 즉 수집한 주택은 수집 대상 카테고리를 **전부** key 로 담는다.
+     *
+     * @return 주택 id → (카카오 카테고리 코드 → 최단 거리 m). 예: {12: {"SW8": 420, "CS2": null}}
      */
     Map<Long, Map<String, Integer>> nearest(Collection<Candidate> candidates);
 }

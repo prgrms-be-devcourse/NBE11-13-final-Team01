@@ -123,6 +123,14 @@ psql -U {your_postgresql_user} -d zipick -f zipick-backend/db/infra-init.sql
 `local-init.sql` 만 실행하면 기동 시 `Schema-validation: missing table [agency]` 로 실패한다.
 `infra-init.sql` 은 `notice-init.sql` 이 만든 `housing` 을 참조하므로 **반드시 그 뒤에** 실행한다.
 
+> ⚠️ **이미 인프라 테이블이 있는 DB 에 `notice-init.sql` 만 다시 실행하면 실패한다.**
+> `housing_infra_snapshot` 이 `housing` 을 FK 로 참조해 `DROP TABLE housing` 이 거부되기 때문이다.
+> DB 를 통째로 다시 만들거나(`dropdb` → `createdb`), 아래처럼 인프라 테이블을 먼저 지운 뒤 세 파일을 순서대로 실행한다.
+>
+> ```bash
+> psql -U {your_postgresql_user} -d zipick -c "DROP TABLE IF EXISTS housing_infra_place, housing_infra_snapshot;"
+> ```
+
 **(2026-10-19) 주변 인프라 테이블 2개가 추가됐다.** 기존 DB 를 쓰던 팀원은 `infra-init.sql` 만 한 번 실행하면 된다.
 이 파일은 인프라 테이블만 DROP/CREATE 하므로 공고·사용자 데이터에는 영향이 없다.
 

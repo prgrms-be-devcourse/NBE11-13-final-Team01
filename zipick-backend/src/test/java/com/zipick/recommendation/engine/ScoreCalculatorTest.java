@@ -9,6 +9,7 @@ import com.zipick.housing.domain.RentalType;
 import com.zipick.recommendation.config.RecommendationProperties;
 import com.zipick.recommendation.domain.RecommendationProfile;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -174,6 +175,54 @@ class ScoreCalculatorTest {
         void unavailableWithoutData() {
             assertThat(calc.scoreInfra(TestFixtures.context(), null).available()).isFalse();
             assertThat(calc.scoreInfra(TestFixtures.context(), Map.of()).available()).isFalse();
+        }
+
+        /**
+         * 주변 인프라 담당(InfraDistanceProvider)은 수집한 주택이면 카테고리 key 를 모두 담고,
+         * 반경 안에 시설이 없던 카테고리는 값을 null 로 둔다.
+         * 아래 세 테스트가 그 규약에 기대는 동작이다.
+         */
+        @Test
+        @DisplayName("가중치가 없으면 수집 대상 카테고리 전체를 같은 비중으로 본다")
+        void defaultWeightCoversEveryCollectedCategory() {
+            Map<String, Integer> nearest = new HashMap<>();
+            nearest.put("SW8", 300);   // 1.0
+            nearest.put("MT1", null);  // 반경 내 없음 → 0
+            nearest.put("CS2", null);  // 반경 내 없음 → 0
+
+            // 1.0 + 0 + 0 을 3으로 나눈다. (예전에는 찾은 카테고리만 봐서 1.0 이었다)
+            assertThat(calc.scoreInfra(TestFixtures.context(), nearest).score())
+                    .isCloseTo(0.3333, offset(0.001));
+        }
+
+        @Test
+        @DisplayName("정상 수집했는데 주변이 전부 0건이면 '정보 없음'이 아니라 0점이다")
+        void zeroScoreWhenNothingNearby() {
+            Map<String, Integer> nearest = new HashMap<>();
+            nearest.put("SW8", null);
+            nearest.put("MT1", null);
+
+            ItemScore score = calc.scoreInfra(TestFixtures.context(), nearest);
+
+            assertThat(score.available()).isTrue();
+            assertThat(score.score()).isZero();
+            assertThat(score.reason().text()).contains("지하철역 없음").contains("대형마트 없음");
+        }
+
+        @Test
+        @DisplayName("사용자 가중치가 있으면 기존대로 지정한 카테고리만 본다")
+        void userWeightsStillTakePrecedence() {
+            RecommendationProfile rp = RecommendationProfile.builder().userId(1L).name("역세권").active(true)
+                    .weights("{}").rules("{}").infraWeights("{\"SW8\":5,\"MT1\":1}").build();
+            UserContext ctx = UserContext.of(TestFixtures.youngSingle(), TestFixtures.mapoPreference(), rp,
+                    props.baseWeights());
+
+            Map<String, Integer> nearest = new HashMap<>();
+            nearest.put("SW8", 300);
+            nearest.put("MT1", null);
+            nearest.put("CS2", 100);   // 가중치에 없으므로 계산에 들어가지 않는다
+
+            assertThat(calc.scoreInfra(ctx, nearest).score()).isCloseTo(0.8333, offset(0.001));
         }
     }
 

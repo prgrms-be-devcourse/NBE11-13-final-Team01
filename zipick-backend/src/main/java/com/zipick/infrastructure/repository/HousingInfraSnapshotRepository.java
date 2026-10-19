@@ -30,6 +30,8 @@ public interface HousingInfraSnapshotRepository extends JpaRepository<HousingInf
      *   3. 수집 정책(카테고리·반경)이 바뀐 주택
      *   4. 좌표가 바뀐 주택
      *
+     * 대상 공고 상태는 추천 후보와 같은 집합을 쓴다(HouseFilter.OPEN_STATUSES = 공고 예정 + 접수 중).
+     * 범위가 다르면 추천 목록 안에서 어떤 집만 인프라 점수를 받아 순위 비교가 공정하지 않다.
      * 좌표가 아직 없는 주택은 제외하므로, 공고 수집 → 좌표 보완이 끝난 뒤에만 대상이 된다.
      * Housing 과 연관이 없는 엔티티라 on 절로 직접 조인한다.
      */
@@ -38,7 +40,7 @@ public interface HousingInfraSnapshotRepository extends JpaRepository<HousingInf
             from Housing h
             left join HousingInfraSnapshot s on s.housingId = h.id
             where h.active = true
-              and h.notice.status = :status
+              and h.notice.status in :statuses
               and h.latitude is not null
               and h.longitude is not null
               and (
@@ -51,7 +53,7 @@ public interface HousingInfraSnapshotRepository extends JpaRepository<HousingInf
             order by h.id
             """)
     List<Housing> findCollectionTargets(
-            @Param("status") NoticeStatus status,
+            @Param("statuses") Collection<NoticeStatus> statuses,
             @Param("ttlThreshold") Instant ttlThreshold,
             @Param("policySignature") String policySignature,
             Pageable pageable
