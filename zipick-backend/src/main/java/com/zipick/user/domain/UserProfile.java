@@ -3,6 +3,8 @@ package com.zipick.user.domain;
 import com.zipick.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -34,9 +36,6 @@ public class UserProfile extends BaseTimeEntity {
     @Column(nullable = false)
     private LocalDate birthDate;
 
-    @Column(length = 30)
-    private String job;
-
     @Column(nullable = false)
     private boolean married;
 
@@ -50,38 +49,34 @@ public class UserProfile extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean homeless;
 
-    /** 대학생·취업준비생 여부 (선택) */
-    private Boolean student;
-
-    /** 주택청약저축 가입 기간(개월)·납입 횟수 (선택). 지금은 저장·표시만 하고 판정에는 쓰지 않는다 */
-    private Integer subscriptionMonths;
-    private Integer subscriptionPayments;
+    /** 대학생·취업준비생 여부. 청년 매입임대는 연령 대신 이 자격으로도 신청할 수 있다 */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private StudentStatus studentStatus;
 
     @Builder
-    public UserProfile(Long userId, LocalDate birthDate, String job, boolean married, int householdSize,
+    public UserProfile(Long userId, LocalDate birthDate, boolean married, int householdSize,
                        Integer monthlyIncome, Integer totalAssets, Integer carValue, boolean homeless,
-                       Boolean student, Integer subscriptionMonths, Integer subscriptionPayments) {
+                       StudentStatus studentStatus) {
         this.userId = userId;
-        update(birthDate, job, married, householdSize, monthlyIncome, totalAssets, carValue, homeless);
-        updateExtra(student, subscriptionMonths, subscriptionPayments);
+        update(birthDate, married, householdSize, monthlyIncome, totalAssets, carValue, homeless, studentStatus);
     }
 
-    public void updateExtra(Boolean student, Integer subscriptionMonths, Integer subscriptionPayments) {
-        this.student = student;
-        this.subscriptionMonths = subscriptionMonths;
-        this.subscriptionPayments = subscriptionPayments;
-    }
-
-    public void update(LocalDate birthDate, String job, boolean married, int householdSize,
-                       Integer monthlyIncome, Integer totalAssets, Integer carValue, boolean homeless) {
+    public void update(LocalDate birthDate, boolean married, int householdSize,
+                       Integer monthlyIncome, Integer totalAssets, Integer carValue, boolean homeless,
+                       StudentStatus studentStatus) {
         this.birthDate = birthDate;
-        this.job = job;
         this.married = married;
         this.householdSize = householdSize;
         this.monthlyIncome = monthlyIncome;
         this.totalAssets = totalAssets;
         this.carValue = carValue;
         this.homeless = homeless;
+        this.studentStatus = studentStatus == null ? StudentStatus.NONE : studentStatus;
+    }
+
+    public StudentStatus studentStatusOrNone() {
+        return studentStatus == null ? StudentStatus.NONE : studentStatus;
     }
 
     public int age(LocalDate today) {

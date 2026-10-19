@@ -35,17 +35,15 @@ public class UserProfileService {
     public UserProfileResponse saveProfile(Long userId, UserProfileRequest r) {
         UserProfile profile = profileRepository.findByUserId(userId)
                 .map(p -> {
-                    p.update(r.birthDate(), r.job(), r.married(), r.householdSize(), r.monthlyIncome(),
-                            r.totalAssets(), r.carValue(), r.homeless());
-                    p.updateExtra(r.student(), r.subscriptionMonths(), r.subscriptionPayments());
+                    p.update(r.birthDate(), r.married(), r.householdSize(), r.monthlyIncome(),
+                            r.totalAssets(), r.carValue(), r.homeless(), r.studentStatus());
                     return p;
                 })
                 .orElseGet(() -> profileRepository.save(UserProfile.builder()
-                        .userId(userId).birthDate(r.birthDate()).job(r.job()).married(r.married())
+                        .userId(userId).birthDate(r.birthDate()).married(r.married())
                         .householdSize(r.householdSize()).monthlyIncome(r.monthlyIncome())
                         .totalAssets(r.totalAssets()).carValue(r.carValue()).homeless(r.homeless())
-                        .student(r.student()).subscriptionMonths(r.subscriptionMonths())
-                        .subscriptionPayments(r.subscriptionPayments())
+                        .studentStatus(r.studentStatus())
                         .build()));
         events.publishEvent(new UserConditionChangedEvent(userId));
         return UserProfileResponse.from(profile);
@@ -65,24 +63,21 @@ public class UserProfileService {
 
         UserPreference pref = preferenceRepository.findByUserId(userId)
                 .map(p -> {
-                    p.update(regions, r.depositMin(), r.depositMax(), r.rentMin(), r.rentMax(), r.areaMin(),
-                            r.areaMax(), housingTypes, rentalTypes, r.monthlyBudget());
+                    p.update(regions, r.depositMax(), r.rentMax(), r.areaMin(),
+                            r.areaMax(), housingTypes, rentalTypes, r.monthlyBudget(), r.roomsMin());
                     return p;
                 })
                 .orElseGet(() -> preferenceRepository.save(UserPreference.builder()
-                        .userId(userId).regions(regions).depositMin(r.depositMin()).depositMax(r.depositMax())
-                        .rentMin(r.rentMin()).rentMax(r.rentMax()).areaMin(r.areaMin()).areaMax(r.areaMax())
+                        .userId(userId).regions(regions).depositMax(r.depositMax())
+                        .rentMax(r.rentMax()).areaMin(r.areaMin()).areaMax(r.areaMax())
                         .housingTypes(housingTypes).rentalTypes(rentalTypes).monthlyBudget(r.monthlyBudget())
+                        .roomsMin(r.roomsMin())
                         .build()));
         events.publishEvent(new UserConditionChangedEvent(userId));
         return UserPreferenceResponse.from(pref);
     }
 
     private void validateRanges(UserPreferenceRequest r) {
-        if (r.depositMin() != null && r.depositMax() != null && r.depositMin() > r.depositMax())
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "보증금 범위가 올바르지 않습니다.");
-        if (r.rentMin() != null && r.rentMax() != null && r.rentMin() > r.rentMax())
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "월 임대료 범위가 올바르지 않습니다.");
         if (r.areaMin() != null && r.areaMax() != null && r.areaMin().compareTo(r.areaMax()) > 0)
             throw new BusinessException(ErrorCode.INVALID_INPUT, "전용면적 범위가 올바르지 않습니다.");
         long distinctRanks = r.regions().stream().map(UserPreferenceRequest.Region::rank).distinct().count();

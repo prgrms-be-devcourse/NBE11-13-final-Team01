@@ -1,13 +1,17 @@
 // 백엔드 API 명세와 1:1로 맞춘 타입. 금액은 만 원, 면적은 ㎡.
 
-export type Agency = 'LH' | 'SH' | 'GH' | 'HUG';
-export type RentalType = 'PURCHASE' | 'HAPPY' | 'NATIONAL' | 'DEUNDEUN';
-export type HousingType = 'APARTMENT' | 'MULTI_HOUSEHOLD' | 'OFFICETEL' | 'ROW_HOUSE' | 'ETC';
-export type AnnouncementStatus = 'NOTICE' | 'RECEIVING' | 'CLOSED';
+/** 공공임대 유형. 백엔드 RentalType 과 같다 (공고 유형·제목에서 분류) */
+export type RentalType =
+  | 'HAPPY' | 'NATIONAL' | 'PERMANENT' | 'INTEGRATED' | 'DEUNDEUN' | 'JEONSE_LEASE'
+  | 'YOUTH_PURCHASE' | 'PURCHASE' | 'PUBLIC';
+export type HousingType = 'APARTMENT' | 'MULTI_HOUSEHOLD' | 'ROW_HOUSE' | 'OFFICETEL' | 'URBAN_HOUSING';
+/** 모집 상태. 공고 수집 테이블의 NoticeStatus */
+export type AnnouncementStatus = 'UPCOMING' | 'OPEN' | 'CLOSED';
 export type Mark = 'PASS' | 'PARTIAL' | 'CHECK' | 'FAIL';
 export type Eligibility = 'PASS' | 'CHECK' | 'FAIL';
-export type ScoreItem = 'cost' | 'region' | 'area' | 'infra' | 'type';
-export const SCORE_ITEMS: ScoreItem[] = ['cost', 'region', 'area', 'infra', 'type'];
+/** 점수 항목. 순서는 화면 표시 순서 */
+export type ScoreItem = 'cost' | 'region' | 'area' | 'rooms' | 'infra' | 'age' | 'type';
+export const SCORE_ITEMS: ScoreItem[] = ['cost', 'region', 'area', 'rooms', 'infra', 'age', 'type'];
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -15,39 +19,40 @@ export interface ApiResponse<T> {
   error: { code: string; message: string; fields?: Record<string, string> } | null;
 }
 
+/** 관심 지역. code = "시도 시군구" (예: "경상북도 구미시"), name = 화면 표시용 */
 export interface Region {
   code: string;
   name: string;
   rank: number;
 }
 
+/** 대학생·취업준비생 여부. 청년 매입임대는 연령 대신 이 자격으로도 신청할 수 있다 */
+export type StudentStatus = 'NONE' | 'UNIVERSITY' | 'JOB_SEEKER';
+
+/** 기본 정보. 모든 값이 지원조건 판정에 쓰인다 (docs/recommendation-fields.md) */
 export interface UserProfile {
   birthDate: string;
-  job?: string;
   married: boolean;
   householdSize: number;
   monthlyIncome?: number | null;
   totalAssets?: number | null;
   carValue?: number | null;
   homeless: boolean;
-  /** 대학생·취업준비생 여부 (선택) */
-  student?: boolean | null;
-  /** 주택청약저축 가입 기간(개월)·납입 횟수 (선택) */
-  subscriptionMonths?: number | null;
-  subscriptionPayments?: number | null;
+  studentStatus: StudentStatus;
 }
 
 export interface UserPreference {
   regions: Region[];
-  depositMin?: number | null;
+  /** 보증금·월세 상한(만 원). 월 예산이 없을 때 예산 계산에 쓴다 */
   depositMax?: number | null;
-  rentMin?: number | null;
   rentMax?: number | null;
   areaMin?: number | null;
   areaMax?: number | null;
   housingTypes: HousingType[];
   rentalTypes: RentalType[];
   monthlyBudget?: number | null;
+  /** 희망 최소 방 수. 비우면 방 수 점수를 계산하지 않는다 */
+  roomsMin?: number | null;
 }
 
 export interface Reason {
@@ -56,29 +61,39 @@ export interface Reason {
   text: string;
 }
 
+/** 추천 결과 한 건 = 주택 하나(대표 호실 기준). houseId = 주택(housing) id */
 export interface RecommendedHouse {
   houseId: number;
+  supplyId: number;
   announcementId: number;
   title: string;
-  agency: Agency;
-  rentalType: RentalType;
+  agencyCode?: string;
+  agencyName?: string;
+  rentalType?: RentalType | null;
+  noticeType?: string | null;
   status: AnnouncementStatus;
   closeDate?: string;
+  detailUrl?: string;
+  housingName?: string;
   address: string;
-  sigunguCode?: string;
+  province?: string;
+  district?: string;
   lat?: number;
   lng?: number;
-  approximate: boolean;
-  housingType?: HousingType;
-  builtYear?: number;
+  housingType?: HousingType | null;
+  housingTypeRaw?: string;
+  buildYear?: number;
   floor?: number;
   exclusiveArea?: number;
+  roomCount?: number;
   deposit?: number;
   monthlyRent?: number;
   monthlyCost?: number;
   score: number;
+  /** 순위에 필요한 정보(비용·지역)가 다 있는지. false 면 '정보 부족' 묶음 */
+  complete: boolean;
   eligibility: Eligibility;
-  /** 추천 제외 사유: ELIGIBILITY / coverage / MUST 항목 키. 추천되면 없음 */
+  /** 추천 제외 사유: ELIGIBILITY / MUST 항목 키. 추천되면 없음 */
   excludedBy?: string | null;
   itemScores: Partial<Record<ScoreItem, number | null>>;
   reasons: Reason[];
@@ -92,7 +107,10 @@ export interface RecommendationResponse {
   total: number;
   candidateTotal: number;
   excluded: number;
+  /** 순위 묶음: 점수로 비교한 결과 */
   houses: RecommendedHouse[];
+  /** 정보 부족 묶음: 비용·지역 정보가 없어 점수로 비교하지 않은 주택. 관심 지역 → 마감 임박순 */
+  incomplete: RecommendedHouse[];
 }
 
 export interface RecommendationProfile {
@@ -145,7 +163,8 @@ export interface HouseFilter {
   areaMax?: number;
   housingTypes: HousingType[];
   statuses: AnnouncementStatus[];
-  agencies: Agency[];
+  /** 기관 코드 */
+  agencies: string[];
   rentalTypes: RentalType[];
   includeUnknown: boolean;
 }
@@ -153,7 +172,7 @@ export interface HouseFilter {
 export const EMPTY_FILTER: HouseFilter = {
   regions: [],
   housingTypes: [],
-  statuses: ['NOTICE', 'RECEIVING'],
+  statuses: ['UPCOMING', 'OPEN'],
   agencies: [],
   rentalTypes: [],
   includeUnknown: true,
@@ -197,25 +216,34 @@ export interface PairLearnResult {
 
 // ---- 전체 공급주택 (기본 필터링) ----
 
+/** 전체 공급주택 목록의 한 건 = 주택 하나(점수 없음) */
 export interface HouseSummary {
   houseId: number;
+  supplyId: number;
   announcementId: number;
   title: string;
-  agency: Agency;
-  rentalType: RentalType;
+  agencyCode?: string;
+  agencyName?: string;
+  rentalType?: RentalType | null;
+  noticeType?: string | null;
   status: AnnouncementStatus;
   closeDate?: string;
+  detailUrl?: string;
+  housingName?: string;
   address: string;
-  sigunguCode?: string;
+  province?: string;
+  district?: string;
   lat?: number;
   lng?: number;
-  approximate: boolean;
-  housingType?: HousingType;
-  builtYear?: number;
-  floor?: number;
+  housingType?: HousingType | null;
+  housingTypeRaw?: string;
+  buildYear?: number;
   exclusiveArea?: number;
+  roomCount?: number;
   deposit?: number;
   monthlyRent?: number;
+  /** 이 주택에서 필터를 통과한 공급 호실 수 */
+  supplyUnits: number;
 }
 
 export interface HouseListResponse {
@@ -223,10 +251,98 @@ export interface HouseListResponse {
   houses: HouseSummary[];
 }
 
-/** 필터 값별 공급주택 수. 0건(키 없음)인 값은 칩을 끈다 */
+export interface AgencyOption { code: string; name: string; count: number }
+/** key = "시도 시군구" (필터·관심 지역에 쓰는 값) */
+export interface RegionOption { key: string; province: string; district?: string | null; count: number }
+
+/** 필터 칩과 관심 지역 선택지. 값마다 주택 수. 0건(키 없음)인 값은 칩을 끈다 */
 export interface FilterOptions {
   statuses: Partial<Record<AnnouncementStatus, number>>;
-  agencies: Partial<Record<Agency, number>>;
+  agencies: AgencyOption[];
   rentalTypes: Partial<Record<RentalType, number>>;
   housingTypes: Partial<Record<HousingType, number>>;
+  regions: RegionOption[];
+}
+
+// ---- 관심 공고 · 일정 ----
+
+export type ScheduleKind = 'ANNOUNCED' | 'APPLY_START' | 'APPLY_END' | 'WINNER';
+
+export interface NoticeSummary {
+  noticeId: number;
+  title: string;
+  noticeType?: string | null;
+  rentalType?: RentalType | null;
+  status: AnnouncementStatus;
+  agencyName?: string;
+  detailUrl?: string;
+  announcedAt?: string | null;
+  applyStartAt?: string | null;
+  applyEndAt?: string | null;
+  winnerAnnouncedAt?: string | null;
+  housingCount: number;
+  /** "시도 시군구" 최대 5개 */
+  regions: string[];
+}
+
+export interface InterestNotice {
+  id: number;
+  notice: NoticeSummary;
+  memo?: string | null;
+  /** 접수 마감까지 남은 일수. 없으면 null, 지났으면 음수 */
+  dDay?: number | null;
+  savedAt?: string | null;
+}
+
+export interface ScheduleEvent {
+  id: string;
+  noticeId: number;
+  title: string;
+  kind: ScheduleKind;
+  /** YYYY-MM-DD */
+  date: string;
+  dDay?: number | null;
+  detailUrl?: string;
+}
+
+// ---- 알림 (관심 공고 마감 · 새 공고) ----
+
+export type NotificationType = 'DEADLINE' | 'NEW_MATCH' | 'TEST';
+export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
+
+export interface NotificationSetting {
+  enabled: boolean;
+  slackConfigured: boolean;
+  /** 웹훅은 비밀값이라 끝 6자만 온다 */
+  slackWebhookMasked?: string | null;
+  email?: string | null;
+  deadlineDays: number[];
+  newMatchEnabled: boolean;
+  /** 서버에 SMTP 설정이 있어 이메일 채널을 쓸 수 있는지 */
+  emailAvailable: boolean;
+}
+
+export interface NotificationSettingRequest {
+  enabled: boolean;
+  /** 비우면 기존 값을 지운다 */
+  slackWebhookUrl?: string | null;
+  email?: string | null;
+  /** "3,1,0" */
+  deadlineDays: string;
+  newMatchEnabled: boolean;
+}
+
+export interface NotificationEvent {
+  id: number;
+  type: NotificationType;
+  noticeId?: number | null;
+  title: string;
+  body: string;
+  url?: string | null;
+  status: NotificationStatus;
+  attempts: number;
+  lastError?: string | null;
+  channels?: string | null;
+  scheduledFor: string;
+  sentAt?: string | null;
 }

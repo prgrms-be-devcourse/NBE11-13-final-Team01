@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import com.zipick.housing.domain.HousingType;
-import com.zipick.housing.domain.SupplyHouse;
 import com.zipick.recommendation.engine.PairwiseLearner.Observation;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -14,7 +13,6 @@ import java.util.Random;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 class PairwiseLearnerTest {
 
@@ -34,7 +32,7 @@ class PairwiseLearnerTest {
             for (String item : ScoreCalculator.ITEMS) {
                 double v = rnd.nextDouble() * 2 - 1;     // 항목 점수 차이 -1~1
                 d.put(item, v);
-                u += trueWeights.get(item) * v;
+                u += trueWeights.getOrDefault(item, 0.0) * v;
             }
             out.add(new Observation(d, u > 0 ? 1.0 : 0.0));
         }
@@ -108,11 +106,11 @@ class PairwiseLearnerTest {
         PRIOR.forEach((k, v) -> beta.put(k, v * 10));
 
         var first = learner.nextPair(List.of(h1, h2, h3), Set.of(), Map.of(), beta, 40).orElseThrow();
-        assertThat(Set.of(first[0].house().getId(), first[1].house().getId())).contains(2L);
+        assertThat(Set.of(first[0].housingId(), first[1].housingId())).contains(2L);
 
-        String key = PairwiseLearner.pairKey(first[0].house().getId(), first[1].house().getId());
+        String key = PairwiseLearner.pairKey(first[0].housingId(), first[1].housingId());
         var second = learner.nextPair(List.of(h1, h2, h3), Set.of(key), Map.of(), beta, 40).orElseThrow();
-        assertThat(PairwiseLearner.pairKey(second[0].house().getId(), second[1].house().getId())).isNotEqualTo(key);
+        assertThat(PairwiseLearner.pairKey(second[0].housingId(), second[1].housingId())).isNotEqualTo(key);
 
         var none = learner.nextPair(List.of(h1, h2, h3), Set.of("1-2", "2-3", "1-3"), Map.of(), beta, 40);
         assertThat(none).isEmpty();
@@ -130,27 +128,26 @@ class PairwiseLearnerTest {
         PRIOR.forEach((k, v) -> beta.put(k, v * 10));
 
         var fresh = learner.nextPair(List.of(h1, h2, h3, h4), Set.of(), Map.of(), beta, 40).orElseThrow();
-        assertThat(PairwiseLearner.pairKey(fresh[0].house().getId(), fresh[1].house().getId())).isEqualTo("1-2");
+        assertThat(PairwiseLearner.pairKey(fresh[0].housingId(), fresh[1].housingId())).isEqualTo("1-2");
 
         var tired = learner.nextPair(List.of(h1, h2, h3, h4), Set.of(), Map.of(1L, 3), beta, 40).orElseThrow();
-        assertThat(Set.of(tired[0].house().getId(), tired[1].house().getId())).doesNotContain(1L);
+        assertThat(Set.of(tired[0].housingId(), tired[1].housingId())).doesNotContain(1L);
     }
 
     private static HouseScore house(long id, Map<String, Double> scores) {
-        SupplyHouse h = SupplyHouse.builder().address("a").approximate(false).housingType(HousingType.APARTMENT).build();
-        ReflectionTestUtils.setField(h, "id", id);
+        var h = TestFixtures.candidate(id, 1, null, "마포구", HousingType.APARTMENT, "29", 1500, 30, 1, null);
         Map<String, ItemScore> items = new LinkedHashMap<>();
         for (String item : ScoreCalculator.ITEMS) {
             Double s = scores.get(item);
             items.put(item, s == null ? ItemScore.of(item, 0.5, Reason.pass(item, "-")) : ItemScore.of(item, s, Reason.pass(item, "-")));
         }
         return new HouseScore(h, 80, items, Map.of(),
-                new EligibilityResult(EligibilityResult.Status.PASS, List.of()), List.of(), null);
+                new EligibilityResult(EligibilityResult.Status.PASS, List.of()), List.of(), null, true);
     }
 
     private static double l1(Map<String, Double> a, Map<String, Double> b) {
         double s = 0;
-        for (String item : ScoreCalculator.ITEMS) s += Math.abs(a.get(item) - b.get(item));
+        for (String item : ScoreCalculator.ITEMS) s += Math.abs(a.getOrDefault(item, 0.0) - b.getOrDefault(item, 0.0));
         return s;
     }
 }

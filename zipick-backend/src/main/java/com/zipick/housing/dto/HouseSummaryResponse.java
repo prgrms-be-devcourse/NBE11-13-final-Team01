@@ -1,40 +1,49 @@
 package com.zipick.housing.dto;
 
-import com.zipick.housing.domain.Agency;
-import com.zipick.housing.domain.Announcement;
-import com.zipick.housing.domain.AnnouncementStatus;
+import com.zipick.housing.domain.Candidate;
 import com.zipick.housing.domain.HousingType;
 import com.zipick.housing.domain.RentalType;
-import com.zipick.housing.domain.SupplyHouse;
+import com.zipick.notice.domain.NoticeStatus;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** 전체 공급주택 목록의 한 건 (점수 없음). 지도 핀·목록 카드에 필요한 값만 담는다. */
+/**
+ * 전체 공급주택 목록의 한 건 = 주택 하나(점수 없음). 대표 호실의 값을 보여 준다. 금액은 만 원.
+ *
+ * @param supplyUnits 이 주택에서 필터를 통과한 공급 호실 수
+ */
 public record HouseSummaryResponse(
         Long houseId,
+        Long supplyId,
         Long announcementId,
         String title,
-        Agency agency,
+        String agencyCode,
+        String agencyName,
         RentalType rentalType,
-        AnnouncementStatus status,
+        String noticeType,
+        NoticeStatus status,
         LocalDate closeDate,
+        String detailUrl,
+        String housingName,
         String address,
-        String sigunguCode,
+        String province,
+        String district,
         BigDecimal lat,
         BigDecimal lng,
-        boolean approximate,
         HousingType housingType,
-        Integer builtYear,
-        Integer floor,
+        String housingTypeRaw,
+        Integer buildYear,
         BigDecimal exclusiveArea,
+        Integer roomCount,
         Integer deposit,
-        Integer monthlyRent
+        Integer monthlyRent,
+        int supplyUnits
 ) {
-    public static HouseSummaryResponse from(SupplyHouse h) {
-        Announcement a = h.getAnnouncement();
-        return new HouseSummaryResponse(h.getId(), a.getId(), a.getTitle(), a.getAgency(), a.getRentalType(),
-                a.getStatus(), a.getCloseDate(), h.getAddress(), h.getSigunguCode(), h.getLat(), h.getLng(),
-                h.isApproximate(), h.getHousingType(), h.getBuiltYear(), h.getFloor(), h.getExclusiveArea(),
-                h.getDeposit(), h.getMonthlyRent());
+    public static HouseSummaryResponse from(Candidate c, int supplyUnits) {
+        return new HouseSummaryResponse(c.housingId(), c.supplyId(), c.noticeId(), c.noticeTitle(), c.agencyCode(),
+                c.agencyName(), c.rentalType(), c.noticeType(), c.status(), c.closeDate(), c.detailUrl(),
+                c.housingName(), c.address(), c.province(), c.district(), c.lat(), c.lng(),
+                c.housingType(), c.housingTypeRaw(), c.buildYear(), c.exclusiveArea(), c.roomCount(),
+                c.deposit(), c.monthlyRent(), supplyUnits);
     }
 }

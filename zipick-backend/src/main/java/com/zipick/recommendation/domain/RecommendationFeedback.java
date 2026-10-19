@@ -15,7 +15,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 추천 피드백. 숨김/별로예요 모두 해당 집을 추천에서 뺀다. */
+/** 추천 피드백. 숨김/별로예요 모두 해당 주택(housing)을 추천에서 뺀다. */
 @Entity
 @Getter
 @Table(name = "recommendation_feedbacks",
@@ -36,7 +36,7 @@ public class RecommendationFeedback extends BaseTimeEntity {
     private Long userId;
 
     @Column(nullable = false)
-    private Long supplyHouseId;
+    private Long housingId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
@@ -47,9 +47,9 @@ public class RecommendationFeedback extends BaseTimeEntity {
     private Reason reason;
 
     @Builder
-    public RecommendationFeedback(Long userId, Long supplyHouseId, Type type, Reason reason) {
+    public RecommendationFeedback(Long userId, Long housingId, Type type, Reason reason) {
         this.userId = userId;
-        this.supplyHouseId = supplyHouseId;
+        this.housingId = housingId;
         this.type = type;
         this.reason = reason;
     }

@@ -122,9 +122,9 @@ public class PairwiseLearner {
     public Optional<HouseScore[]> nextPair(List<HouseScore> candidates, Set<String> askedKeys,
                                            Map<Long, Integer> shown, Map<String, Double> beta, int maxCandidates) {
         List<HouseScore> pool = candidates.stream()
-                .filter(s -> !s.excluded())
+                .filter(s -> !s.excluded() && s.complete())
                 .sorted(Comparator.comparingInt(HouseScore::score).reversed()
-                        .thenComparing(s -> s.house().getId()))
+                        .thenComparing(s -> s.housingId()))
                 .limit(maxCandidates)
                 .toList();
         double[] b = toVector(beta);
@@ -133,12 +133,12 @@ public class PairwiseLearner {
         for (int i = 0; i < pool.size(); i++) {
             for (int j = i + 1; j < pool.size(); j++) {
                 HouseScore l = pool.get(i), r = pool.get(j);
-                if (askedKeys.contains(pairKey(l.house().getId(), r.house().getId()))) continue;
+                if (askedKeys.contains(pairKey(l.housingId(), r.housingId()))) continue;
                 double[] d = toVector(diff(l, r));
                 double p = sigmoid(dot(b, d));
                 double raw = p * (1 - p) * dot(d, d);
                 if (raw <= MIN_INFO) continue;   // 항목 차이가 거의 없는 쌍은 묻지 않는다
-                int repeats = shown.getOrDefault(l.house().getId(), 0) + shown.getOrDefault(r.house().getId(), 0);
+                int repeats = shown.getOrDefault(l.housingId(), 0) + shown.getOrDefault(r.housingId(), 0);
                 double info = raw * Math.pow(REPEAT_PENALTY, repeats);
                 if (info > bestInfo + 1e-12) {
                     bestInfo = info;

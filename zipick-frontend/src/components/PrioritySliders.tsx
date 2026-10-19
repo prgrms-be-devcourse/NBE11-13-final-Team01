@@ -12,9 +12,10 @@ interface Props {
 }
 
 const PRESETS: Record<string, Record<ScoreItem, number>> = {
-  가성비형: { cost: 5, region: 3, area: 2, infra: 2, type: 2 },
-  역세권형: { cost: 3, region: 3, area: 2, infra: 5, type: 2 },
-  '넓은 집형': { cost: 2, region: 3, area: 5, infra: 2, type: 3 },
+  가성비형: { cost: 5, region: 3, area: 2, rooms: 2, infra: 2, age: 2, type: 2 },
+  역세권형: { cost: 3, region: 3, area: 2, rooms: 2, infra: 5, age: 2, type: 2 },
+  '넓은 집형': { cost: 2, region: 3, area: 5, rooms: 4, infra: 2, age: 2, type: 3 },
+  신축형: { cost: 3, region: 3, area: 2, rooms: 2, infra: 2, age: 5, type: 2 },
 };
 
 /** 항목별 우선순위 1~5. 움직이면 즉시 목록이 다시 계산되고, "적용"을 눌러야 저장된다. */

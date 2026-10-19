@@ -49,7 +49,7 @@ export function recalcScore(
 /** 서버의 순위 규칙과 동일: 60점 이상, 점수 내림차순(동점이면 마감 임박순), 공고당 최대 5곳, 최대 30곳 */
 export function rankHouses(houses: RecommendedHouse[]): RecommendedHouse[] {
   const sorted = [...houses]
-    .filter((h) => h.score >= MIN_SCORE)
+    .filter((h) => h.complete && h.score >= MIN_SCORE)
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       const ca = a.closeDate ?? '9999-12-31';
