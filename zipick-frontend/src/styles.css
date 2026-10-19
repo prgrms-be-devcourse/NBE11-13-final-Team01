@@ -222,6 +222,7 @@ input[type="number"], input[type="text"], input[type="date"], input:not([type]) 
 .map-detail__facts dt { color: var(--muted); font-size: 11px; }
 .map-detail__facts dd { margin: 2px 0 0; font-size: 13px; overflow-wrap: anywhere; }
 .map-detail__facts--base { padding: 12px; border-radius: 10px; background: #f8fafc; }
+.infra-note { margin: 8px 0 0; font-size: 11px; line-height: 1.5; }
 .map-detail__supply { margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
 .map-detail__supply strong { display: block; margin-bottom: 8px; font-size: 14px; }
 .map-detail__links { margin: 0; padding-left: 18px; }
