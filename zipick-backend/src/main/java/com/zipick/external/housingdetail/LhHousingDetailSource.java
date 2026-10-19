@@ -1,5 +1,6 @@
 package com.zipick.external.housingdetail;
 
+import com.zipick.external.sh.ShPdfHousingParser;
 import com.zipick.notice.dto.NoticeResponse;
 import com.zipick.notice.dto.NoticeAttachmentResponse;
 import com.zipick.notice.support.AddressNormalizer;
@@ -54,17 +55,20 @@ public class LhHousingDetailSource implements HousingDetailSource {
     private final LhSpreadsheetHousingParser spreadsheetParser;
     private final LhPdfHousingParser pdfParser;
     private final LhHwpHousingParser hwpParser;
+    private final ShPdfHousingParser shPdfParser;
 
     public LhHousingDetailSource(
             ExternalDocumentClient documentClient,
             LhSpreadsheetHousingParser spreadsheetParser,
             LhPdfHousingParser pdfParser,
-            LhHwpHousingParser hwpParser
+            LhHwpHousingParser hwpParser,
+            ShPdfHousingParser shPdfParser
     ) {
         this.documentClient = documentClient;
         this.spreadsheetParser = spreadsheetParser;
         this.pdfParser = pdfParser;
         this.hwpParser = hwpParser;
+        this.shPdfParser = shPdfParser;
     }
 
     @Override
@@ -569,6 +573,12 @@ public class LhHousingDetailSource implements HousingDetailSource {
         }
         boolean housingList = isHousingListDocument(name);
         if (name.endsWith(".pdf")) {
+            List<DetailedHousingUnit> structured = shPdfParser.parse(
+                    bytes, attachment, housingList ? "LH_PDF_LIST" : "LH_PDF"
+            );
+            if (!structured.isEmpty()) {
+                return structured;
+            }
             return pdfParser.parse(bytes, attachment, housingList ? "LH_PDF_LIST" : "LH_PDF");
         }
         if (name.endsWith(".hwp") || name.endsWith(".hwpx")) {

@@ -1,5 +1,6 @@
 package com.zipick.external.housingdetail;
 
+import com.zipick.external.sh.ShPdfHousingParser;
 import com.zipick.notice.dto.NoticeResponse;
 import org.junit.jupiter.api.Test;
 
@@ -175,7 +176,8 @@ class LhHousingDetailSourceTest {
                 client,
                 new LhSpreadsheetHousingParser(),
                 pdfParser,
-                new LhHwpHousingParser(pdfParser)
+                new LhHwpHousingParser(pdfParser),
+                new ShPdfHousingParser()
         );
     }
 

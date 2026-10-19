@@ -10,6 +10,8 @@ public record MapHousingDetailResponse(
         String name,
         String address,
         String normalizedAddress,
+        String lotAddress,
+        String roadAddress,
         BigDecimal latitude,
         BigDecimal longitude,
         Integer buildYear,
@@ -36,6 +38,7 @@ public record MapHousingDetailResponse(
         var notice = housing.getNotice();
         return new MapHousingDetailResponse(
                 housing.getId(), housing.getName(), housing.getAddress(), housing.getNormalizedAddress(),
+                housing.getLotAddress(), housing.getRoadAddress(),
                 housing.getLatitude(), housing.getLongitude(), housing.getBuildYear(), housing.getFloor(),
                 housing.getHeatingMethod(), housing.getTotalHouseholdCount(), notice.getId(), notice.getTitle(),
                 notice.getNoticeType(), notice.getRentalType(), notice.getStatus().name(),

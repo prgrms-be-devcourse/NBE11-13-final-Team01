@@ -36,6 +36,8 @@ dependencies {
     implementation 'org.apache.pdfbox:pdfbox:3.0.8'
     // HWP v5 첨부문서에서 텍스트를 추출한다.
     implementation 'org.apache.tika:tika-parsers-standard-package:4.1.0'
+    // SH 공고 목록·상세 페이지의 HTML 구조를 안전하게 읽는다.
+    implementation 'org.jsoup:jsoup:1.21.2'
 
     // JWT 생성·검증. api만 컴파일 시점에 노출하고 구현체는 런타임에만 둔다.
     implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
