@@ -58,6 +58,26 @@ class HousingInfraSnapshotTest {
                 .isTrue();
     }
 
+    @Test
+    @DisplayName("수집 맥락 비교는 TTL 과 무관하다 — 추천은 만료된 스냅샷도 쓴다")
+    void collectionContextIgnoresTtl() {
+        HousingInfraSnapshot expired = snapshot(Instant.now().minus(Duration.ofDays(90)));
+
+        assertThat(expired.isValid(SIGNATURE, LATITUDE, LONGITUDE, ttlThreshold())).isFalse();
+        assertThat(expired.matchesCollectionContext(SIGNATURE, LATITUDE, LONGITUDE)).isTrue();
+    }
+
+    @Test
+    @DisplayName("정책이나 좌표가 다르면 수집 맥락도 맞지 않는다")
+    void collectionContextRejectsChangedPolicyOrCoordinate() {
+        HousingInfraSnapshot snapshot = snapshot(Instant.now());
+
+        assertThat(snapshot.matchesCollectionContext("MART:MT1:2000|SUBWAY:SW8:1500", LATITUDE, LONGITUDE))
+                .isFalse();
+        assertThat(snapshot.matchesCollectionContext(SIGNATURE, new BigDecimal("37.6000000"), LONGITUDE))
+                .isFalse();
+    }
+
     private static Instant ttlThreshold() {
         return Instant.now().minus(Duration.ofDays(30));
     }

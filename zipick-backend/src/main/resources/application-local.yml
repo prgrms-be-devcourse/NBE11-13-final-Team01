@@ -15,7 +15,9 @@ spring:
 
 logging:
   level:
-    org.hibernate.SQL: debug
+    # 주변 인프라 자동 수집 배치가 SQL을 대량으로 찍어 수집 결과 로그가 묻힌다.
+    # 쿼리를 직접 봐야 할 때만 debug로 올린다.
+    org.hibernate.SQL: warn
 
 cookie:
   # 로컬은 HTTP이므로 secure를 켜면 쿠키가 전달되지 않는다.

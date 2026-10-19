@@ -102,7 +102,25 @@ public class HousingInfraSnapshot extends BaseTimeEntity {
     }
 
     /**
+     * 수집 당시의 정책·좌표가 지금과 같은지 본다.
+     *
+     * 이 둘이 다르면 저장된 거리 자체가 더 이상 맞지 않는다(다른 반경으로 쟀거나 다른 위치를 쟀다).
+     * TTL 만료는 "오래됐을 뿐 값은 여전히 그 위치·그 반경의 결과"라서 여기서 보지 않는다.
+     * 추천은 이 조건만 통과하면 만료된 스냅샷도 쓴다.
+     */
+    public boolean matchesCollectionContext(
+            String currentSignature,
+            BigDecimal currentLatitude,
+            BigDecimal currentLongitude
+    ) {
+        return policySignature.equals(currentSignature)
+                && sameCoordinate(collectedLatitude, currentLatitude)
+                && sameCoordinate(collectedLongitude, currentLongitude);
+    }
+
+    /**
      * 아직 유효한 캐시인지 판단한다. 수집 대상 선정 쿼리와 같은 기준이다.
+     * 조회 API 의 FRESH / STALE 판정에 쓴다.
      *
      * @param ttlThreshold 이 시각보다 오래된 수집 결과는 만료로 본다
      */
@@ -113,9 +131,7 @@ public class HousingInfraSnapshot extends BaseTimeEntity {
             Instant ttlThreshold
     ) {
         return collectedAt.isAfter(ttlThreshold)
-                && policySignature.equals(currentSignature)
-                && sameCoordinate(collectedLatitude, currentLatitude)
-                && sameCoordinate(collectedLongitude, currentLongitude);
+                && matchesCollectionContext(currentSignature, currentLatitude, currentLongitude);
     }
 
     /** DECIMAL 비교라 equals 가 아니라 compareTo 를 써야 한다 (10.50 과 10.5 는 equals 가 false). */

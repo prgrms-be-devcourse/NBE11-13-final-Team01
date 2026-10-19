@@ -4,7 +4,7 @@ import com.zipick.external.kakao.config.KakaoLocalApiProperties;
 import com.zipick.infrastructure.config.InfraPolicy;
 import com.zipick.infrastructure.config.InfraProperties;
 import com.zipick.notice.domain.Housing;
-import com.zipick.notice.domain.NoticeStatus;
+import com.zipick.housing.dto.HouseFilter;
 import com.zipick.infrastructure.repository.HousingInfraSnapshotRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -99,8 +99,9 @@ public class HousingInfraCollectionScheduler {
     CollectionSummary runOnce() {
         Instant now = Instant.now();
         Instant ttlThreshold = now.minus(properties.cacheTtl());
+        // 추천 후보와 같은 상태 집합을 쓴다. 추천 쪽에서 바뀌면 수집 범위도 자동으로 따라간다.
         List<Housing> targets = snapshotRepository.findCollectionTargets(
-                NoticeStatus.OPEN,
+                HouseFilter.OPEN_STATUSES,
                 ttlThreshold,
                 policy.signature(),
                 PageRequest.of(0, properties.collection().batchSize())
