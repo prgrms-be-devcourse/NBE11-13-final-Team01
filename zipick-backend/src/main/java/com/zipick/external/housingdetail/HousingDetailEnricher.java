@@ -35,6 +35,7 @@ public class HousingDetailEnricher {
     public NoticeResponse enrich(NoticeResponse notice) {
         List<NoticeHousingResponse> addressed = notice.houses().stream()
                 .filter(housing -> StringUtils.hasText(housing.fullAddress()))
+                .filter(housing -> !AddressNormalizer.isPlaceholder(housing.fullAddress()))
                 .toList();
         HousingDetailResult detail = extract(notice);
         List<NoticeHousingResponse> enriched = mergeByAddress(
@@ -72,7 +73,7 @@ public class HousingDetailEnricher {
     ) {
         Map<String, List<DetailedHousingUnit>> byAddress = new LinkedHashMap<>();
         for (DetailedHousingUnit unit : units) {
-            if (!StringUtils.hasText(unit.address())) {
+            if (!StringUtils.hasText(unit.address()) || AddressNormalizer.isPlaceholder(unit.address())) {
                 continue;
             }
             byAddress.computeIfAbsent(normalizeAddress(unit.address()), ignored -> new ArrayList<>()).add(unit);
@@ -99,6 +100,8 @@ public class HousingDetailEnricher {
                     first.provinceName(),
                     first.districtName(),
                     first.address(),
+                    first.lotAddress(),
+                    first.roadAddress(),
                     AddressNormalizer.extractRoadName(first.address()),
                     AddressNormalizer.extractLegalDongName(first.address()),
                     null,
@@ -129,7 +132,22 @@ public class HousingDetailEnricher {
                 null,
                 null,
                 unit.monthlyRent(),
-                unit.rawPayload()
+                unit.rawPayload(),
+                unit.sourceRowNumber(),
+                unit.supplyStatus(),
+                unit.nearbySubwayStation(),
+                unit.subwayWalkDistanceKm(),
+                unit.elevatorAvailable(),
+                unit.communityFacilityAvailable(),
+                unit.totalParkingSpaces(),
+                unit.mechanicalParkingAvailable(),
+                unit.mechanicalParkingSpaces(),
+                unit.rentalConditions().stream()
+                        .map(condition -> new com.zipick.notice.dto.NoticeSupplyConditionResponse(
+                                condition.conditionCode(), condition.conditionName(),
+                                condition.rentDeposit(), condition.monthlyRent(), condition.rawPayload()
+                        ))
+                        .toList()
         );
     }
 
@@ -155,6 +173,8 @@ public class HousingDetailEnricher {
                     firstText(previous.provinceName(), housing.provinceName()),
                     firstText(previous.districtName(), housing.districtName()),
                     previous.fullAddress(),
+                    firstText(previous.lotAddress(), housing.lotAddress()),
+                    firstText(previous.roadAddress(), housing.roadAddress()),
                     firstText(previous.roadName(), housing.roadName()),
                     firstText(previous.legalDongName(), housing.legalDongName()),
                     firstText(previous.pnu(), housing.pnu()),
@@ -174,6 +194,8 @@ public class HousingDetailEnricher {
                 housing.provinceName(),
                 housing.districtName(),
                 housing.fullAddress(),
+                housing.lotAddress(),
+                housing.roadAddress(),
                 firstText(housing.roadName(), AddressNormalizer.extractRoadName(housing.fullAddress())),
                 firstText(housing.legalDongName(), AddressNormalizer.extractLegalDongName(housing.fullAddress())),
                 housing.pnu(),

@@ -7,6 +7,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AddressNormalizerTest {
 
     @Test
+    void detectsTemplateAddress() {
+        assertThat(AddressNormalizer.isPlaceholder("서울특별시 00구 0000로 000")).isTrue();
+        assertThat(AddressNormalizer.isPlaceholder("서울특별시 00구 0000동 000")).isTrue();
+        assertThat(AddressNormalizer.isPlaceholder("서울특별시 강동구 상일동 36-3")).isFalse();
+    }
+
+    @Test
+    void removesRepeatedAdministrativeSegmentsForMatching() {
+        assertThat(AddressNormalizer.canonicalize(
+                "서울특별시 서울특별시 강동구 상일동 36-3"
+        )).isEqualTo(AddressNormalizer.canonicalize(
+                "서울특별시 강동구 상일동 36-3"
+        ));
+    }
+
+    @Test
     void 원본_표현_차이를_제거해_중복비교용_주소를_만든다() {
         assertThat(AddressNormalizer.canonicalize("강원도 강릉시 강변북길 259 (송정동)"))
                 .isEqualTo("강원특별자치도강릉시강변북길259");

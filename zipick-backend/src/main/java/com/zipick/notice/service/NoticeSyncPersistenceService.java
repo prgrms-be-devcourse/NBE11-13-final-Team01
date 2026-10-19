@@ -4,6 +4,7 @@ import com.zipick.notice.domain.Agency;
 import com.zipick.notice.domain.Housing;
 import com.zipick.notice.domain.HousingSupply;
 import com.zipick.notice.domain.HousingMedia;
+import com.zipick.notice.domain.HousingSupplyCondition;
 import com.zipick.notice.domain.Notice;
 import com.zipick.notice.domain.NoticeAttachment;
 import com.zipick.notice.domain.NoticeStatus;
@@ -14,6 +15,7 @@ import com.zipick.notice.dto.NoticeSupplyResponse;
 import com.zipick.notice.repository.AgencyRepository;
 import com.zipick.notice.repository.HousingRepository;
 import com.zipick.notice.repository.HousingSupplyRepository;
+import com.zipick.notice.repository.HousingSupplyConditionRepository;
 import com.zipick.notice.repository.HousingMediaRepository;
 import com.zipick.notice.repository.NoticeRepository;
 import com.zipick.notice.repository.NoticeAttachmentRepository;
@@ -43,7 +45,6 @@ import java.util.Set;
 @Service
 public class NoticeSyncPersistenceService {
 
-    private static final String SOURCE = "MYHOME";
     private static final int MISSING_THRESHOLD = 2;
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
     private static final List<DateTimeFormatter> DATE_FORMATTERS = List.of(
@@ -57,6 +58,7 @@ public class NoticeSyncPersistenceService {
     private final NoticeAttachmentRepository noticeAttachmentRepository;
     private final HousingRepository housingRepository;
     private final HousingSupplyRepository housingSupplyRepository;
+    private final HousingSupplyConditionRepository housingSupplyConditionRepository;
     private final HousingMediaRepository housingMediaRepository;
     private final NoticeStatusEvaluator statusEvaluator;
     private final NoticeTypeClassifier noticeTypeClassifier;
@@ -67,6 +69,7 @@ public class NoticeSyncPersistenceService {
             NoticeAttachmentRepository noticeAttachmentRepository,
             HousingRepository housingRepository,
             HousingSupplyRepository housingSupplyRepository,
+            HousingSupplyConditionRepository housingSupplyConditionRepository,
             HousingMediaRepository housingMediaRepository,
             NoticeStatusEvaluator statusEvaluator,
             NoticeTypeClassifier noticeTypeClassifier
@@ -76,6 +79,7 @@ public class NoticeSyncPersistenceService {
         this.noticeAttachmentRepository = noticeAttachmentRepository;
         this.housingRepository = housingRepository;
         this.housingSupplyRepository = housingSupplyRepository;
+        this.housingSupplyConditionRepository = housingSupplyConditionRepository;
         this.housingMediaRepository = housingMediaRepository;
         this.statusEvaluator = statusEvaluator;
         this.noticeTypeClassifier = noticeTypeClassifier;
@@ -84,22 +88,40 @@ public class NoticeSyncPersistenceService {
     @Transactional
     public NoticeSyncResult synchronize(List<NoticeSyncCommand> commands, Instant collectedAt) {
         LocalDate collectionDate = LocalDate.ofInstant(collectedAt, KOREA_ZONE);
-        Map<String, Notice> existingNotices = new LinkedHashMap<>();
-        for (Notice notice : noticeRepository.findAllBySource(SOURCE)) {
-            existingNotices.put(notice.getExternalNoticeId(), notice);
-        }
-
-        Set<String> seenNoticeIds = new HashSet<>();
         Map<String, Agency> agencyCache = new HashMap<>();
         Counters counters = new Counters();
+        Map<String, List<NoticeSyncCommand>> commandsBySource = new LinkedHashMap<>();
+        for (NoticeSyncCommand command : commands) {
+            commandsBySource.computeIfAbsent(command.notice().source(), ignored -> new ArrayList<>())
+                    .add(command);
+        }
+        for (Map.Entry<String, List<NoticeSyncCommand>> sourceEntry : commandsBySource.entrySet()) {
+            synchronizeSource(sourceEntry.getKey(), sourceEntry.getValue(), collectedAt,
+                    collectionDate, agencyCache, counters);
+        }
+        return counters.toResult();
+    }
 
+    private void synchronizeSource(
+            String source,
+            List<NoticeSyncCommand> commands,
+            Instant collectedAt,
+            LocalDate collectionDate,
+            Map<String, Agency> agencyCache,
+            Counters counters
+    ) {
+        Map<String, Notice> existingNotices = new LinkedHashMap<>();
+        for (Notice notice : noticeRepository.findAllBySource(source)) {
+            existingNotices.put(notice.getExternalNoticeId(), notice);
+        }
+        Set<String> seenNoticeIds = new HashSet<>();
         for (NoticeSyncCommand command : commands) {
             NoticeResponse sourceNotice = command.notice();
             seenNoticeIds.add(sourceNotice.noticeId());
 
             Notice notice = existingNotices.get(sourceNotice.noticeId());
             if (notice == null) {
-                notice = new Notice(SOURCE, sourceNotice.noticeId(), sourceNotice.title(), NoticeStatus.OPEN);
+                notice = new Notice(source, sourceNotice.noticeId(), sourceNotice.title(), NoticeStatus.OPEN);
                 counters.createdNotices++;
             } else {
                 counters.updatedNotices++;
@@ -137,11 +159,14 @@ public class NoticeSyncPersistenceService {
             );
             Notice savedNotice = noticeRepository.save(notice);
             synchronizeAttachments(savedNotice, sourceNotice.attachments());
-            synchronizeHousings(savedNotice, sourceNotice.houses(), collectedAt, collectionDate, counters);
+            if (!sourceNotice.houses().isEmpty()) {
+                synchronizeHousings(savedNotice, sourceNotice.houses(), collectedAt, collectionDate, counters);
+            }
         }
-
-        markMissingNotices(existingNotices, seenNoticeIds, collectionDate, counters);
-        return counters.toResult();
+        // SH는 최근 기간만 조회하므로 기간 밖의 과거 공고를 누락으로 오판하지 않는다.
+        if (!"SH".equals(source)) {
+            markMissingNotices(existingNotices, seenNoticeIds, collectionDate, counters);
+        }
     }
 
     private void synchronizeAttachments(
@@ -181,8 +206,10 @@ public class NoticeSyncPersistenceService {
             if (!StringUtils.hasText(sourceHousing.fullAddress())) {
                 continue;
             }
-            seenHousingKeys.add(sourceHousing.sourceHousingKey());
             Housing housing = existingHousings.get(sourceHousing.sourceHousingKey());
+            if (housing == null) {
+                housing = findHousingByAddress(existingHousings.values(), sourceHousing);
+            }
             if (housing == null) {
                 housing = new Housing(
                         notice,
@@ -191,6 +218,7 @@ public class NoticeSyncPersistenceService {
                         sourceHousing.fullAddress()
                 );
             }
+            seenHousingKeys.add(housing.getSourceHousingKey());
             housing.synchronize(
                     sourceHousing.pnu(),
                     sourceHousing.complexName(),
@@ -199,6 +227,8 @@ public class NoticeSyncPersistenceService {
                     sourceHousing.fullAddress(),
                     normalizeAddress(sourceHousing.fullAddress()),
                     sourceHousing.roadName(),
+                    sourceHousing.lotAddress(),
+                    sourceHousing.roadAddress(),
                     sourceHousing.legalDongName(),
                     sourceHousing.heatingMethodName(),
                     parseInteger(sourceHousing.totalHouseholdCount()),
@@ -219,6 +249,38 @@ public class NoticeSyncPersistenceService {
                 markAllSuppliesMissing(housing, collectionDate, counters);
             }
         }
+    }
+
+    private Housing findHousingByAddress(
+            java.util.Collection<Housing> existingHousings,
+            NoticeHousingResponse sourceHousing
+    ) {
+        Set<String> sourceAddresses = addressKeys(
+                sourceHousing.fullAddress(), sourceHousing.lotAddress(), sourceHousing.roadAddress()
+        );
+        if (sourceAddresses.isEmpty()) {
+            return null;
+        }
+        for (Housing existing : existingHousings) {
+            Set<String> existingAddresses = addressKeys(
+                    existing.getAddress(), existing.getLotAddress(), existing.getRoadAddress()
+            );
+            if (existingAddresses.stream().anyMatch(sourceAddresses::contains)) {
+                return existing;
+            }
+        }
+        return null;
+    }
+
+    private Set<String> addressKeys(String... addresses) {
+        Set<String> keys = new HashSet<>();
+        for (String address : addresses) {
+            String normalized = AddressNormalizer.canonicalize(address);
+            if (StringUtils.hasText(normalized)) {
+                keys.add(normalized);
+            }
+        }
+        return keys;
     }
 
     private void synchronizeMedia(Housing housing, List<com.zipick.notice.dto.HousingMediaResponse> sourceMedia) {
@@ -263,6 +325,7 @@ public class NoticeSyncPersistenceService {
                     sourceSupply.unitNumber(),
                     sourceSupply.floor(),
                     sourceSupply.roomCount(),
+                    sourceSupply.sourceRowNumber(),
                     sourceSupply.exclusiveArea(),
                     toInteger(sourceSupply.supplyCount()),
                     parseInteger(sourceSupply.supplyHouseCount()),
@@ -271,10 +334,19 @@ public class NoticeSyncPersistenceService {
                     sourceSupply.interimPayment(),
                     sourceSupply.balance(),
                     sourceSupply.monthlyRent(),
+                    sourceSupply.supplyStatus(),
+                    sourceSupply.nearbySubwayStation(),
+                    sourceSupply.subwayWalkDistanceKm(),
+                    sourceSupply.elevatorAvailable(),
+                    sourceSupply.communityFacilityAvailable(),
+                    sourceSupply.totalParkingSpaces(),
+                    sourceSupply.mechanicalParkingAvailable(),
+                    sourceSupply.mechanicalParkingSpaces(),
                     sourceSupply.rawPayload(),
                     collectedAt
             );
-            housingSupplyRepository.save(supply);
+            HousingSupply savedSupply = housingSupplyRepository.save(supply);
+            synchronizeSupplyConditions(savedSupply, sourceSupply.rentalConditions());
             counters.synchronizedSupplies++;
         }
 
@@ -283,6 +355,26 @@ public class NoticeSyncPersistenceService {
                     && supply.markMissing(collectionDate, MISSING_THRESHOLD)) {
                 counters.inactiveSupplies++;
             }
+        }
+    }
+
+    private void synchronizeSupplyConditions(
+            HousingSupply supply,
+            List<com.zipick.notice.dto.NoticeSupplyConditionResponse> sourceConditions
+    ) {
+        for (com.zipick.notice.dto.NoticeSupplyConditionResponse source : sourceConditions) {
+            if (!StringUtils.hasText(source.conditionCode()) || !StringUtils.hasText(source.conditionName())) {
+                continue;
+            }
+            HousingSupplyCondition condition = housingSupplyConditionRepository
+                    .findByHousingSupplyIdAndConditionCode(supply.getId(), source.conditionCode())
+                    .orElseGet(() -> new HousingSupplyCondition(
+                            supply, source.conditionCode(), source.conditionName()
+                    ));
+            condition.synchronize(
+                    source.conditionName(), source.rentDeposit(), source.monthlyRent(), source.rawPayload()
+            );
+            housingSupplyConditionRepository.save(condition);
         }
     }
 

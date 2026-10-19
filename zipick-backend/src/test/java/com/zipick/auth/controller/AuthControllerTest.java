@@ -92,7 +92,21 @@ class AuthControllerTest {
         @DisplayName("이메일 형식이 올바르지 않으면 400을 반환한다")
         void invalidEmail() throws Exception {
             perform("/api/auth/signup", "{\"email\": \"not-an-email\", \"password\": \"password1234\"}")
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.data").doesNotExist())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+                    .andExpect(jsonPath("$.error.fields.email").exists());
+        }
+
+        @Test
+        @DisplayName("JSON 형식이 잘못되면 내부 오류를 노출하지 않고 공통 400 응답을 반환한다")
+        void malformedJson() throws Exception {
+            perform("/api/auth/signup", "{\"email\":")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+                    .andExpect(jsonPath("$.error.message").value("요청 값이 올바르지 않습니다."));
         }
 
         @Test
@@ -202,6 +216,8 @@ class AuthControllerTest {
             mockMvc.perform(post("/api/auth/reissue")
                             .cookie(new Cookie(CookieUtil.REFRESH_TOKEN_COOKIE, "invalid-token")))
                     .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.error.code").value("INVALID_REFRESH_TOKEN"))
                     .andExpect(header().string(HttpHeaders.SET_COOKIE, not(containsString("refreshToken="))));
         }
     }

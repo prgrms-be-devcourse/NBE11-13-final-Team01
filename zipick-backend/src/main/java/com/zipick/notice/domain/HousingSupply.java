@@ -61,6 +61,9 @@ public class HousingSupply extends BaseTimeEntity {
     @Column(name = "room_count")
     private Integer roomCount;
 
+    @Column(name = "source_row_number")
+    private Integer sourceRowNumber;
+
     @Column(name = "supply_count")
     private Integer supplyCount;
 
@@ -84,6 +87,30 @@ public class HousingSupply extends BaseTimeEntity {
 
     @Column(name = "exclusive_area", precision = 10, scale = 2)
     private BigDecimal exclusiveArea;
+
+    @Column(name = "subway_walk_distance_km", precision = 8, scale = 3)
+    private BigDecimal subwayWalkDistanceKm;
+
+    @Column(name = "supply_status", length = 50)
+    private String supplyStatus;
+
+    @Column(name = "nearby_subway_station", length = 200)
+    private String nearbySubwayStation;
+
+    @Column(name = "elevator_available")
+    private Boolean elevatorAvailable;
+
+    @Column(name = "community_facility_available")
+    private Boolean communityFacilityAvailable;
+
+    @Column(name = "total_parking_spaces")
+    private Integer totalParkingSpaces;
+
+    @Column(name = "mechanical_parking_available")
+    private Boolean mechanicalParkingAvailable;
+
+    @Column(name = "mechanical_parking_spaces")
+    private Integer mechanicalParkingSpaces;
 
     @Column(name = "active", nullable = false)
     private boolean active;
@@ -120,6 +147,7 @@ public class HousingSupply extends BaseTimeEntity {
             String unitNumber,
             Integer floor,
             Integer roomCount,
+            Integer sourceRowNumber,
             BigDecimal exclusiveArea,
             Integer supplyCount,
             Integer supplyHouseCount,
@@ -128,6 +156,14 @@ public class HousingSupply extends BaseTimeEntity {
             Long interimPayment,
             Long balance,
             Long monthlyRent,
+            String supplyStatus,
+            String nearbySubwayStation,
+            BigDecimal subwayWalkDistanceKm,
+            Boolean elevatorAvailable,
+            Boolean communityFacilityAvailable,
+            Integer totalParkingSpaces,
+            Boolean mechanicalParkingAvailable,
+            Integer mechanicalParkingSpaces,
             String rawPayload,
             Instant seenAt
     ) {
@@ -138,6 +174,7 @@ public class HousingSupply extends BaseTimeEntity {
         this.unitNumber = keepExistingWhenBlank(unitNumber, this.unitNumber);
         this.floor = floor == null ? this.floor : floor;
         this.roomCount = roomCount == null ? this.roomCount : roomCount;
+        this.sourceRowNumber = sourceRowNumber == null ? this.sourceRowNumber : sourceRowNumber;
         this.exclusiveArea = exclusiveArea == null ? this.exclusiveArea : exclusiveArea;
         this.supplyCount = supplyCount == null ? this.supplyCount : supplyCount;
         this.supplyHouseCount = supplyHouseCount == null ? this.supplyHouseCount : supplyHouseCount;
@@ -146,6 +183,19 @@ public class HousingSupply extends BaseTimeEntity {
         this.interimPayment = interimPayment == null ? this.interimPayment : interimPayment;
         this.balance = balance == null ? this.balance : balance;
         this.monthlyRent = monthlyRent == null ? this.monthlyRent : monthlyRent;
+        this.supplyStatus = keepExistingWhenBlank(supplyStatus, this.supplyStatus);
+        this.nearbySubwayStation = keepExistingWhenBlank(nearbySubwayStation, this.nearbySubwayStation);
+        this.subwayWalkDistanceKm = subwayWalkDistanceKm == null
+                ? this.subwayWalkDistanceKm : subwayWalkDistanceKm;
+        this.elevatorAvailable = elevatorAvailable == null ? this.elevatorAvailable : elevatorAvailable;
+        this.communityFacilityAvailable = communityFacilityAvailable == null
+                ? this.communityFacilityAvailable : communityFacilityAvailable;
+        this.totalParkingSpaces = totalParkingSpaces == null
+                ? this.totalParkingSpaces : totalParkingSpaces;
+        this.mechanicalParkingAvailable = mechanicalParkingAvailable == null
+                ? this.mechanicalParkingAvailable : mechanicalParkingAvailable;
+        this.mechanicalParkingSpaces = mechanicalParkingSpaces == null
+                ? this.mechanicalParkingSpaces : mechanicalParkingSpaces;
         this.rawPayload = rawPayload == null ? this.rawPayload : rawPayload;
         markSeen(seenAt);
     }
@@ -231,9 +281,20 @@ public class HousingSupply extends BaseTimeEntity {
         return roomCount;
     }
 
+    public Integer getSourceRowNumber() { return sourceRowNumber; }
+
     public BigDecimal getExclusiveArea() {
         return exclusiveArea;
     }
+
+    public String getSupplyStatus() { return supplyStatus; }
+    public String getNearbySubwayStation() { return nearbySubwayStation; }
+    public BigDecimal getSubwayWalkDistanceKm() { return subwayWalkDistanceKm; }
+    public Boolean getElevatorAvailable() { return elevatorAvailable; }
+    public Boolean getCommunityFacilityAvailable() { return communityFacilityAvailable; }
+    public Integer getTotalParkingSpaces() { return totalParkingSpaces; }
+    public Boolean getMechanicalParkingAvailable() { return mechanicalParkingAvailable; }
+    public Integer getMechanicalParkingSpaces() { return mechanicalParkingSpaces; }
 
     public boolean isActive() {
         return active;
