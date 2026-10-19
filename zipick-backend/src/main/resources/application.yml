@@ -66,6 +66,17 @@ zipick:
       - { code: PHARMACY,          kakao-code: PM9, label: 약국,     radius-m: 1500 }
       - { code: SCHOOL,            kakao-code: SC4, label: 학교,     radius-m: 1500 }
 
+  # 기관별 공고 수집 설정
+  sources:
+    sh:
+      # SH 공고 수집 활성화 여부
+      enabled: true
+      # 한 번에 조회할 최대 목록 페이지 수
+      max-pages: 40
+      # 오늘을 기준으로 수집할 과거 공고 기간
+      lookback-days: 365
+      # SH 서버 부하 방지를 위한 요청 간격(ms)
+      request-delay-millis: 100
   recommendation:
     # 추천 목록 기준 (가정 — 근거 표 참고)
     min-score: 60

@@ -8,6 +8,8 @@ public record NoticeHousingResponse(
         String provinceName,
         String districtName,
         String fullAddress,
+        String lotAddress,
+        String roadAddress,
         String roadName,
         String legalDongName,
         String pnu,
@@ -19,5 +21,16 @@ public record NoticeHousingResponse(
     public NoticeHousingResponse {
         supplies = supplies == null ? List.of() : List.copyOf(supplies);
         media = media == null ? List.of() : List.copyOf(media);
+    }
+
+    public NoticeHousingResponse(
+            String sourceHousingKey, String complexName, String provinceName, String districtName,
+            String fullAddress, String roadName, String legalDongName, String pnu,
+            String heatingMethodName, String totalHouseholdCount,
+            List<NoticeSupplyResponse> supplies, List<HousingMediaResponse> media
+    ) {
+        this(sourceHousingKey, complexName, provinceName, districtName, fullAddress,
+                null, null, roadName, legalDongName, pnu, heatingMethodName,
+                totalHouseholdCount, supplies, media);
     }
 }

@@ -61,6 +61,12 @@ public class Housing extends BaseTimeEntity {
     @Column(name = "road_name", length = 255)
     private String roadName;
 
+    @Column(name = "lot_address", length = 500)
+    private String lotAddress;
+
+    @Column(name = "road_address", length = 500)
+    private String roadAddress;
+
     @Column(name = "legal_dong_name", length = 255)
     private String legalDongName;
 
@@ -153,6 +159,8 @@ public class Housing extends BaseTimeEntity {
             String address,
             String normalizedAddress,
             String roadName,
+            String lotAddress,
+            String roadAddress,
             String legalDongName,
             String heatingMethod,
             Integer totalHouseholdCount,
@@ -166,11 +174,32 @@ public class Housing extends BaseTimeEntity {
         this.address = keepExistingWhenBlank(address, this.address);
         this.normalizedAddress = keepExistingWhenBlank(normalizedAddress, this.normalizedAddress);
         this.roadName = keepExistingWhenBlank(roadName, this.roadName);
+        this.lotAddress = keepExistingWhenBlank(lotAddress, this.lotAddress);
+        this.roadAddress = keepExistingWhenBlank(roadAddress, this.roadAddress);
         this.legalDongName = keepExistingWhenBlank(legalDongName, this.legalDongName);
         this.heatingMethod = keepExistingWhenBlank(heatingMethod, this.heatingMethod);
         this.totalHouseholdCount = totalHouseholdCount == null ? this.totalHouseholdCount : totalHouseholdCount;
         this.rawPayload = rawPayload == null ? this.rawPayload : rawPayload;
         markSeen(seenAt);
+    }
+
+    public void synchronize(
+            String pnu,
+            String name,
+            String provinceName,
+            String districtName,
+            String address,
+            String normalizedAddress,
+            String roadName,
+            String legalDongName,
+            String heatingMethod,
+            Integer totalHouseholdCount,
+            String rawPayload,
+            Instant seenAt
+    ) {
+        synchronize(pnu, name, provinceName, districtName, address, normalizedAddress,
+                roadName, null, null, legalDongName, heatingMethod, totalHouseholdCount,
+                rawPayload, seenAt);
     }
 
     public void markSeen(Instant seenAt) {
@@ -242,6 +271,14 @@ public class Housing extends BaseTimeEntity {
 
     public String getRoadName() {
         return roadName;
+    }
+
+    public String getLotAddress() {
+        return lotAddress;
+    }
+
+    public String getRoadAddress() {
+        return roadAddress;
     }
 
     public String getLegalDongName() {
