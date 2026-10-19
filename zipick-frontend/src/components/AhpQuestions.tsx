@@ -17,7 +17,9 @@ const PHRASE: Record<ScoreItem, string> = {
   cost: '월 비용이 싼 집',
   region: '원하는 동네',
   area: '넓은 집',
+  rooms: '방이 많은 집',
   infra: '역·편의시설이 가까운 집',
+  age: '새로 지은 집',
   type: '원하는 주택 유형',
 };
 

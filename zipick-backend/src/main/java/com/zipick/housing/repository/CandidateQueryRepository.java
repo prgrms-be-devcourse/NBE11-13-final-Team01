@@ -1,0 +1,247 @@
+package com.zipick.housing.repository;
+
+import static com.zipick.notice.domain.QAgency.agency;
+import static com.zipick.notice.domain.QHousing.housing;
+import static com.zipick.notice.domain.QHousingSupply.housingSupply;
+import static com.zipick.notice.domain.QNotice.notice;
+import static com.zipick.recommendation.domain.QRecommendationFeedback.recommendationFeedback;
+
+import com.querydsl.core.BooleanBuilder;
+import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Predicate;
+import com.querydsl.core.types.dsl.BooleanExpression;
+import com.querydsl.core.types.dsl.ComparableExpressionBase;
+import com.querydsl.core.types.dsl.StringExpression;
+import com.querydsl.jpa.JPAExpressions;
+import com.querydsl.jpa.impl.JPAQuery;
+import com.querydsl.jpa.impl.JPAQueryFactory;
+import com.zipick.housing.domain.Candidate;
+import com.zipick.housing.domain.HousingType;
+import com.zipick.housing.domain.RentalType;
+import com.zipick.housing.dto.HouseFilter;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Repository;
+
+/**
+ * 추천 후보 조회. 공고 수집 테이블(notice ⨝ housing ⨝ housing_supply ⟕ agency)을 읽는다.
+ *
+ * 결과에서 '빼는' 조건(모집 상태, 지역, 금액, 면적, 유형, 숨긴 집)은 모두 여기서 SQL 로 처리한다.
+ * 점수·근거는 코드(ScoreCalculator)가 맡는다. — 규칙: 빼는 조건은 DB, 순서와 근거는 코드
+ */
+@Repository
+@RequiredArgsConstructor
+public class CandidateQueryRepository {
+
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final long MANWON = 10_000L;
+
+    private final JPAQueryFactory query;
+
+    /** 필터를 통과한 공급 호실. hiddenForUserId 가 있으면 그 사용자가 숨긴 주택을 뺀다. */
+    public List<Candidate> find(HouseFilter f, Long hiddenForUserId, int limit) {
+        BooleanBuilder where = build(f);
+        if (hiddenForUserId != null) {
+            where.and(JPAExpressions.selectOne().from(recommendationFeedback)
+                    .where(recommendationFeedback.userId.eq(hiddenForUserId),
+                            recommendationFeedback.housingId.eq(housing.id))
+                    .notExists());
+        }
+        return select()
+                .where(where)
+                .orderBy(notice.applyEndAt.asc().nullsLast(), housing.id.asc(), housingSupply.id.asc())
+                .limit(limit)
+                .fetch().stream().map(this::toCandidate).toList();
+    }
+
+    /** 주택 id 로 조회 (모집 상태·활성 여부와 관계없이). 상세·두 집 비교·학습에 쓴다. */
+    public List<Candidate> findByHousingIds(Collection<Long> housingIds) {
+        if (housingIds.isEmpty()) return List.of();
+        return select()
+                .where(housing.id.in(housingIds))
+                .orderBy(housing.id.asc(), housingSupply.id.asc())
+                .fetch().stream().map(this::toCandidate).toList();
+    }
+
+    /** 필터에 맞는 주택 수 */
+    public long countHousings(HouseFilter f) {
+        Long n = query.select(housing.id.countDistinct())
+                .from(housingSupply)
+                .join(housingSupply.housing, housing)
+                .join(housing.notice, notice)
+                .leftJoin(notice.agency, agency)
+                .where(build(f))
+                .fetchOne();
+        return n == null ? 0 : n;
+    }
+
+    public enum Dimension { STATUS, AGENCY, RENTAL_TYPE, HOUSING_TYPE, REGION }
+
+    /**
+     * 필터에 맞는 주택 수를 값별로 센다 (필터 칩 개수 표시용).
+     * 공고 유형·주택 유형은 원본 문자열로 센 뒤 분류해서 합친다. 분류할 수 없는 값은 세지 않는다.
+     */
+    public Map<String, Long> countBy(HouseFilter f, Dimension d) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        switch (d) {
+            case STATUS -> group(f, notice.status).forEach(t -> add(out, String.valueOf(t.get(0, Object.class)), t));
+            case AGENCY -> group(f, agency.code).forEach(t -> add(out, t.get(0, String.class), t));
+            case RENTAL_TYPE -> query.select(notice.noticeType, notice.title, housing.id.countDistinct())
+                    .from(housingSupply).join(housingSupply.housing, housing).join(housing.notice, notice)
+                    .leftJoin(notice.agency, agency)
+                    .where(build(f))
+                    .groupBy(notice.noticeType, notice.title)
+                    .fetch()
+                    .forEach(t -> {
+                        RentalType r = RentalType.classify(t.get(notice.noticeType), t.get(notice.title));
+                        if (r != null) out.merge(r.name(), t.get(housing.id.countDistinct()), Long::sum);
+                    });
+            case HOUSING_TYPE -> group(f, housingSupply.housingType).forEach(t -> {
+                HousingType h = HousingType.classify(t.get(0, String.class));
+                if (h != null) add(out, h.name(), t);
+            });
+            case REGION -> query.select(housing.provinceName, housing.districtName, housing.id.countDistinct())
+                    .from(housingSupply).join(housingSupply.housing, housing).join(housing.notice, notice)
+                    .leftJoin(notice.agency, agency)
+                    .where(build(f), housing.districtName.isNotNull())
+                    .groupBy(housing.provinceName, housing.districtName)
+                    .orderBy(housing.provinceName.asc(), housing.districtName.asc())
+                    .fetch()
+                    .forEach(t -> out.put(Candidate.regionKey(t.get(housing.provinceName), t.get(housing.districtName)),
+                            t.get(housing.id.countDistinct())));
+        }
+        return out;
+    }
+
+    /** 기관 코드 → 기관 이름 */
+    public Map<String, String> agencyNames() {
+        Map<String, String> out = new LinkedHashMap<>();
+        query.select(agency.code, agency.name).from(agency).orderBy(agency.code.asc()).fetch()
+                .forEach(t -> out.put(t.get(agency.code), t.get(agency.name)));
+        return out;
+    }
+
+    // ---- 내부 ----
+
+    private JPAQuery<Tuple> select() {
+        return query.select(housingSupply.id, housing.id, notice.id, notice.title, notice.noticeType, notice.status,
+                        notice.applyEndAt, notice.detailUrl, agency.code, agency.name,
+                        housing.name, housing.address, housing.provinceName, housing.districtName,
+                        housing.latitude, housing.longitude, housing.buildYear,
+                        housingSupply.housingType, housingSupply.exclusiveArea, housingSupply.roomCount,
+                        housingSupply.floor, housingSupply.rentDeposit, housingSupply.monthlyRent,
+                        housingSupply.supplyCount)
+                .from(housingSupply)
+                .join(housingSupply.housing, housing)
+                .join(housing.notice, notice)
+                .leftJoin(notice.agency, agency);
+    }
+
+    private Candidate toCandidate(Tuple t) {
+        Instant end = t.get(notice.applyEndAt);
+        return new Candidate(
+                t.get(housingSupply.id), t.get(housing.id), t.get(notice.id),
+                t.get(notice.title), t.get(notice.noticeType), RentalType.classify(t.get(notice.noticeType), t.get(notice.title)),
+                t.get(notice.status), end == null ? null : LocalDate.ofInstant(end, SEOUL), t.get(notice.detailUrl),
+                t.get(agency.code), t.get(agency.name),
+                t.get(housing.name), t.get(housing.address), t.get(housing.provinceName), t.get(housing.districtName),
+                t.get(housing.latitude), t.get(housing.longitude), t.get(housing.buildYear),
+                t.get(housingSupply.housingType), HousingType.classify(t.get(housingSupply.housingType)),
+                t.get(housingSupply.exclusiveArea), t.get(housingSupply.roomCount), t.get(housingSupply.floor),
+                Candidate.toManwon(t.get(housingSupply.rentDeposit)), Candidate.toManwon(t.get(housingSupply.monthlyRent)),
+                t.get(housingSupply.supplyCount));
+    }
+
+    private List<Tuple> group(HouseFilter f, ComparableExpressionBase<?> key) {
+        return query.select(key, housing.id.countDistinct())
+                .from(housingSupply).join(housingSupply.housing, housing).join(housing.notice, notice)
+                .leftJoin(notice.agency, agency)
+                .where(build(f), key.isNotNull())
+                .groupBy(key)
+                .fetch();
+    }
+
+    private static void add(Map<String, Long> out, String key, Tuple t) {
+        out.merge(key, t.get(1, Long.class), Long::sum);
+    }
+
+    private BooleanBuilder build(HouseFilter f) {
+        BooleanBuilder b = new BooleanBuilder();
+        boolean unknown = f.includeUnknown();
+
+        b.and(housing.active.isTrue()).and(housingSupply.active.isTrue());
+        if (notEmpty(f.noticeIds())) b.and(notice.id.in(f.noticeIds()));
+        if (notEmpty(f.statuses())) b.and(notice.status.in(f.statuses()));
+        if (notEmpty(f.agencies())) b.and(agency.code.in(f.agencies()));
+        if (notEmpty(f.rentalTypes())) b.and(rentalTypeIn(f.rentalTypes()));
+        if (notEmpty(f.regions())) b.and(regionIn(f.regions()));
+        if (notEmpty(f.housingTypes())) {
+            List<String> raws = f.housingTypes().stream().flatMap(h -> h.getRawNames().stream()).toList();
+            b.and(orNull(housingSupply.housingType.in(raws), housingSupply.housingType, unknown));
+        }
+        if (f.depositMin() != null) b.and(orNull(housingSupply.rentDeposit.goe(f.depositMin() * MANWON), housingSupply.rentDeposit, unknown));
+        if (f.depositMax() != null) b.and(orNull(housingSupply.rentDeposit.loe(f.depositMax() * MANWON), housingSupply.rentDeposit, unknown));
+        if (f.rentMin() != null) b.and(orNull(housingSupply.monthlyRent.goe(f.rentMin() * MANWON), housingSupply.monthlyRent, unknown));
+        if (f.rentMax() != null) b.and(orNull(housingSupply.monthlyRent.loe(f.rentMax() * MANWON), housingSupply.monthlyRent, unknown));
+        if (f.areaMin() != null) b.and(orNull(housingSupply.exclusiveArea.goe(f.areaMin()), housingSupply.exclusiveArea, unknown));
+        if (f.areaMax() != null) b.and(orNull(housingSupply.exclusiveArea.loe(f.areaMax()), housingSupply.exclusiveArea, unknown));
+        return b;
+    }
+
+    /**
+     * 공공임대 유형 필터. RentalType.classify 와 같은 규칙이다:
+     * 공고 유형이 있으면 공고 유형으로, 비어 있으면 공고 제목으로 판단한다.
+     */
+    private Predicate rentalTypeIn(Set<RentalType> types) {
+        BooleanExpression typeBlank = notice.noticeType.isNull().or(notice.noticeType.trim().isEmpty());
+        BooleanBuilder or = new BooleanBuilder();
+        for (RentalType r : types) {
+            or.or(typeBlank.not().and(matches(r, notice.noticeType)));
+            or.or(typeBlank.and(matches(r, notice.title)));
+        }
+        return or;
+    }
+
+    private static BooleanExpression matches(RentalType r, StringExpression t) {
+        BooleanExpression youthOnly = t.contains("청년").and(t.contains("신혼").not());
+        return switch (r) {
+            case HAPPY -> t.contains("행복주택");
+            case NATIONAL -> t.contains("국민임대");
+            case PERMANENT -> t.contains("영구임대");
+            case INTEGRATED -> t.contains("통합공공임대");
+            case DEUNDEUN -> t.contains("든든전세");
+            case JEONSE_LEASE -> t.contains("전세임대");
+            case YOUTH_PURCHASE -> t.contains("매입").and(youthOnly);
+            case PURCHASE -> t.contains("매입").and(youthOnly.not());
+            case PUBLIC -> t.contains("공공임대").and(t.contains("통합").not())
+                    .or(t.contains("10년임대")).or(t.contains("5년임대"));
+        };
+    }
+
+    /** "시도 시군구" 키 → (시도, 시군구) 쌍 비교. 시도 이름에 공백이 없으므로 첫 공백으로 나눈다 */
+    private Predicate regionIn(Set<String> keys) {
+        BooleanBuilder or = new BooleanBuilder();
+        for (String key : keys) {
+            int i = key.indexOf(' ');
+            if (i < 0) or.or(housing.provinceName.eq(key).or(housing.districtName.eq(key)));
+            else or.or(housing.provinceName.eq(key.substring(0, i)).and(housing.districtName.eq(key.substring(i + 1))));
+        }
+        return or;
+    }
+
+    /** includeUnknown이면 "조건 OR 값 없음", 아니면 조건만 */
+    private BooleanExpression orNull(BooleanExpression cond, ComparableExpressionBase<?> col, boolean includeUnknown) {
+        return includeUnknown ? cond.or(col.isNull()) : cond;
+    }
+
+    private static boolean notEmpty(Set<?> s) {
+        return s != null && !s.isEmpty();
+    }
+}

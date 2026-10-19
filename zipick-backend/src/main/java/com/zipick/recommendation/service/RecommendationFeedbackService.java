@@ -2,7 +2,7 @@ package com.zipick.recommendation.service;
 
 import com.zipick.global.error.BusinessException;
 import com.zipick.global.error.ErrorCode;
-import com.zipick.housing.repository.SupplyHouseRepository;
+import com.zipick.notice.repository.HousingRepository;
 import com.zipick.recommendation.domain.RecommendationFeedback;
 import com.zipick.recommendation.domain.RecommendationFeedback.Reason;
 import com.zipick.recommendation.dto.FeedbackRequest;
@@ -22,27 +22,27 @@ public class RecommendationFeedbackService {
     private static final int SUGGEST_AFTER = 2;
 
     private final RecommendationFeedbackRepository repository;
-    private final SupplyHouseRepository houseRepository;
+    private final HousingRepository housingRepository;
     private final UserPreferenceRepository preferenceRepository;
 
     @Transactional
     public FeedbackResponse submit(Long userId, FeedbackRequest r) {
-        if (!houseRepository.existsById(r.houseId())) {
+        if (!housingRepository.existsById(r.houseId())) {
             throw new BusinessException(ErrorCode.HOUSE_NOT_FOUND);
         }
         if (r.type() == RecommendationFeedback.Type.DISLIKE && r.reason() == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "'별로예요'에는 이유가 필요합니다.");
         }
         // 같은 집에 다시 남기면 덮어쓴다
-        repository.findByUserIdAndSupplyHouseId(userId, r.houseId()).ifPresent(repository::delete);
+        repository.findByUserIdAndHousingId(userId, r.houseId()).ifPresent(repository::delete);
         RecommendationFeedback saved = repository.save(RecommendationFeedback.builder()
-                .userId(userId).supplyHouseId(r.houseId()).type(r.type()).reason(r.reason()).build());
+                .userId(userId).housingId(r.houseId()).type(r.type()).reason(r.reason()).build());
 
         FeedbackResponse.Suggestion suggestion = null;
         if (r.reason() != null && repository.countByUserIdAndReason(userId, r.reason()) >= SUGGEST_AFTER) {
             suggestion = suggest(userId, r.reason());
         }
-        return new FeedbackResponse(saved.getId(), saved.getSupplyHouseId(), saved.getType(), saved.getReason(),
+        return new FeedbackResponse(saved.getId(), saved.getHousingId(), saved.getType(), saved.getReason(),
                 true, suggestion);
     }
 
@@ -75,7 +75,9 @@ public class RecommendationFeedbackService {
                     "지역이 맞지 않는다는 의견이 " + SUGGEST_AFTER + "번 있었어요. 관심 지역을 '꼭' 조건으로 바꿀까요?");
             case INFRA -> new FeedbackResponse.Suggestion("weights.infra", null, 5,
                     "주변이 불편하다는 의견이 " + SUGGEST_AFTER + "번 있었어요. 인프라 우선순위를 5로 올릴까요?");
-            case OLD, ETC -> null;
+            case OLD -> new FeedbackResponse.Suggestion("weights.age", null, 5,
+                    "오래됐다는 의견이 " + SUGGEST_AFTER + "번 있었어요. 노후도 우선순위를 5로 올릴까요?");
+            case ETC -> null;
         };
     }
 }

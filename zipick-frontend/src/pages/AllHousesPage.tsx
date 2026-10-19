@@ -3,9 +3,11 @@ import { houseApi } from '../api/house';
 import { profileApi } from '../api/profile';
 import FilterPanel from '../components/FilterPanel';
 import ModeSwitch from '../components/ModeSwitch';
+import InterestButton from '../components/InterestButton';
+import { Link } from 'react-router-dom';
 import { useHouseFilter } from '../hooks/useHouseFilter';
 import type { HouseSummary } from '../types';
-import { HOUSING_LABEL, RENTAL_LABEL, STATUS_LABEL, area, dDay, won } from '../utils/format';
+import { STATUS_LABEL, area, dDay, housingLabel, regionText, rentalLabel, won } from '../utils/format';
 
 /** 전체 공급주택: 점수 없이 필터만 적용한 목록. 로그인 전에도 볼 수 있다. */
 export default function AllHousesPage() {
@@ -62,22 +64,33 @@ function SummaryCard({ house: h }: { house: HouseSummary }) {
         <span className={`badge badge--${h.status.toLowerCase()}`}>{STATUS_LABEL[h.status]}</span>
         {d && <span className="badge badge--soon">{d}</span>}
         <span className="card__agency">
-          {h.agency} · {RENTAL_LABEL[h.rentalType]}
+          {h.agencyName ?? h.agencyCode} · {rentalLabel(h)}
         </span>
       </div>
-      <h3 className="card__title">{h.title}</h3>
+      <h3 className="card__title">
+        <Link to={`/houses/${h.houseId}`}>{h.housingName || h.address}</Link>
+      </h3>
       <p className="card__addr">
-        {h.address}
-        {h.approximate && <span className="badge badge--approx">위치 근사</span>}
+        {regionText(h)}
+        {h.housingName && ` · ${h.address}`}
+        <span className="muted small"> · {h.title}</span>
       </p>
       <dl className="card__facts">
         <div><dt>보증금</dt><dd>{won(h.deposit)}</dd></div>
         <div><dt>월 임대료</dt><dd>{won(h.monthlyRent)}</dd></div>
         <div><dt>전용면적</dt><dd>{area(h.exclusiveArea)}</dd></div>
-        <div><dt>유형</dt><dd>{h.housingType ? HOUSING_LABEL[h.housingType] : '정보 없음'}</dd></div>
-        <div><dt>준공</dt><dd>{h.builtYear ?? '정보 없음'}</dd></div>
-        <div><dt>층</dt><dd>{h.floor ?? '정보 없음'}</dd></div>
+        <div><dt>방 수</dt><dd>{h.roomCount != null ? `${h.roomCount}개` : '정보 없음'}</dd></div>
+        <div><dt>유형</dt><dd>{housingLabel(h)}</dd></div>
+        <div><dt>호실</dt><dd>{h.supplyUnits}개</dd></div>
       </dl>
+      <div className="card__actions">
+        {h.detailUrl && (
+          <a className="btn btn--ghost btn--small" href={h.detailUrl} target="_blank" rel="noreferrer">
+            공고문 보기
+          </a>
+        )}
+        <InterestButton noticeId={h.announcementId} />
+      </div>
     </article>
   );
 }

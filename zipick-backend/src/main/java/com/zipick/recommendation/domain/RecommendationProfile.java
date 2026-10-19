@@ -7,7 +7,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -27,8 +26,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RecommendationProfile extends BaseTimeEntity {
 
-    /** JSON 문자열 컬럼. MySQL에서 text(64KB)로 만든다 (길이를 안 주면 @Lob 이 tinytext 255바이트가 될 수 있다) */
-    private static final int JSON_COLUMN_LENGTH = 65_535;
+    /** JSON 문자열 컬럼은 text 로 둔다. @Lob 을 쓰면 PostgreSQL 에서 대용량 객체(oid)가 되어 SQL 로 읽을 수 없다 */
+    private static final String JSON_COLUMN = "text";
 
     public static final int MAX_PER_USER = 3;
 
@@ -45,16 +44,13 @@ public class RecommendationProfile extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean active;
 
-    @Lob
-    @Column(nullable = false, length = JSON_COLUMN_LENGTH)
+    @Column(nullable = false, columnDefinition = JSON_COLUMN)
     private String weights;
 
-    @Lob
-    @Column(length = JSON_COLUMN_LENGTH)
+    @Column(columnDefinition = JSON_COLUMN)
     private String rules;
 
-    @Lob
-    @Column(length = JSON_COLUMN_LENGTH)
+    @Column(columnDefinition = JSON_COLUMN)
     private String infraWeights;
 
     @Column(nullable = false)

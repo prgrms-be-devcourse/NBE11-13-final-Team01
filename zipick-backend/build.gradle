@@ -50,6 +50,9 @@ dependencies {
     // API 문서 (Swagger UI: /swagger-ui.html). Boot 4는 springdoc 3.x
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
 
+    // 알림(안서호): 이메일 채널. spring.mail.host 가 설정될 때만 JavaMailSender 가 만들어진다
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+
     runtimeOnly 'org.postgresql:postgresql'
 
     compileOnly 'org.projectlombok:lombok'

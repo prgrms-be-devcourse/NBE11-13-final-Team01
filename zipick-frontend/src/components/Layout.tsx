@@ -16,7 +16,8 @@ function AuthBox() {
   const [busy, setBusy] = useState(false);
 
   // 사용자가 바뀌면 이전 사용자의 추천·조건 캐시를 버린다.
-  const resetCache = () => qc.clear();
+  // clear() 는 화면에 떠 있는 쿼리를 다시 불러오지 않아 로그인 직후 목록이 비어 보였다 → resetQueries() 로 비우고 다시 불러온다.
+  const resetCache = () => qc.resetQueries();
 
   if (user) {
     return (
@@ -87,7 +88,7 @@ export default function Layout() {
         <nav className="nav">
           <NavLink to="/recommendations">추천</NavLink>
           <NavLink to="/map">지도</NavLink>
-          <NavLink to="/calendar">일정</NavLink>
+          <NavLink to="/calendar">관심 공고·일정</NavLink>
           <NavLink to="/tune">취향 찾기</NavLink>
           <NavLink to="/onboarding">내 조건</NavLink>
         </nav>

@@ -8,6 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface RecommendationFeedbackRepository extends JpaRepository<RecommendationFeedback, Long> {
     List<RecommendationFeedback> findAllByUserId(Long userId);
     Optional<RecommendationFeedback> findByIdAndUserId(Long id, Long userId);
-    Optional<RecommendationFeedback> findByUserIdAndSupplyHouseId(Long userId, Long supplyHouseId);
+    Optional<RecommendationFeedback> findByUserIdAndHousingId(Long userId, Long housingId);
     long countByUserIdAndReason(Long userId, RecommendationFeedback.Reason reason);
 }

@@ -4,30 +4,54 @@ export const ITEM_LABEL: Record<ScoreItem, string> = {
   cost: '비용',
   region: '지역',
   area: '면적',
+  rooms: '방 수',
   infra: '인프라',
-  type: '유형',
+  age: '노후도',
+  type: '주택 유형',
 };
 
 export const RENTAL_LABEL: Record<RentalType, string> = {
-  PURCHASE: '매입임대',
   HAPPY: '행복주택',
   NATIONAL: '국민임대',
+  PERMANENT: '영구임대',
+  INTEGRATED: '통합공공임대',
   DEUNDEUN: '든든전세',
+  JEONSE_LEASE: '전세임대',
+  YOUTH_PURCHASE: '청년 매입임대',
+  PURCHASE: '매입임대',
+  PUBLIC: '공공임대(5·10년)',
 };
 
 export const HOUSING_LABEL: Record<HousingType, string> = {
   APARTMENT: '아파트',
-  MULTI_HOUSEHOLD: '다세대',
-  OFFICETEL: '오피스텔',
+  MULTI_HOUSEHOLD: '다세대·다가구',
   ROW_HOUSE: '연립',
-  ETC: '기타',
+  OFFICETEL: '오피스텔',
+  URBAN_HOUSING: '도시형생활주택',
 };
 
 export const STATUS_LABEL: Record<AnnouncementStatus, string> = {
-  NOTICE: '공고중',
-  RECEIVING: '접수중',
+  UPCOMING: '공고중',
+  OPEN: '접수중',
   CLOSED: '접수마감',
 };
+
+/** 공공임대 유형 표시. 분류 못 한 공고는 원본 공고 유형, 그것도 없으면 '유형 미확인' */
+export function rentalLabel(h: { rentalType?: RentalType | null; noticeType?: string | null }): string {
+  if (h.rentalType) return RENTAL_LABEL[h.rentalType];
+  return h.noticeType?.trim() || '유형 미확인';
+}
+
+/** 주택 유형 표시. 분류 못 한 값('1형' 등)은 원본 그대로 */
+export function housingLabel(h: { housingType?: HousingType | null; housingTypeRaw?: string | null }): string {
+  if (h.housingType) return HOUSING_LABEL[h.housingType];
+  return h.housingTypeRaw?.trim() || '정보 없음';
+}
+
+/** "시도 시군구" */
+export function regionText(h: { province?: string | null; district?: string | null }): string {
+  return [h.province, h.district].filter(Boolean).join(' ') || '지역 미확인';
+}
 
 export const MARK_SYMBOL: Record<Mark, string> = {
   PASS: '✓',

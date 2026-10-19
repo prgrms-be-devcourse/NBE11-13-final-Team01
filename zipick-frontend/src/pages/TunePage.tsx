@@ -5,7 +5,7 @@ import { tuningApi } from '../api/tuning';
 import PriorityBars from '../components/PriorityBars';
 import ReasonList from '../components/ReasonList';
 import type { PairChoice, RecommendedHouse } from '../types';
-import { HOUSING_LABEL, RENTAL_LABEL, area, won } from '../utils/format';
+import { area, housingLabel, regionText, rentalLabel, won } from '../utils/format';
 
 /**
  * 취향 찾기: 실제 집 두 곳 중 더 마음에 드는 쪽을 고르면, 그 선택으로 우선순위를 학습한다(쌍대 선택 학습).
@@ -133,16 +133,17 @@ function CompareCard({ house: h, side, onPick, disabled }: { house: RecommendedH
   return (
     <article className="card compare">
       <p className="small muted">
-        {h.agency} · {RENTAL_LABEL[h.rentalType]}
+        {h.agencyName ?? h.agencyCode} · {rentalLabel(h)}
       </p>
-      <h3 className="card__title">{h.address}</h3>
+      <h3 className="card__title">{h.housingName || h.address}</h3>
+      <p className="small muted">{regionText(h)}{h.housingName && ` · ${h.address}`}</p>
       <dl className="compare__facts">
         <div><dt>보증금</dt><dd>{won(h.deposit)}</dd></div>
         <div><dt>월 임대료</dt><dd>{won(h.monthlyRent)}</dd></div>
         <div><dt>월 환산</dt><dd>{h.monthlyCost != null ? `${h.monthlyCost}만 원` : '—'}</dd></div>
         <div><dt>전용면적</dt><dd>{area(h.exclusiveArea)}</dd></div>
-        <div><dt>유형</dt><dd>{h.housingType ? HOUSING_LABEL[h.housingType] : '정보 없음'}</dd></div>
-        <div><dt>준공</dt><dd>{h.builtYear ?? '정보 없음'}</dd></div>
+        <div><dt>유형</dt><dd>{housingLabel(h)}</dd></div>
+        <div><dt>방 수</dt><dd>{h.roomCount != null ? `${h.roomCount}개` : '정보 없음'}</dd></div>
       </dl>
       <ReasonList reasons={reasons} />
       <button className="btn compare__pick" disabled={disabled} onClick={onPick} aria-label={`${side} 집 선택`}>

@@ -293,3 +293,56 @@ input[type="number"], input[type="text"], input[type="date"], input:not([type]) 
 .mode-switch a { padding: 6px 14px; border-radius: 999px; font-size: 13px; color: var(--muted); white-space: nowrap; }
 .mode-switch a.active { background: var(--card); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
 .chip__count { margin-left: 4px; font-size: 11px; opacity: 0.7; }
+
+/* 정보 부족 묶음, 지역 선택 */
+.incomplete { margin-top: 24px; padding-top: 16px; border-top: 1px dashed var(--line); }
+.incomplete h2 { margin-bottom: 4px; }
+.card--incomplete { border-style: dashed; }
+.region-more { margin-top: 8px; }
+.region-more summary { cursor: pointer; }
+.region-group { margin-top: 6px; }
+
+/* 관심 공고 · 캘린더 */
+.interest-btn[aria-pressed="true"] { background: #fff7ed; border-color: var(--warn); color: var(--warn); }
+.card__actions { gap: 8px; }
+.calendar-page { max-width: 1000px; }
+.upcoming { margin-bottom: 12px; }
+.upcoming__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.upcoming__list li { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.upcoming__title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 20px; }
+.cal__head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cal__legend { margin-left: auto; display: flex; gap: 10px; font-size: 11.5px; color: var(--muted); }
+.cal__dot { display: inline-flex; align-items: center; gap: 4px; }
+.cal__dot::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.cal__dot--announced::before { background: #9ca3af; }
+.cal__dot--apply_start::before { background: var(--accent); }
+.cal__dot--apply_end::before { background: var(--bad); }
+.cal__dot--winner::before { background: var(--good); }
+.cal__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.cal__weekday { text-align: center; font-size: 11.5px; color: var(--muted); padding: 4px 0; }
+.cal__cell { min-width: 0; min-height: 76px; border: 1px solid var(--line); border-radius: 6px; padding: 4px; display: flex; flex-direction: column; gap: 2px; }
+.cal__cell--empty { border-color: transparent; }
+.cal__cell--today { border-color: var(--accent); background: var(--accent-soft); }
+.cal__day { font-size: 11.5px; color: var(--muted); }
+.cal__event { all: unset; display: block; min-width: 0; cursor: pointer; font-size: 11px; line-height: 1.3; padding: 2px 4px; border-radius: 4px; border-left: 3px solid var(--line); background: #f3f4f6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal__event--announced { border-left-color: #9ca3af; }
+.cal__event--apply_start { border-left-color: var(--accent); background: var(--accent-soft); }
+.cal__event--apply_end { border-left-color: var(--bad); background: #fef2f2; }
+.cal__event--winner { border-left-color: var(--good); background: #f0fdf4; }
+.interest-list h2 { margin-bottom: 8px; }
+@media (max-width: 640px) { .cal__cell { min-height: 56px; } .cal__event { font-size: 10px; } .cal__legend { display: none; } }
+
+/* 알림 설정 */
+.notif { margin: 12px 0; }
+.notif__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-top: 8px; }
+.notif__grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.notif__grid label.toggle, .notif__grid .toggle { flex-direction: row; align-items: center; margin: 0; }
+.notif__grid input[type="text"], .notif__grid input[type="email"] { width: 100%; }
+.notif__history { margin-top: 10px; font-size: 13px; }
+.notif__history ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.notif__history li { display: flex; gap: 8px; align-items: center; }
+.notif__title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge--sent { background: #ecfdf5; border-color: var(--ok, #059669); color: var(--ok, #059669); }
+.badge--failed { background: #fef2f2; border-color: var(--bad); color: var(--bad); }
+@media (max-width: 640px) { .notif__grid { grid-template-columns: 1fr; } }

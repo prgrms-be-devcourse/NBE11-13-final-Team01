@@ -15,16 +15,16 @@ import java.util.List;
 /** 희망 주거조건 저장 요청. 금액은 만 원, 면적은 ㎡. */
 public record UserPreferenceRequest(
         @NotEmpty @Size(max = 3) @Valid List<Region> regions,
-        @Min(0) Integer depositMin,
         @Min(0) Integer depositMax,
-        @Min(0) Integer rentMin,
         @Min(0) Integer rentMax,
         BigDecimal areaMin,
         BigDecimal areaMax,
         List<HousingType> housingTypes,
         List<RentalType> rentalTypes,
-        @Min(0) Integer monthlyBudget
+        @Min(0) Integer monthlyBudget,
+        @Min(1) @Max(10) Integer roomsMin
 ) {
+    /** code = "시도 시군구"(예: "경상북도 구미시"), name = 화면 표시용 */
     public record Region(
             @NotBlank String code,
             @NotBlank String name,

@@ -13,7 +13,7 @@ import { useRecommendationList } from '../hooks/useRecommendationList';
 import { SCORE_ITEMS, type ScoreItem } from '../types';
 import { applyPriorities } from '../utils/score';
 
-const DEFAULT_PRIORITIES: Record<ScoreItem, number> = { cost: 3, region: 3, area: 3, infra: 3, type: 3 };
+const DEFAULT_PRIORITIES: Record<ScoreItem, number> = { cost: 3, region: 3, area: 3, rooms: 3, infra: 3, age: 3, type: 3 };
 
 export default function RecommendationsPage() {
   const qc = useQueryClient();
@@ -37,6 +37,10 @@ export default function RecommendationsPage() {
     const visible = rec.data.houses.filter((h) => !hidden.has(h.houseId));
     return applyPriorities(visible, rec.data.baseWeights, priorities);
   }, [rec.data, priorities, hidden]);
+  const incomplete = useMemo(
+    () => (rec.data?.incomplete ?? []).filter((h) => !hidden.has(h.houseId)),
+    [rec.data, hidden],
+  );
 
   const save = useMutation({
     mutationFn: async () => {
@@ -90,8 +94,9 @@ export default function RecommendationsPage() {
           <h1>추천 공급주택</h1>
           {rec.data && (
             <p className="muted">
-              후보 {rec.data.candidateTotal}곳 중 지원조건·정보 부족으로 {rec.data.excluded}곳 제외 · 추천{' '}
+              후보 {rec.data.candidateTotal}곳 중 관심 지역 밖·지원조건 미충족 {rec.data.excluded}곳 제외 · 추천{' '}
               <strong>{ranked.length}곳</strong>
+              {incomplete.length > 0 && ` · 정보 부족 ${incomplete.length}곳`}
               {active && ` · 기준 "${active.name}" v${active.version}`}
             </p>
           )}
@@ -107,8 +112,12 @@ export default function RecommendationsPage() {
 
         {rec.data && ranked.length === 0 && !rec.isLoading && (
           <div className="empty">
-            <h2>조건에 맞는 집이 없어요</h2>
-            <p>필터를 풀거나 내 조건을 넓혀 보세요.</p>
+            <h2>{incomplete.length > 0 ? '점수로 비교할 수 있는 집이 없어요' : '조건에 맞는 집이 없어요'}</h2>
+            <p>
+              {incomplete.length > 0
+                ? '관심 지역 공고는 있지만 보증금·임대료가 공고문에만 있어요. 아래 목록에서 공고문을 확인해 보세요.'
+                : '필터를 풀거나 내 조건을 넓혀 보세요.'}
+            </p>
           </div>
         )}
 
@@ -122,6 +131,20 @@ export default function RecommendationsPage() {
             />
           ))}
         </div>
+
+        {incomplete.length > 0 && (
+          <section className="incomplete">
+            <h2>정보 부족 · 공고문 확인 필요 ({incomplete.length}곳)</h2>
+            <p className="muted small">
+              보증금·임대료나 지역 정보가 없어 점수를 매길 수 없는 집이에요. 관심 지역 순, 마감 임박순으로 보여 드려요.
+            </p>
+            <div className="cards">
+              {incomplete.map((h) => (
+                <HouseCard key={h.houseId} house={h} onHidden={(id) => setHidden((s) => new Set(s).add(id))} />
+              ))}
+            </div>
+          </section>
+        )}
       </section>
     </div>
   );

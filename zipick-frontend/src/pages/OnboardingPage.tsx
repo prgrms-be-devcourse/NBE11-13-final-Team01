@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { profileApi } from '../api/profile';
+import { houseApi } from '../api/house';
 import { ApiError } from '../api/client';
-import type { HousingType, Region, RentalType, UserPreference, UserProfile } from '../types';
+import type { HousingType, Region, RentalType, StudentStatus, UserPreference, UserProfile } from '../types';
 import { HOUSING_LABEL, RENTAL_LABEL } from '../utils/format';
 import AhpQuestions from '../components/AhpQuestions';
 
@@ -18,32 +19,35 @@ export default function OnboardingPage() {
 
   const [profile, setProfile] = useState<UserProfile>({
     birthDate: '',
-    job: '',
     married: false,
     householdSize: 1,
     monthlyIncome: null,
     totalAssets: null,
     carValue: null,
     homeless: true,
-    student: null,
-    subscriptionMonths: null,
-    subscriptionPayments: null,
+    studentStatus: 'NONE',
   });
+  // 혼인·무주택은 기본값이 들어가면 안 고르고 넘어갈 수 있어 명시적으로 고르게 한다
+  const [marriedPicked, setMarriedPicked] = useState(false);
+  const [homelessPicked, setHomelessPicked] = useState(false);
   const [pref, setPref] = useState<UserPreference>({
     regions: [],
-    depositMin: null,
     depositMax: null,
-    rentMin: null,
     rentMax: null,
     areaMin: null,
     areaMax: null,
     housingTypes: [],
     rentalTypes: [],
     monthlyBudget: null,
+    roomsMin: null,
   });
 
   useEffect(() => {
-    if (profileQ.data) setProfile(profileQ.data);
+    if (profileQ.data) {
+      setProfile(profileQ.data);
+      setMarriedPicked(true);
+      setHomelessPicked(true);
+    }
   }, [profileQ.data]);
   useEffect(() => {
     if (prefQ.data) setPref(prefQ.data);
@@ -90,63 +94,72 @@ export default function OnboardingPage() {
           }}
         >
           <h1>기본 정보</h1>
-          <p className="muted">지원조건 판정에 쓰여요. 소득·자산은 비워도 되지만, 비우면 "확인 필요"로 표시돼요.</p>
+          <p className="muted">
+            공고 지원조건(연령·혼인·무주택·소득·자산·자동차)을 판정하는 데 쓰여요. 소득·자산·자동차는 비워도 되지만, 비우면 그
+            조건은 "확인 필요"로 표시돼요.
+          </p>
 
           <label>
             생년월일
             <input type="date" required value={profile.birthDate} onChange={(e) => setProfile({ ...profile, birthDate: e.target.value })} />
           </label>
+
+          <YesNo
+            label="혼인 중이에요"
+            hint="청년 계층(행복주택·청년 매입임대)은 미혼만, 신혼부부 계층은 기혼만 신청할 수 있어요."
+            value={marriedPicked ? profile.married : null}
+            onChange={(v) => {
+              setProfile({ ...profile, married: v });
+              setMarriedPicked(true);
+            }}
+          />
+          <YesNo
+            label="무주택 세대구성원이에요"
+            hint="거의 모든 공공임대의 필수 조건이에요."
+            value={homelessPicked ? profile.homeless : null}
+            onChange={(v) => {
+              setProfile({ ...profile, homeless: v });
+              setHomelessPicked(true);
+            }}
+          />
+
           <label>
-            직업
-            <input value={profile.job ?? ''} onChange={(e) => setProfile({ ...profile, job: e.target.value })} />
-          </label>
-          <label className="toggle">
-            <input type="checkbox" checked={profile.married} onChange={(e) => setProfile({ ...profile, married: e.target.checked })} />
-            결혼했어요
-          </label>
-          <label>
-            세대원 수
+            세대원 수 (본인 포함)
             <input type="number" min={1} max={10} required value={profile.householdSize} onChange={(e) => setProfile({ ...profile, householdSize: Number(e.target.value) })} />
+            <small className="hint">소득 기준은 가구원 수마다 달라요. 면적도 가구원 수별 최저주거기준과 비교해요.</small>
           </label>
+
           <label>
-            월소득 (만 원)
-            <input type="number" min={0} value={profile.monthlyIncome ?? ''} onChange={(e) => setProfile({ ...profile, monthlyIncome: e.target.value === '' ? null : Number(e.target.value) })} />
+            대학생·취업준비생
+            <select value={profile.studentStatus} onChange={(e) => setProfile({ ...profile, studentStatus: e.target.value as StudentStatus })}>
+              <option value="NONE">해당 없음</option>
+              <option value="UNIVERSITY">대학생 (입학·복학 예정 포함)</option>
+              <option value="JOB_SEEKER">취업준비생 (졸업·중퇴 후 2년 이내 미취업)</option>
+            </select>
+            <small className="hint">청년 매입임대는 만 19~39세가 아니어도 대학생·취업준비생이면 신청할 수 있어요.</small>
           </label>
-          <label>
-            총자산 (만 원)
-            <input type="number" min={0} value={profile.totalAssets ?? ''} onChange={(e) => setProfile({ ...profile, totalAssets: e.target.value === '' ? null : Number(e.target.value) })} />
-          </label>
+
+          <div className="grid2">
+            <label>
+              월소득 (만 원)
+              <input type="number" min={0} value={profile.monthlyIncome ?? ''} onChange={(e) => setProfile({ ...profile, monthlyIncome: e.target.value === '' ? null : Number(e.target.value) })} />
+              <small className="hint">세전 월평균. 도시근로자 월평균소득 대비 비율로 판정해요.</small>
+            </label>
+            <label>
+              총자산 (만 원)
+              <input type="number" min={0} value={profile.totalAssets ?? ''} onChange={(e) => setProfile({ ...profile, totalAssets: e.target.value === '' ? null : Number(e.target.value) })} />
+              <small className="hint">부동산 + 자동차 + 금융자산 − 부채.</small>
+            </label>
+          </div>
           <label>
             자동차가액 (만 원)
             <input type="number" min={0} value={profile.carValue ?? ''} onChange={(e) => setProfile({ ...profile, carValue: e.target.value === '' ? null : Number(e.target.value) })} />
+            <small className="hint">차가 없으면 0.</small>
           </label>
-          <label className="toggle">
-            <input type="checkbox" checked={profile.homeless} onChange={(e) => setProfile({ ...profile, homeless: e.target.checked })} />
-            무주택 세대구성원이에요
-          </label>
-          <label className="toggle">
-            <input type="checkbox" checked={!!profile.student} onChange={(e) => setProfile({ ...profile, student: e.target.checked })} />
-            대학생·취업준비생이에요
-          </label>
-
-          <fieldset className="field">
-            <legend>주택청약저축 (선택)</legend>
-            <div className="grid2">
-              <label>
-                가입 기간 (개월)
-                <input type="number" min={0} max={600} value={profile.subscriptionMonths ?? ''} onChange={(e) => setProfile({ ...profile, subscriptionMonths: numOrNull(e.target.value) })} />
-              </label>
-              <label>
-                납입 횟수
-                <input type="number" min={0} max={600} value={profile.subscriptionPayments ?? ''} onChange={(e) => setProfile({ ...profile, subscriptionPayments: numOrNull(e.target.value) })} />
-              </label>
-            </div>
-            <small className="hint">모르면 비워 두세요. 일부 공고의 순위 확인에 쓰여요.</small>
-          </fieldset>
 
           {err(saveProfile) && <FormError e={err(saveProfile)!} />}
           <div className="form__actions">
-            <button className="btn" type="submit" disabled={saveProfile.isPending}>
+            <button className="btn" type="submit" disabled={saveProfile.isPending || !profile.birthDate || !marriedPicked || !homelessPicked}>
               저장하고 다음 →
             </button>
           </div>
@@ -168,19 +181,11 @@ export default function OnboardingPage() {
 
           <div className="grid2">
             <label>
-              보증금 최소
-              <input type="number" min={0} value={pref.depositMin ?? ''} onChange={(e) => setPref({ ...pref, depositMin: numOrNull(e.target.value) })} />
-            </label>
-            <label>
-              보증금 최대
+              보증금 상한 (만 원)
               <input type="number" min={0} value={pref.depositMax ?? ''} onChange={(e) => setPref({ ...pref, depositMax: numOrNull(e.target.value) })} />
             </label>
             <label>
-              월 임대료 최소
-              <input type="number" min={0} value={pref.rentMin ?? ''} onChange={(e) => setPref({ ...pref, rentMin: numOrNull(e.target.value) })} />
-            </label>
-            <label>
-              월 임대료 최대
+              월 임대료 상한 (만 원)
               <input type="number" min={0} value={pref.rentMax ?? ''} onChange={(e) => setPref({ ...pref, rentMax: numOrNull(e.target.value) })} />
             </label>
             <label>
@@ -190,6 +195,14 @@ export default function OnboardingPage() {
             <label>
               전용면적 최대
               <input type="number" min={0} step="0.1" value={pref.areaMax ?? ''} onChange={(e) => setPref({ ...pref, areaMax: numOrNull(e.target.value) })} />
+            </label>
+          </div>
+
+          <div className="grid2">
+            <label>
+              희망 최소 방 수
+              <input type="number" min={1} max={10} value={pref.roomsMin ?? ''} onChange={(e) => setPref({ ...pref, roomsMin: numOrNull(e.target.value) })} />
+              <small className="hint">비우면 방 수는 점수에 넣지 않아요.</small>
             </label>
           </div>
 
@@ -216,7 +229,7 @@ export default function OnboardingPage() {
           </fieldset>
 
           <fieldset className="field">
-            <legend>공공임대 유형</legend>
+            <legend>공공임대 유형 (필터에만 쓰여요. 비우면 전체)</legend>
             <div className="chips">
               {(Object.keys(RENTAL_LABEL) as RentalType[]).map((t) => (
                 <button
@@ -257,20 +270,14 @@ export default function OnboardingPage() {
   );
 }
 
-const SEOUL_GU: { code: string; name: string }[] = [
-  { code: '11110', name: '종로구' }, { code: '11140', name: '중구' }, { code: '11170', name: '용산구' },
-  { code: '11200', name: '성동구' }, { code: '11215', name: '광진구' }, { code: '11230', name: '동대문구' },
-  { code: '11260', name: '중랑구' }, { code: '11290', name: '성북구' }, { code: '11305', name: '강북구' },
-  { code: '11320', name: '도봉구' }, { code: '11350', name: '노원구' }, { code: '11380', name: '은평구' },
-  { code: '11410', name: '서대문구' }, { code: '11440', name: '마포구' }, { code: '11470', name: '양천구' },
-  { code: '11500', name: '강서구' }, { code: '11530', name: '구로구' }, { code: '11545', name: '금천구' },
-  { code: '11560', name: '영등포구' }, { code: '11590', name: '동작구' }, { code: '11620', name: '관악구' },
-  { code: '11650', name: '서초구' }, { code: '11680', name: '강남구' }, { code: '11710', name: '송파구' },
-  { code: '11740', name: '강동구' },
-];
-
-/** 관심 지역 최대 3곳, 고른 순서가 순위 */
+/** 관심 지역 최대 3곳, 고른 순서가 순위. 선택지는 수집된 공고가 있는 시군구(필터 옵션 API)에서 가져온다 */
 function RegionEditor({ regions, onChange }: { regions: Region[]; onChange: (r: Region[]) => void }) {
+  const options = useQuery({ queryKey: ['filter-options'], queryFn: houseApi.filterOptions, staleTime: 5 * 60_000 });
+  const [province, setProvince] = useState<string>('');
+  const all = options.data?.regions ?? [];
+  const provinces = [...new Set(all.map((r) => r.province))];
+  const current = province || provinces[0] || '';
+
   const toggle = (g: { code: string; name: string }) => {
     const exists = regions.find((r) => r.code === g.code);
     let next: Region[];
@@ -281,21 +288,52 @@ function RegionEditor({ regions, onChange }: { regions: Region[]; onChange: (r: 
   };
   return (
     <fieldset className="field">
-      <legend>관심 지역 (최대 3곳, 고른 순서가 우선순위) — 서울</legend>
+      <legend>관심 지역 (최대 3곳, 고른 순서가 우선순위)</legend>
       <div className="chips">
         {regions.map((r) => (
           <button type="button" key={r.code} className="chip chip--on" onClick={() => toggle(r)}>
             {r.rank} {r.name} ×
           </button>
         ))}
+        {regions.length === 0 && <small className="hint">아래에서 시도를 고른 뒤 시군구를 누르세요.</small>}
       </div>
       <div className="chips chips--dense">
-        {SEOUL_GU.filter((g) => !regions.some((r) => r.code === g.code)).map((g) => (
-          <button type="button" key={g.code} className="chip" disabled={regions.length >= 3} onClick={() => toggle(g)}>
-            {g.name}
+        {provinces.map((p) => (
+          <button type="button" key={p} className={`chip ${p === current ? 'chip--on' : ''}`} onClick={() => setProvince(p)}>
+            {p}
           </button>
         ))}
       </div>
+      <div className="chips chips--dense">
+        {all
+          .filter((r) => r.province === current && !regions.some((x) => x.code === r.key))
+          .map((r) => (
+            <button
+              type="button"
+              key={r.key}
+              className="chip"
+              disabled={regions.length >= 3}
+              onClick={() => toggle({ code: r.key, name: r.district ?? r.key })}
+            >
+              {r.district ?? r.key} <span className="chip__count">{r.count}</span>
+            </button>
+          ))}
+      </div>
+      <small className="hint">지금 모집 중인 공고가 있는 지역만 보여요. 숫자는 주택 수예요.</small>
+    </fieldset>
+  );
+}
+
+/** 예/아니오를 명시적으로 고르게 하는 입력. 고르기 전에는 둘 다 꺼져 있다 */
+function YesNo({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean | null; onChange: (v: boolean) => void }) {
+  return (
+    <fieldset className="field">
+      <legend>{label}</legend>
+      <div className="chips">
+        <button type="button" className={`chip ${value === true ? 'chip--on' : ''}`} onClick={() => onChange(true)}>예</button>
+        <button type="button" className={`chip ${value === false ? 'chip--on' : ''}`} onClick={() => onChange(false)}>아니오</button>
+      </div>
+      {hint && <small className="hint">{hint}</small>}
     </fieldset>
   );
 }

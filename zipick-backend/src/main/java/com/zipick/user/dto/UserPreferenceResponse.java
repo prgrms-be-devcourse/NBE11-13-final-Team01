@@ -10,23 +10,22 @@ import java.util.List;
 
 public record UserPreferenceResponse(
         List<UserPreferenceRequest.Region> regions,
-        Integer depositMin,
         Integer depositMax,
-        Integer rentMin,
         Integer rentMax,
         BigDecimal areaMin,
         BigDecimal areaMax,
         List<HousingType> housingTypes,
         List<RentalType> rentalTypes,
-        Integer monthlyBudget
+        Integer monthlyBudget,
+        Integer roomsMin
 ) {
     public static UserPreferenceResponse from(UserPreference p) {
         return new UserPreferenceResponse(
                 JsonUtil.read(p.getRegions(), new TypeReference<List<UserPreferenceRequest.Region>>() {}, List.of()),
-                p.getDepositMin(), p.getDepositMax(), p.getRentMin(), p.getRentMax(),
+                p.getDepositMax(), p.getRentMax(),
                 p.getAreaMin(), p.getAreaMax(),
                 JsonUtil.read(p.getHousingTypes(), new TypeReference<List<HousingType>>() {}, List.of()),
                 JsonUtil.read(p.getRentalTypes(), new TypeReference<List<RentalType>>() {}, List.of()),
-                p.getMonthlyBudget());
+                p.getMonthlyBudget(), p.getRoomsMin());
     }
 }
