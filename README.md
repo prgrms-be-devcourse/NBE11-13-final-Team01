@@ -90,7 +90,7 @@ kakao:
 ```
 
 - `myhome.api.service-key`: LH 공공임대 공고·주택 수집
-- `kakao.local.rest-api-key`: 수집된 주소의 표준 주소·좌표 보완
+- `kakao.local.rest-api-key`: 수집된 주소의 표준 주소·좌표 보완, **공급주택 주변 생활 인프라 수집**
 
 **프론트엔드 — Kakao Maps JavaScript SDK**
 
@@ -106,21 +106,27 @@ VITE_KAKAO_MAP_KEY={your_kakao_javascript_key}
 ### 4. 스키마 초기화
 
 로컬 프로파일은 `ddl-auto: validate` 라 테이블을 자동 생성하지 않는다.
-아래 **두 파일을 순서대로** 실행한다. 둘 다 실행해야 전체 엔티티 스키마가 갖춰진다.
+아래 **세 파일을 순서대로** 실행한다. 모두 실행해야 전체 엔티티 스키마가 갖춰진다.
 
 ```bash
 psql -U {your_postgresql_user} -d zipick -f zipick-backend/db/local-init.sql
 psql -U {your_postgresql_user} -d zipick -f zipick-backend/db/notice-init.sql
+psql -U {your_postgresql_user} -d zipick -f zipick-backend/db/infra-init.sql
 ```
 
 | 파일 | 테이블 |
 | --- | --- |
 | `local-init.sql` | 인증·사용자(`users`, `refresh_token`, `user_profiles`, `user_preferences`), 추천(`recommendation_*`). 공급주택은 `notice-init.sql` 의 테이블을 읽는다 |
 | `notice-init.sql` | 공고 수집(`agency`, `notice`, `housing`, `housing_supply`) |
+| `infra-init.sql` | 주변 생활 인프라(`housing_infra_snapshot`, `housing_infra_place`) |
 
 `local-init.sql` 만 실행하면 기동 시 `Schema-validation: missing table [agency]` 로 실패한다.
+`infra-init.sql` 은 `notice-init.sql` 이 만든 `housing` 을 참조하므로 **반드시 그 뒤에** 실행한다.
 
-> 두 파일 모두 기존 테이블을 DROP 후 재생성하므로 **데이터가 모두 삭제된다. 로컬 전용이며 운영 DB 에는 적용하지 않는다.**
+**(2026-10-19) 주변 인프라 테이블 2개가 추가됐다.** 기존 DB 를 쓰던 팀원은 `infra-init.sql` 만 한 번 실행하면 된다.
+이 파일은 인프라 테이블만 DROP/CREATE 하므로 공고·사용자 데이터에는 영향이 없다.
+
+> 세 파일 모두 기존 테이블을 DROP 후 재생성하므로 **데이터가 모두 삭제된다. 로컬 전용이며 운영 DB 에는 적용하지 않는다.**
 > 엔티티가 추가·변경되면 해당 DDL 도 함께 갱신해 커밋한다.
 
 **(2026-10-16) `user_profiles` · `user_preferences` 에 `users` FK 가 추가되었다.** 위 순서대로 다시 실행하면
