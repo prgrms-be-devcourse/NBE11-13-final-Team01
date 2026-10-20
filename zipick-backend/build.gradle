@@ -52,6 +52,9 @@ dependencies {
     // API 문서 (Swagger UI: /swagger-ui.html). Boot 4는 springdoc 3.x
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
 
+    // 알림(안서호): 알림 요청을 RabbitMQ 로 던진다 (응답이 필요 없는 요청만). 조회·설정은 HTTP
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+
     runtimeOnly 'org.postgresql:postgresql'
 
     compileOnly 'org.projectlombok:lombok'

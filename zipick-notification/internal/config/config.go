@@ -21,6 +21,7 @@ type Config struct {
 	Scheduler   bool          // false 면 스케줄러를 띄우지 않음 (테스트용)
 	QuietStart  string        // 광고 발송 금지 시작 "21:00"
 	QuietEnd    string        // 광고 발송 금지 끝 "08:00"
+	RabbitURL   string        // RabbitMQ 주소 (RABBITMQ_URL, 예 amqp://user:pass@host:5672/). 비우면 큐 리스너를 띄우지 않는다 (HTTP 만)
 
 	Email EmailConfig
 }
@@ -49,6 +50,7 @@ func Load() (Config, error) {
 		Scheduler:   env("NOTIFICATION_SCHEDULER_ENABLED", "true") == "true",
 		QuietStart:  env("NOTIFICATION_QUIET_START", "21:00"),
 		QuietEnd:    env("NOTIFICATION_QUIET_END", "08:00"),
+		RabbitURL:   os.Getenv("RABBITMQ_URL"),
 		Email: EmailConfig{
 			Provider:  strings.ToLower(env("NOTIFICATION_EMAIL_PROVIDER", "none")),
 			From:      os.Getenv("NOTIFICATION_EMAIL_FROM"),

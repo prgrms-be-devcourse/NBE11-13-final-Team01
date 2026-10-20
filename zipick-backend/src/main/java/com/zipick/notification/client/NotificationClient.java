@@ -7,7 +7,11 @@ import com.zipick.notification.config.NotificationProperties;
 import com.zipick.notification.dto.NotificationEventResponse;
 import com.zipick.notification.dto.NotificationSettingRequest;
 import com.zipick.notification.dto.NotificationSettingResponse;
+import com.zipick.notification.queue.NotificationPriority;
+import com.zipick.notification.queue.NotificationPublisher;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,8 +23,12 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
- * 알림센터 HTTP 클라이언트. 메인 서버에서 알림과 관련해 바깥으로 나가는 호출은 전부 여기를 지난다.
- * 알림센터가 죽어 있으면 BusinessException(NOTIFICATION_UNAVAILABLE) — 호출한 쪽이 사용자에게 보여 주거나(설정 화면) 건너뛴다(스케줄러).
+ * 알림센터 클라이언트. 메인 서버에서 알림과 관련해 바깥으로 나가는 호출은 전부 여기를 지난다.
+ *
+ * 두 가지 길이 있다.
+ *  - 응답이 필요 없는 "알림 요청"(마감·새 공고·인증 메일) → {@link #request}: 큐(RabbitMQ)에 던진다. 알림센터가 꺼져 있어도 요청이 남는다.
+ *    큐가 꺼져 있거나(queue-enabled=false) 브로커가 답이 없으면 HTTP 로 보낸다.
+ *  - 응답이 필요한 조회·설정·테스트 발송 → HTTP. 알림센터가 죽어 있으면 BusinessException(NOTIFICATION_UNAVAILABLE).
  */
 @Component
 @RequiredArgsConstructor
@@ -29,10 +37,24 @@ public class NotificationClient {
 
     private final RestClient notificationRestClient;
     private final NotificationProperties props;
+    /** 큐가 꺼져 있으면 빈 Optional (빈이 없음) */
+    private final Optional<NotificationPublisher> publisher;
+    /** 마지막으로 성공한 구독자 목록. 알림센터가 잠깐 꺼져 있어도 스케줄러가 큐에 요청을 던질 수 있게 */
+    private final AtomicReference<List<NotificationSettingResponse>> lastSubscribers = new AtomicReference<>(List.of());
 
     public boolean configured() { return props.configured(); }
 
-    /** 알림 요청을 적는다. 같은 dedupeKey 면 알림센터가 기존 건을 돌려준다(duplicate=true) */
+    /**
+     * 알림 요청. 큐가 켜져 있으면 던지고 끝(true). 큐에 못 넣으면 HTTP 로 보낸다.
+     * @return 큐 또는 HTTP 로 전달됐으면 true. 둘 다 실패하면 BusinessException(NOTIFICATION_UNAVAILABLE)
+     */
+    public boolean request(NotificationRequest request, NotificationPriority priority) {
+        if (publisher.isPresent() && publisher.get().publish(request, priority)) return true;
+        enqueue(request);
+        return true;
+    }
+
+    /** HTTP 로 알림 요청을 적는다. 같은 dedupeKey 면 알림센터가 기존 건을 돌려준다(duplicate=true) */
     public NotificationEventResponse enqueue(NotificationRequest request) {
         return call(() -> notificationRestClient.post().uri("/internal/notifications").body(request)
                 .retrieve().body(new ParameterizedTypeReference<ApiResponse<NotificationEventResponse>>() {}));
@@ -48,10 +70,23 @@ public class NotificationClient {
                 .retrieve().body(new ParameterizedTypeReference<ApiResponse<NotificationSettingResponse>>() {}));
     }
 
-    /** 정보성 알림이 켜진 사용자 전체 (스케줄러가 누구에게 적을지 정할 때) */
+    /**
+     * 정보성 알림이 켜진 사용자 전체 (스케줄러가 누구에게 적을지 정할 때).
+     * 알림센터에 닿지 않으면 마지막으로 받아 둔 목록을 쓴다 — 큐가 켜져 있으면 요청은 던져 둘 수 있으니까.
+     * 한 번도 받은 적이 없으면(기동 직후) 그대로 실패한다.
+     */
     public List<NotificationSettingResponse> listEnabledSubscriptions() {
-        return call(() -> notificationRestClient.get().uri("/internal/subscriptions")
-                .retrieve().body(new ParameterizedTypeReference<ApiResponse<List<NotificationSettingResponse>>>() {}));
+        try {
+            List<NotificationSettingResponse> fresh = call(() -> notificationRestClient.get().uri("/internal/subscriptions")
+                    .retrieve().body(new ParameterizedTypeReference<ApiResponse<List<NotificationSettingResponse>>>() {}));
+            lastSubscribers.set(fresh);
+            return fresh;
+        } catch (BusinessException e) {
+            List<NotificationSettingResponse> cached = lastSubscribers.get();
+            if (publisher.isEmpty() || cached.isEmpty()) throw e;
+            log.warn("알림센터에 닿지 않아 마지막 구독자 목록({}명)으로 진행합니다. 요청은 큐에 남습니다.", cached.size());
+            return cached;
+        }
     }
 
     public NotificationEventResponse sendTest(Long userId) {
