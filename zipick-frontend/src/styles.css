@@ -346,3 +346,4 @@ input[type="number"], input[type="text"], input[type="date"], input:not([type]) 
 .badge--sent { background: #ecfdf5; border-color: var(--ok, #059669); color: var(--ok, #059669); }
 .badge--failed { background: #fef2f2; border-color: var(--bad); color: var(--bad); }
 @media (max-width: 640px) { .notif__grid { grid-template-columns: 1fr; } }
+.badge--skipped, .badge--cancelled { opacity: 0.7; }

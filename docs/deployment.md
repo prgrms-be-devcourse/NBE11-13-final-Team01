@@ -10,7 +10,8 @@
 | DB | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` 주입. `application-prod.yml`은 운영 DB 환경 변수 사용 |
 | JWT | `JWT_SECRET`: Base64 인코딩, 디코딩 시 32바이트 이상. 실제 키는 Git/이미지에 포함하지 않음 |
 | 마이홈 / 카카오 | 백엔드가 `myhome.api.service-key`, `kakao.local.rest-api-key`를 실행 환경에서 읽을 수 있어야 함 |
-| 이메일 알림 | SMTP 사용 시 `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` 제공 |
+| 알림센터 연결 | 백엔드와 알림센터에 같은 `NOTIFICATION_INTERNAL_KEY`. 백엔드는 `NOTIFICATION_BASE_URL`(compose 안에서는 `http://notification:8081`) |
+| 이메일 알림 | 알림센터에 `NOTIFICATION_EMAIL_PROVIDER=smtp`(+ `MAIL_*`) 또는 `ses`(+ `NOTIFICATION_EMAIL_FROM`, AWS 자격 증명). 비우면 슬랙만 동작 |
 | DB 스키마 | `ddl-auto: validate`; 배포 DB에 `local-init.sql` / `notice-init.sql` / `infra-init.sql` 같은 **DROP/CREATE 초기화 스크립트 실행 금지** |
 
 현재 로컬 개발용 외부 API 키는 `config/application-secret.yml` 파일로 관리하지만, 실제 배포 방식에 맞춰 **비밀 설정이 런타임에 안전하게 전달되는지** 확인해야 합니다.

@@ -1,24 +1,22 @@
 package com.zipick.notification.dto;
 
-import com.zipick.notification.domain.NotificationEvent;
 import java.time.LocalDateTime;
 
+/** 알림센터의 MessageResponse 그대로. 프론트는 templateCode·category·status·title 을 쓴다 */
 public record NotificationEventResponse(
         Long id,
-        NotificationEvent.Type type,
-        Long noticeId,
+        Long userId,
+        String templateCode,
+        String category,
+        Long campaignId,
         String title,
         String body,
         String url,
-        NotificationEvent.Status status,
+        String status,
         int attempts,
         String lastError,
         String channels,
         LocalDateTime scheduledFor,
-        LocalDateTime sentAt
-) {
-    public static NotificationEventResponse from(NotificationEvent e) {
-        return new NotificationEventResponse(e.getId(), e.getType(), e.getNoticeId(), e.getTitle(), e.getBody(), e.getUrl(),
-                e.getStatus(), e.getAttempts(), e.getLastError(), e.getChannels(), e.getScheduledFor(), e.getSentAt());
-    }
-}
+        LocalDateTime sentAt,
+        boolean duplicate
+) {}

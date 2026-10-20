@@ -1,21 +1,24 @@
 package com.zipick.notification.service;
 
+import com.zipick.global.error.BusinessException;
 import com.zipick.interest.domain.InterestNotice;
 import com.zipick.interest.dto.NoticeSummary;
 import com.zipick.interest.repository.InterestNoticeRepository;
 import com.zipick.interest.repository.NoticeSummaryQueryRepository;
-import com.zipick.notification.config.NotificationProperties;
+import com.zipick.notification.client.NotificationClient;
+import com.zipick.notification.client.NotificationRequest;
 import com.zipick.notification.domain.NotificationCursor;
-import com.zipick.notification.domain.NotificationEvent;
-import com.zipick.notification.domain.NotificationSetting;
+import com.zipick.notification.dto.NotificationEventResponse;
+import com.zipick.notification.dto.NotificationSettingResponse;
 import com.zipick.notification.repository.NotificationCursorRepository;
-import com.zipick.notification.repository.NotificationSettingRepository;
 import com.zipick.recommendation.engine.HouseScore;
 import com.zipick.recommendation.service.RecommendationService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,14 +30,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 알림 스케줄러 (DB 폴링). 주기마다 세 가지를 한다.
- *
- * 1. 마감 알림 적기: 관심 공고의 접수 마감이 설정한 D-day(기본 3·1·0일 전)인 사용자마다 이벤트를 적는다
- * 2. 새 공고 알림 적기: 마지막 확인 이후 수집된 공고를 사용자 조건으로 추천해 보고, 순위 묶음에 들면 적는다 (집 → 사용자 역매칭)
- * 3. 보내기: PENDING 이벤트를 채널로 보낸다
- *
- * 같은 알림은 dedupe_key 로 한 번만 적히므로, 주기가 겹치거나 실패 후 다시 돌아도 중복 발송되지 않는다.
- * 서버가 여러 대가 되면 2·3번에 잠금이 필요하다 (지금은 1대 전제).
+ * "무엇을 알릴지"는 메인 서버가 안다(관심 공고, 추천 엔진). 그래서 찾는 건 여기서 하고, 보내는 건 알림센터에 맡긴다.
+ * 주기마다 ① 관심 공고의 접수 마감 D-day ② 마지막 확인 이후 수집된 공고 중 사용자 조건에 맞는 것(역매칭) 을 찾아
+ * 알림센터에 템플릿 코드 + 변수 + dedupeKey 로 요청한다. 같은 키는 알림센터가 한 번만 적으므로 중복 발송이 없다.
+ * 알림센터가 꺼져 있으면 이번 주기는 건너뛴다(커서를 옮기지 않아 다음 주기에 다시 시도).
  */
 @Component
 @ConditionalOnProperty(prefix = "zipick.notification", name = "scheduler-enabled", havingValue = "true", matchIfMissing = true)
@@ -42,49 +41,53 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class NotificationScheduler {
 
-    private final NotificationService notificationService;
-    private final NotificationSettingRepository settingRepository;
+    public static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+
+    private final NotificationClient client;
     private final InterestNoticeRepository interestRepository;
     private final NoticeSummaryQueryRepository noticeRepository;
     private final NotificationCursorRepository cursorRepository;
     private final RecommendationService recommendationService;
-    private final NotificationProperties props;
 
     @Scheduled(fixedDelayString = "${zipick.notification.poll-interval:PT5M}", initialDelayString = "PT30S")
     public void run() {
+        if (!client.configured()) return;
         try {
-            int a = enqueueDeadlineReminders();
-            int b = enqueueNewMatches();
-            int c = notificationService.dispatchPending();
-            if (a + b + c > 0) log.info("알림 스케줄러: 마감 {}건 적음, 새 공고 {}건 적음, {}건 보냄", a, b, c);
-            else log.debug("알림 스케줄러: 할 일 없음");
+            List<NotificationSettingResponse> subscribers = client.listEnabledSubscriptions();
+            int a = enqueueDeadlineReminders(subscribers);
+            int b = enqueueNewMatches(subscribers);
+            if (a + b > 0) log.info("알림 스케줄러: 마감 {}건, 새 공고 {}건을 알림센터에 적음", a, b);
+        } catch (BusinessException e) {
+            log.warn("알림센터에 연결하지 못해 이번 주기를 건너뜁니다: {}", e.getMessage());
         } catch (Exception e) {
             log.error("알림 스케줄러 실패", e);
         }
     }
 
     /** 관심 공고의 접수 마감 D-day 알림 */
-    @Transactional
-    public int enqueueDeadlineReminders() {
-        LocalDate today = LocalDate.now(NotificationService.SEOUL);
-        LocalDateTime now = LocalDateTime.now(NotificationService.SEOUL);
+    @Transactional(readOnly = true)
+    public int enqueueDeadlineReminders(List<NotificationSettingResponse> subscribers) {
+        LocalDate today = LocalDate.now(SEOUL);
         int count = 0;
-        for (NotificationSetting s : settingRepository.findAllByEnabledTrue()) {
-            List<InterestNotice> saved = interestRepository.findAllByUserIdOrderByIdDesc(s.getUserId());
+        for (NotificationSettingResponse s : subscribers) {
+            List<InterestNotice> saved = interestRepository.findAllByUserIdOrderByIdDesc(s.userId());
             if (saved.isEmpty()) continue;
             Map<Long, NoticeSummary> notices = noticeRepository.findByIds(saved.stream().map(InterestNotice::getNoticeId).toList());
             for (InterestNotice in : saved) {
                 NoticeSummary n = notices.get(in.getNoticeId());
                 if (n == null || n.applyEndAt() == null) continue;
                 int left = (int) ChronoUnit.DAYS.between(today, n.applyEndAt());
-                if (!s.deadlineDayList().contains(left)) continue;
-                String when = left == 0 ? "오늘" : left + "일 뒤";
-                boolean added = notificationService.enqueue(s.getUserId(), NotificationEvent.Type.DEADLINE, n.noticeId(),
-                        "DEADLINE:" + s.getUserId() + ":" + n.noticeId() + ":" + left,
-                        "접수 마감 " + (left == 0 ? "D-day" : "D-" + left) + " · " + n.title(),
-                        "관심 공고의 접수가 " + when + "(" + n.applyEndAt() + ") 마감돼요." + regionsText(n),
-                        n.detailUrl(), now);
-                if (added) count++;
+                if (!s.deadlineDays().contains(left)) continue;
+                Map<String, Object> vars = new LinkedHashMap<>();
+                vars.put("dDayLabel", left == 0 ? "D-day" : "D-" + left);
+                vars.put("whenText", left == 0 ? "오늘" : left + "일 뒤");
+                vars.put("applyEndAt", n.applyEndAt().toString());
+                vars.put("noticeTitle", n.title());
+                vars.put("regionsText", n.regions().isEmpty() ? "" : " (" + String.join(", ", n.regions()) + ")");
+                vars.put("detailUrl", n.detailUrl());
+                NotificationEventResponse r = client.enqueue(NotificationRequest.forUser("DEADLINE", s.userId(), vars,
+                        "DEADLINE:" + s.userId() + ":" + n.noticeId() + ":" + left));
+                if (!r.duplicate()) count++;
             }
         }
         return count;
@@ -92,8 +95,8 @@ public class NotificationScheduler {
 
     /** 마지막 확인 이후 수집된 공고를 각 사용자 조건으로 추천해 보고, 순위 묶음에 들면 알림 */
     @Transactional
-    public int enqueueNewMatches() {
-        LocalDateTime now = LocalDateTime.now(NotificationService.SEOUL);
+    public int enqueueNewMatches(List<NotificationSettingResponse> subscribers) {
+        LocalDateTime now = LocalDateTime.now(SEOUL);
         NotificationCursor cursor = cursorRepository.findById(NotificationCursor.NEW_MATCH).orElse(null);
         if (cursor == null) {
             // 처음 켜질 때는 지금까지의 공고를 전부 '새 공고'로 보내지 않도록 기준점만 찍는다
@@ -101,17 +104,16 @@ public class NotificationScheduler {
             return 0;
         }
         List<Long> newIds = noticeRepository.findCreatedAfter(cursor.getCheckedAt());
-        cursor.advance(now);
-        if (newIds.isEmpty()) return 0;
+        if (newIds.isEmpty()) { cursor.advance(now); return 0; }
 
         Set<Long> noticeIds = new HashSet<>(newIds);
         Map<Long, NoticeSummary> notices = noticeRepository.findByIds(newIds);
         int count = 0;
-        for (NotificationSetting s : settingRepository.findAllByEnabledTrue()) {
-            if (!s.isNewMatchEnabled()) continue;
+        for (NotificationSettingResponse s : subscribers) {
+            if (!s.newMatchEnabled()) continue;
             List<HouseScore> ranked;
             try {
-                ranked = recommendationService.rankForNotices(s.getUserId(), noticeIds);
+                ranked = recommendationService.rankForNotices(s.userId(), noticeIds);
             } catch (Exception e) {
                 continue;   // 내 조건을 아직 안 적은 사용자
             }
@@ -121,19 +123,19 @@ public class NotificationScheduler {
                 if (!done.add(nid)) continue;
                 NoticeSummary n = notices.get(nid);
                 if (n == null) continue;
-                boolean added = notificationService.enqueue(s.getUserId(), NotificationEvent.Type.NEW_MATCH, nid,
-                        "NEW_MATCH:" + s.getUserId() + ":" + nid,
-                        "내 조건에 맞는 새 공고 · " + n.title(),
-                        "추천도 " + h.score() + "점 · " + h.candidate().regionKey()
-                                + (n.applyEndAt() == null ? "" : " · 접수 마감 " + n.applyEndAt()),
-                        n.detailUrl(), now);
-                if (added) count++;
+                Map<String, Object> vars = new LinkedHashMap<>();
+                vars.put("noticeTitle", n.title());
+                vars.put("score", h.score());
+                vars.put("region", h.candidate().regionKey());
+                vars.put("deadlineText", n.applyEndAt() == null ? "" : " · 접수 마감 " + n.applyEndAt());
+                vars.put("detailUrl", n.detailUrl());
+                NotificationEventResponse r = client.enqueue(NotificationRequest.forUser("NEW_MATCH", s.userId(), vars,
+                        "NEW_MATCH:" + s.userId() + ":" + nid));
+                if (!r.duplicate()) count++;
             }
         }
+        // 전부 적은 뒤에 커서를 옮긴다 — 중간에 알림센터가 죽으면 다음 주기에 같은 공고를 다시 본다(dedupe 로 중복 없음)
+        cursor.advance(now);
         return count;
-    }
-
-    private static String regionsText(NoticeSummary n) {
-        return n.regions().isEmpty() ? "" : " (" + String.join(", ", n.regions()) + ")";
     }
 }

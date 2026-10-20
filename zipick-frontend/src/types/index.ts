@@ -307,18 +307,24 @@ export interface ScheduleEvent {
 
 // ---- 알림 (관심 공고 마감 · 새 공고) ----
 
-export type NotificationType = 'DEADLINE' | 'NEW_MATCH' | 'TEST';
-export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
+/** 알림센터 템플릿 코드. 운영자가 템플릿을 더 만들 수 있어 문자열로 둔다 */
+export type NotificationType = 'DEADLINE' | 'NEW_MATCH' | 'TEST' | 'EMAIL_VERIFY' | 'PASSWORD_CHANGED' | 'NEWSLETTER' | (string & {});
+export type NotificationCategory = 'TRANSACTIONAL' | 'INFORMATIONAL' | 'MARKETING';
+export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'CANCELLED';
 
 export interface NotificationSetting {
+  userId?: number;
   enabled: boolean;
   slackConfigured: boolean;
   /** 웹훅은 비밀값이라 끝 6자만 온다 */
   slackWebhookMasked?: string | null;
   email?: string | null;
+  /** 광고성 정보 수신 동의 (소식 메일 등). 동의 시각은 알림센터가 보관 */
+  marketingConsent: boolean;
+  marketingConsentedAt?: string | null;
   deadlineDays: number[];
   newMatchEnabled: boolean;
-  /** 서버에 SMTP 설정이 있어 이메일 채널을 쓸 수 있는지 */
+  /** 알림센터에 이메일 발송 설정(SMTP/SES)이 있는지 */
   emailAvailable: boolean;
 }
 
@@ -327,6 +333,8 @@ export interface NotificationSettingRequest {
   /** 비우면 기존 값을 지운다 */
   slackWebhookUrl?: string | null;
   email?: string | null;
+  /** null 이면 그대로 */
+  marketingConsent?: boolean | null;
   /** "3,1,0" */
   deadlineDays: string;
   newMatchEnabled: boolean;
@@ -334,8 +342,9 @@ export interface NotificationSettingRequest {
 
 export interface NotificationEvent {
   id: number;
-  type: NotificationType;
-  noticeId?: number | null;
+  templateCode: NotificationType;
+  category: NotificationCategory;
+  campaignId?: number | null;
   title: string;
   body: string;
   url?: string | null;
