@@ -21,6 +21,7 @@ Go 는 Spring 처럼 계층(controller/service/repository)으로 나누기보다
 | `internal/message` | 아웃박스: 요청 접수(enqueue), 발송(dispatch), 테스트 발송, 내역 | `MessageService` |
 | `internal/campaign` | 예약 발송 | `CampaignService` |
 | `internal/scheduler` | 1분 주기: 캠페인 풀기 → 대기 메시지 보내기 | `@Scheduled` |
+| `internal/queue` | RabbitMQ 리스너: 메인 서버가 던진 알림 요청을 꺼내 아웃박스에 적음 | `@RabbitListener` |
 | `db/init.sql` | 테이블 DDL (Spring 버전과 같은 스키마) | |
 
 `internal/` 아래 패키지는 Go 규칙상 이 모듈 밖에서 import 할 수 없다 (캡슐화).

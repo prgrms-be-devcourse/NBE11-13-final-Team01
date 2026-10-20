@@ -8,8 +8,8 @@ import com.zipick.interest.repository.NoticeSummaryQueryRepository;
 import com.zipick.notification.client.NotificationClient;
 import com.zipick.notification.client.NotificationRequest;
 import com.zipick.notification.domain.NotificationCursor;
-import com.zipick.notification.dto.NotificationEventResponse;
 import com.zipick.notification.dto.NotificationSettingResponse;
+import com.zipick.notification.queue.NotificationPriority;
 import com.zipick.notification.repository.NotificationCursorRepository;
 import com.zipick.recommendation.engine.HouseScore;
 import com.zipick.recommendation.service.RecommendationService;
@@ -33,7 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
  * "무엇을 알릴지"는 메인 서버가 안다(관심 공고, 추천 엔진). 그래서 찾는 건 여기서 하고, 보내는 건 알림센터에 맡긴다.
  * 주기마다 ① 관심 공고의 접수 마감 D-day ② 마지막 확인 이후 수집된 공고 중 사용자 조건에 맞는 것(역매칭) 을 찾아
  * 알림센터에 템플릿 코드 + 변수 + dedupeKey 로 요청한다. 같은 키는 알림센터가 한 번만 적으므로 중복 발송이 없다.
- * 알림센터가 꺼져 있으면 이번 주기는 건너뛴다(커서를 옮기지 않아 다음 주기에 다시 시도).
+ * 요청은 큐로 던지므로(queue-enabled) 알림센터가 꺼져 있어도 남는다. 큐도 없고 알림센터도 꺼져 있으면
+ * 이번 주기는 건너뛴다(커서를 옮기지 않아 다음 주기에 다시 시도).
  */
 @Component
 @ConditionalOnProperty(prefix = "zipick.notification", name = "scheduler-enabled", havingValue = "true", matchIfMissing = true)
@@ -56,7 +57,7 @@ public class NotificationScheduler {
             List<NotificationSettingResponse> subscribers = client.listEnabledSubscriptions();
             int a = enqueueDeadlineReminders(subscribers);
             int b = enqueueNewMatches(subscribers);
-            if (a + b > 0) log.info("알림 스케줄러: 마감 {}건, 새 공고 {}건을 알림센터에 적음", a, b);
+            if (a + b > 0) log.info("알림 스케줄러: 마감 {}건, 새 공고 {}건을 알림센터에 요청", a, b);
         } catch (BusinessException e) {
             log.warn("알림센터에 연결하지 못해 이번 주기를 건너뜁니다: {}", e.getMessage());
         } catch (Exception e) {
@@ -85,9 +86,9 @@ public class NotificationScheduler {
                 vars.put("noticeTitle", n.title());
                 vars.put("regionsText", n.regions().isEmpty() ? "" : " (" + String.join(", ", n.regions()) + ")");
                 vars.put("detailUrl", n.detailUrl());
-                NotificationEventResponse r = client.enqueue(NotificationRequest.forUser("DEADLINE", s.userId(), vars,
-                        "DEADLINE:" + s.userId() + ":" + n.noticeId() + ":" + left));
-                if (!r.duplicate()) count++;
+                client.request(NotificationRequest.forUser("DEADLINE", s.userId(), vars,
+                        "DEADLINE:" + s.userId() + ":" + n.noticeId() + ":" + left), NotificationPriority.NORMAL);
+                count++;
             }
         }
         return count;
@@ -129,12 +130,12 @@ public class NotificationScheduler {
                 vars.put("region", h.candidate().regionKey());
                 vars.put("deadlineText", n.applyEndAt() == null ? "" : " · 접수 마감 " + n.applyEndAt());
                 vars.put("detailUrl", n.detailUrl());
-                NotificationEventResponse r = client.enqueue(NotificationRequest.forUser("NEW_MATCH", s.userId(), vars,
-                        "NEW_MATCH:" + s.userId() + ":" + nid));
-                if (!r.duplicate()) count++;
+                client.request(NotificationRequest.forUser("NEW_MATCH", s.userId(), vars,
+                        "NEW_MATCH:" + s.userId() + ":" + nid), NotificationPriority.NORMAL);
+                count++;
             }
         }
-        // 전부 적은 뒤에 커서를 옮긴다 — 중간에 알림센터가 죽으면 다음 주기에 같은 공고를 다시 본다(dedupe 로 중복 없음)
+        // 전부 요청한 뒤에 커서를 옮긴다 — 중간에 실패하면 다음 주기에 같은 공고를 다시 본다(dedupeKey 로 중복 없음)
         cursor.advance(now);
         return count;
     }

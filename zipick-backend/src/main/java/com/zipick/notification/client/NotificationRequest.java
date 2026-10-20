@@ -3,7 +3,10 @@ package com.zipick.notification.client;
 import java.time.LocalDateTime;
 import java.util.Map;
 
-/** 알림센터에 보내는 "알림 요청". 문구는 알림센터의 템플릿이 가진다 — 여기서는 코드와 변수만 */
+/**
+ * 알림센터에 보내는 "알림 요청". 문구는 알림센터의 템플릿이 가진다 — 여기서는 코드와 변수만.
+ * 큐로 보내든 HTTP 로 보내든 같은 JSON 이다. 보낼 때는 {@code NotificationClient.request(요청, 우선순위)}.
+ */
 public record NotificationRequest(
         String templateCode,
         Long userId,

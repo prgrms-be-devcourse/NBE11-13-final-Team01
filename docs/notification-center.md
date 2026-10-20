@@ -21,13 +21,17 @@ API 계약(경로·JSON·응답 형식)과 DB 스키마는 Spring 버전과 같�
 ## 구조
 
 ```
-메인 서버 (zipick-backend)                    알림센터 (zipick-notification, :8081, /internal/**, X-Internal-Key)
- ├ 인증 (가입 인증·비밀번호 변경)   ─┐          ├ 템플릿     notification_templates  {{변수}} 치환
- ├ 관심 공고 마감 D-day 스케줄러    ─┼─ POST ─▶ ├ 수신 설정   subscriptions           주소·정보성 on/off·광고 동의(시각)
- ├ 새 공고 역매칭 스케줄러          ─┘          ├ 아웃박스   notification_messages   PENDING→SENT/FAILED/SKIPPED/CANCELLED
- └ 알림 설정 화면 (프록시)          ◀─ GET/PUT ─ ├ 예약 발송   campaigns               시각에 대상 풀어 아웃박스로
-                                               └ 채널       Slack webhook / Email(SMTP 또는 SES) / (알림톡 예정)
+메인 서버 (zipick-backend)                         알림센터 (zipick-notification, :8081)
+ ├ 인증 (가입 인증·비밀번호 변경)   ─┐                ├ 큐 리스너  notification.requests 를 꺼내 아웃박스에 적음
+ ├ 관심 공고 마감 D-day 스케줄러    ─┼─ RabbitMQ ─▶   ├ 템플릿     notification_templates  {{변수}} 치환
+ ├ 새 공고 역매칭 스케줄러          ─┘ (던지고 끝)     ├ 수신 설정   subscriptions           주소·정보성 on/off·광고 동의(시각)
+ │                                                   ├ 아웃박스   notification_messages   PENDING→SENT/FAILED/SKIPPED/CANCELLED
+ └ 알림 설정 화면 (프록시)          ◀─ HTTP ──────▶   ├ 예약 발송   campaigns               시각에 대상 풀어 아웃박스로
+   (조회·저장·테스트 발송: 응답 필요)  X-Internal-Key  └ 채널       Slack webhook / Email(SMTP 또는 SES) / (알림톡 예정)
 ```
+
+**두 가지 길.** 응답이 필요 없는 "알림 요청"은 **RabbitMQ 큐**로 던진다 — 알림센터가 꺼져 있어도 요청이 브로커에 남고, 켜지면 이어서 처리된다.
+응답이 필요한 조회·설정·테스트 발송은 **HTTP** 다. 큐가 꺼져 있거나(`NOTIFICATION_QUEUE_ENABLED=false`) 브로커가 발행을 확인하지 않으면 요청도 HTTP 로 보낸다. 제품 비교와 측정은 설계 문서의 "알림 전달 방식: 큐 도입 검토" 섹션.
 
 ## 템플릿 카테고리와 규칙
 
@@ -38,6 +42,19 @@ API 계약(경로·JSON·응답 형식)과 DB 스키마는 Spring 버전과 같�
 | MARKETING | NEWSLETTER | 광고 수신 동의자 | 제목 앞 "(광고)" 자동, 21:00~08:00 은 다음 08:00 으로 미룸, 캠페인 대상은 MARKETING_CONSENTED 만 허용 |
 
 문구는 알림센터 DB 에만 있다. 기본 템플릿은 코드가 없을 때만 들어가므로(`TemplateSeeder`) 운영자가 고친 문구를 재시작이 덮어쓰지 않는다.
+
+## 큐 (RabbitMQ)
+
+| 항목 | 값 |
+| --- | --- |
+| 큐 | `notification.requests` (durable, 우선순위 0~9). 실패 큐 `notification.requests.dlq` |
+| 본문 | HTTP `POST /internal/notifications` 와 같은 JSON (`templateCode, userId, email, slackWebhookUrl, variables, dedupeKey, scheduledFor`) |
+| 우선순위 | 메인 서버가 정한다: 거래성(인증 메일) 9 > 정보성(마감·새 공고) 5 > 광고 1. 큰 값이 먼저 |
+| 발행 | 영속(persistent) + 발행 확인(publisher confirm, 2초). 확인이 없으면 메인 서버가 HTTP 로 대신 보낸다 |
+| 소비 | 알림센터가 prefetch 10, 수동 ack. 적으면 ack / 요청 형식 오류(없는 템플릿 등)는 실패 큐 / DB 장애 같은 일시 오류는 1초 뒤 requeue |
+| 중복 | at-least-once 라 같은 메시지가 두 번 올 수 있다. `dedupeKey` 가 있으면 아웃박스가 걸러 준다 (메인 서버 요청은 전부 키가 있다) |
+| 선언 | 메인 서버(`NotificationQueueConfig`)와 알림센터(`internal/queue`)가 **같은 인자**로 선언한다. 다르면 브로커가 거부하므로 한쪽을 바꾸면 다른 쪽도 바꾼다 |
+| 구독자 목록 | 스케줄러는 "누구에게 보낼지"를 HTTP 로 받는다. 알림센터가 닿지 않으면 마지막으로 받은 목록으로 진행한다(요청은 큐에 남으니까). 기동 직후라 받은 적이 없으면 그 주기는 건너뛴다 |
 
 ## API (`/internal/**`, 헤더 `X-Internal-Key: <NOTIFICATION_INTERNAL_KEY>`)
 
@@ -81,6 +98,7 @@ Go 는 계층(controller/service/repository) 대신 **기능별 패키지**로 �
 | `internal/message` | 아웃박스: 접수(enqueue), 발송(dispatch, `FOR UPDATE SKIP LOCKED`), 테스트 발송, 야간 금지 |
 | `internal/campaign` | 예약 발송 |
 | `internal/scheduler` | 1분 주기 고루틴 |
+| `internal/queue` | RabbitMQ 리스너 (메인 서버가 던진 요청 → 아웃박스). 연결이 끊기면 5초마다 재접속 |
 
 Go 를 처음 보는 팀원을 위해 각 파일 머리와 Java 와 다른 관용구(error 반환, context, 포인터로 null 표현, 인터페이스 자동 구현)에 주석을 달아 두었다.
 
@@ -90,7 +108,10 @@ Go 를 처음 보는 팀원을 위해 각 파일 머리와 Java 와 다른 관�
 # DB 한 번
 docker exec zipick-dev-postgres psql -U zipick -d postgres -c "CREATE DATABASE zipick_notification OWNER zipick;"
 docker exec -i zipick-dev-postgres psql -U zipick -d zipick_notification -f - < zipick-notification/db/init.sql
-# 실행 (Go 1.25). DB_USERNAME, DB_PASSWORD, NOTIFICATION_INTERNAL_KEY 환경 변수 → 메인 서버에도 같은 NOTIFICATION_INTERNAL_KEY
+# RabbitMQ 한 번 (큐를 쓰지 않으면 생략. 그러면 HTTP 로만 받는다)
+docker run -d --name zipick-dev-rabbitmq -p 5672:5672 -p 15672:15672 -e RABBITMQ_DEFAULT_USER=zipick -e RABBITMQ_DEFAULT_PASS=<비밀번호> rabbitmq:4.1-management
+# 실행 (Go 1.25). DB_USERNAME, DB_PASSWORD, NOTIFICATION_INTERNAL_KEY, RABBITMQ_URL=amqp://zipick:<비밀번호>@localhost:5672/
+#   → 메인 서버에도 같은 NOTIFICATION_INTERNAL_KEY 와 NOTIFICATION_QUEUE_ENABLED=true, RABBITMQ_USER/PASSWORD
 cd zipick-notification && go run ./cmd/server
 # 테스트
 go test ./...

@@ -1,5 +1,5 @@
-# 운영 배포: EC2 한 대에 db(PostgreSQL) + backend(메인) + notification(알림센터) + web(Caddy: 프론트 정적 파일 + /api 프록시)
-# 알림센터는 바깥에 열지 않는다. backend 만 컨테이너 네트워크 안에서 http://notification:8081 로 부른다.
+# 운영 배포: EC2 한 대에 db(PostgreSQL) + rabbitmq + backend(메인) + notification(알림센터) + web(Caddy: 프론트 정적 파일 + /api 프록시)
+# 알림센터·RabbitMQ 는 바깥에 열지 않는다. backend 는 알림 요청을 rabbitmq 에 던지고, 조회·설정은 http://notification:8081 로 부른다.
 # 비밀 값은 같은 폴더의 .env 에서 읽는다 (.env.prod.example 참고, git 에 올리지 않음).
 # 외부에는 web 의 80/443 만 열린다. db 와 backend 는 컨테이너 네트워크 안에서만 접근할 수 있다.
 services:
@@ -21,12 +21,35 @@ services:
       timeout: 3s
       retries: 20
 
+  rabbitmq:
+    # 알림 요청 큐. 관리 화면 플러그인 없는 이미지(메모리 절약). 외부 포트 없음
+    image: rabbitmq:4.1
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER 필요}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD 필요}
+      # 메모리 상한: 컨테이너 한도의 60%에서 발행을 막는다 (서버 1.8GB 를 나눠 쓰므로)
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit vm_memory_high_watermark 0.6"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
   backend:
     image: zipick-backend:latest
     build: ../zipick-backend
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -38,6 +61,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 필요}
       NOTIFICATION_BASE_URL: http://notification:8081
       NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?NOTIFICATION_INTERNAL_KEY 필요}
+      NOTIFICATION_QUEUE_ENABLED: "true"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       # 아래 네 개는 Spring 설정 키에 환경 변수로 직접 꽂는다 (저장소의 application-prod.yml 은 건드리지 않음)
       #   cors.allowed-origins / cookie.secure / myhome.api.service-key / kakao.local.rest-api-key
       CORS_ALLOWEDORIGINS: ${APP_ORIGIN:?APP_ORIGIN 필요}
@@ -52,6 +79,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -60,6 +89,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY}
       APP_ORIGIN: ${APP_ORIGIN}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       # 이메일: none | smtp | ses
       NOTIFICATION_EMAIL_PROVIDER: ${NOTIFICATION_EMAIL_PROVIDER:-none}
       NOTIFICATION_EMAIL_FROM: ${NOTIFICATION_EMAIL_FROM:-}
@@ -96,5 +126,6 @@ services:
 
 volumes:
   db-data:
+  rabbitmq-data:
   caddy-data:
   caddy-config:
