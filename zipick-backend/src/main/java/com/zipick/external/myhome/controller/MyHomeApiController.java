@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -21,6 +22,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
+// SecurityConfig: /api/external/** 는 permitAll
+@SecurityRequirements
 @RestController
 @RequestMapping("/api/external/myhome")
 @Tag(name = "마이홈 원본 API", description = "공공데이터포털 마이홈 API의 공고·임대주택 원본 응답을 조회합니다.")
