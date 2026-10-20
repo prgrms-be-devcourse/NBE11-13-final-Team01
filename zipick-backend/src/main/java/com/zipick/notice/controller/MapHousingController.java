@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+// SecurityConfig: GET /api/v1/map/housings/** 는 permitAll
+@SecurityRequirements
 @RestController
 @RequestMapping("/api/v1/map/housings")
 @Tag(name = "공급주택 지도", description = "모집 중인 공급주택의 지도 좌표, 상세정보, 첨부파일과 이미지를 조회합니다.")

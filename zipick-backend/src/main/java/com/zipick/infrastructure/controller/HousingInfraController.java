@@ -5,6 +5,7 @@ import com.zipick.infrastructure.dto.HousingInfraResponse;
 import com.zipick.infrastructure.service.HousingInfraQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,6 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @Tag(name = "주변 생활 인프라", description = "공급주택 좌표 기준 주변 생활시설. "
         + "서버 배치가 미리 수집해 둔 값을 읽기만 하며, 이 API가 카카오를 호출하지는 않는다.")
+// SecurityConfig: GET /api/v1/map/housings/** 는 permitAll
+@SecurityRequirements
 @RestController
 @RequestMapping("/api/v1/map/housings")
 public class HousingInfraController {

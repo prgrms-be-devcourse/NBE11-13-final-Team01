@@ -7,6 +7,7 @@ import com.zipick.housing.dto.HouseListResponse;
 import com.zipick.housing.service.HouseFilterService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** 기본 필터링. 공급주택 상세(/{id})는 공급주택 담당 컨트롤러에서 제공한다. */
 @Tag(name = "공급주택 필터", description = "전체 공급주택을 조건으로 거른다. 로그인 없이 쓸 수 있다")
+// SecurityConfig: GET /api/v1/houses/** 는 permitAll
+@SecurityRequirements
 @RestController
 @RequestMapping("/api/v1/houses")
 @RequiredArgsConstructor

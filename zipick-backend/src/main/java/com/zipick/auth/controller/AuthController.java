@@ -12,6 +12,7 @@ import com.zipick.auth.service.TokenService;
 import com.zipick.global.response.ApiResponse;
 import com.zipick.global.util.CookieUtil;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -39,6 +40,7 @@ public class AuthController {
 
     @Operation(summary = "회원가입",
             description = "이메일과 비밀번호로 가입한다. 이미 쓰는 이메일이면 409 DUPLICATE_EMAIL.")
+    @SecurityRequirements   // 비로그인 호출
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<SignupResponse> signup(@Valid @RequestBody SignupRequest request) {
@@ -49,6 +51,7 @@ public class AuthController {
             description = "Access Token(1시간)은 응답 바디로 돌려주고, "
                     + "Refresh Token(7일)은 HttpOnly 쿠키로 내려준다. "
                     + "Access Token은 브라우저 저장소에 두지 말고 메모리에만 보관한다.")
+    @SecurityRequirements   // 비로그인 호출
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(
             @Valid @RequestBody LoginRequest request,
@@ -73,6 +76,7 @@ public class AuthController {
                     + "Rotation이라 호출할 때마다 Refresh Token 쿠키도 새 값으로 교체되므로, "
                     + "같은 쿠키로 두 번 호출하면 두 번째는 실패한다. "
                     + "프론트는 앱 시작 시 1회 호출해 로그인 상태를 복구한다.")
+    @SecurityRequirements   // 비로그인 호출
     @PostMapping("/reissue")
     public ApiResponse<TokenResponse> reissue(HttpServletRequest request, HttpServletResponse response) {
 

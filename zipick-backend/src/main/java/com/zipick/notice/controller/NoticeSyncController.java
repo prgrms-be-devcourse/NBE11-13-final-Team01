@@ -6,10 +6,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+// SecurityConfig: /api/internal/** 는 permitAll (운영에서는 별도 보호가 필요하다)
+@SecurityRequirements
 @RestController
 @RequestMapping("/api/internal/notices")
 @Tag(name = "공고 수집", description = "마이홈·LH·SH 공고를 수집하여 DB와 동기화합니다.")
