@@ -1,0 +1,100 @@
+# 운영 배포: EC2 한 대에 db(PostgreSQL) + backend(메인) + notification(알림센터) + web(Caddy: 프론트 정적 파일 + /api 프록시)
+# 알림센터는 바깥에 열지 않는다. backend 만 컨테이너 네트워크 안에서 http://notification:8081 로 부른다.
+# 비밀 값은 같은 폴더의 .env 에서 읽는다 (.env.prod.example 참고, git 에 올리지 않음).
+# 외부에는 web 의 80/443 만 열린다. db 와 backend 는 컨테이너 네트워크 안에서만 접근할 수 있다.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: zipick
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME 필요}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD 필요}
+      TZ: Asia/Seoul
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # 빈 볼륨으로 처음 뜰 때만 이름 순서대로 실행된다 (이후 재시작에는 실행되지 않음)
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d zipick"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    image: zipick-backend:latest
+    build: ../zipick-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: zipick
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 필요}
+      NOTIFICATION_BASE_URL: http://notification:8081
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?NOTIFICATION_INTERNAL_KEY 필요}
+      # 아래 네 개는 Spring 설정 키에 환경 변수로 직접 꽂는다 (저장소의 application-prod.yml 은 건드리지 않음)
+      #   cors.allowed-origins / cookie.secure / myhome.api.service-key / kakao.local.rest-api-key
+      CORS_ALLOWEDORIGINS: ${APP_ORIGIN:?APP_ORIGIN 필요}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      MYHOME_API_SERVICEKEY: ${MYHOME_API_KEY:-}
+      KAKAO_LOCAL_RESTAPIKEY: ${KAKAO_REST_API_KEY:-}
+
+  notification:
+    image: zipick-notification:latest
+    build: ../zipick-notification
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: zipick_notification
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY}
+      APP_ORIGIN: ${APP_ORIGIN}
+      # 이메일: none | smtp | ses
+      NOTIFICATION_EMAIL_PROVIDER: ${NOTIFICATION_EMAIL_PROVIDER:-none}
+      NOTIFICATION_EMAIL_FROM: ${NOTIFICATION_EMAIL_FROM:-}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health > /dev/null 2>&1 || curl -sf http://localhost:8081/health > /dev/null"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
+
+  web:
+    image: zipick-web:latest
+    build:
+      context: ../zipick-frontend
+      args:
+        VITE_KAKAO_MAP_KEY: ${VITE_KAKAO_MAP_KEY:-}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
