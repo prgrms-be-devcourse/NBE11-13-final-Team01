@@ -1,6 +1,14 @@
 spring:
   application:
     name: zipick
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    connection-timeout: 3s
+    # 브로커가 "받았다"고 확인해 줄 때까지 기다린다 (발행 확인). 확인이 안 오면 HTTP 로 대신 보낸다
+    publisher-confirm-type: simple
   profiles:
     default: local
 
@@ -179,5 +187,8 @@ zipick:
     base-url: ${NOTIFICATION_BASE_URL:http://localhost:8081}
     # 알림센터와 공유하는 키. 비어 있으면 알림 기능이 꺼진다(설정 화면은 503, 스케줄러는 건너뜀)
     internal-key: ${NOTIFICATION_INTERNAL_KEY:}
+    # 알림 요청(마감·새 공고·인증 메일)을 큐로 던질지. 알림센터가 꺼져 있어도 요청이 브로커에 남는다.
+    # 큐에 못 넣으면(브로커 장애) HTTP 로 한 번 더 시도한다.
+    queue-enabled: ${NOTIFICATION_QUEUE_ENABLED:false}
     poll-interval: PT5M
     scheduler-enabled: true

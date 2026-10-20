@@ -18,6 +18,7 @@ import (
 	"github.com/zipick/notification/internal/db"
 	"github.com/zipick/notification/internal/httpx"
 	"github.com/zipick/notification/internal/message"
+	"github.com/zipick/notification/internal/queue"
 	"github.com/zipick/notification/internal/scheduler"
 	"github.com/zipick/notification/internal/subscription"
 	"github.com/zipick/notification/internal/template"
@@ -74,6 +75,10 @@ func run() error {
 	if cfg.Scheduler {
 		go scheduler.Run(ctx, cfg.PollEvery, 15*time.Second, campaigns, msgSvc)
 	}
+	// 큐 리스너: 메인 서버가 던진 알림 요청을 받는다. RABBITMQ_URL 이 없으면 HTTP 로만 받는다
+	if cfg.RabbitURL != "" {
+		go queue.Run(ctx, cfg.RabbitURL, msgSvc)
+	}
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -86,7 +91,7 @@ func run() error {
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
-	slog.Info("알림센터 시작", "port", cfg.Port, "email", cfg.Email.Provider, "scheduler", cfg.Scheduler, "keySet", cfg.InternalKey != "")
+	slog.Info("알림센터 시작", "port", cfg.Port, "email", cfg.Email.Provider, "scheduler", cfg.Scheduler, "keySet", cfg.InternalKey != "", "queue", cfg.RabbitURL != "")
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
