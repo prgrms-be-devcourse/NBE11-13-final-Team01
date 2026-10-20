@@ -116,3 +116,18 @@ SELECT n.source, n.status,
 - 추천 API에서 인프라 점수·근거가 정상 반영되는지 확인
 - 백엔드 로그에 API 타임아웃·429·DB 연결 오류 및 배치 실패가 없는지 확인
 - 내부·외부 연동 API에 대한 접근 제어와 운영 DB 초기화 금지 확인
+
+## 5. 자동 배포 (CD)
+
+GitHub Actions 로 `dev` 커밋을 ARM64 이미지로 만들어 EC2 에 배포하는 파이프라인이 있습니다.
+**수동 실행만 허용**하며, 기존 `deploy/deploy.sh` 수동 배포도 그대로 동작합니다.
+
+설정·사용법·롤백 절차: **[CD 파이프라인](cd-pipeline.md)**
+
+**1차 배포 범위는 `db` · `backend` · `web` 입니다.** 전용 compose 파일
+(`deploy/docker-compose.phase1.yml`)을 쓰며, `rabbitmq` 와 `notification` 은 정의 자체가 없어
+실수로도 실행되지 않습니다. 1차에서는 서버 `.env` 에 추가할 항목이 없습니다.
+
+> `rabbitmq` · `notification` 은 담당자 구현이 끝난 뒤 2차에서 다룹니다. 그때
+> `zipick_notification` 데이터베이스를 **수동으로** 만들어야 합니다 — 기존 DB 볼륨에서는
+> compose 의 초기화 SQL 이 실행되지 않습니다. CD 는 운영 DB 에 DDL 을 실행하지 않습니다.
