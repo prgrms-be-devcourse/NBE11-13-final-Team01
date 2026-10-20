@@ -233,6 +233,21 @@ Provider 가 돌려주는 Map 은 세 상태를 구분한다. `ScoreCalculator.s
 `config/application-secret.yml`의 `kakao.local.rest-api-key` 하나로 둘 다 동작한다. 새 환경 변수는 없다.
 
 단, **일일 쿼터는 API별로 따로 집계된다.** 주소 검색 사용량과 카테고리 검색 사용량은 별개다.
+로컬 API 기능별 일간 쿼터는 100,000건이고, 초당·분당 제한은 존재하지만 수치가 공개돼 있지 않다.
+수집은 완전히 순차 실행이라(스케줄러 스레드 1개 → 주택 순차 → 카테고리 6회 순차) 동시 호출이 없다.
+
+### 타임아웃
+
+`kakaoLocalRestClient`에는 **connect 3초 / read 10초**를 건다 (`KakaoLocalApiConfig`).
+
+- 타임아웃이 없으면 카카오가 응답하지 않을 때 수집 스레드가 무한 대기하고,
+  `ReentrantLock`을 쥔 채로 멈춰 **다음 회차까지 전부 건너뛴다.** 로그도 남지 않는다.
+- ⚠️ **`RestClient.builder()`를 직접 호출하면 `spring.http.clients.*` 전역 설정이 적용되지 않는다.**
+  그래서 요청 팩토리(`JdkClientHttpRequestFactory`)를 직접 만들어 붙였다.
+  전역 설정을 쓰지 않은 이유는 공고 수집·슬랙 알림은 응답 특성이 달라 같은 값을 강요할 수 없기 때문이다.
+- read 를 10초로 넉넉히 둔 이유: 이 클라이언트를 함께 쓰는 좌표 변환(`HousingGeocodingService`)은
+  **호출이 한 번만 실패해도 그 회차 전체를 중단**한다. 일시적 지연을 실패로 오해하면 손해가 크다.
+  인프라 수집은 연속 3회 실패해야 멈추므로 최악이어도 30초면 빠져나온다.
 
 ---
 
