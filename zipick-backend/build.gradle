@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'jacoco'
     id 'org.springframework.boot' version '4.1.1'
     id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -69,6 +70,35 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // 테스트가 끝나면 커버리지 리포트를 만든다. finalizedBy 라 테스트가 실패해도 실행된다.
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+// 테스트 커버리지 측정. 지금은 수치를 보기만 하고 기준 미달로 빌드를 실패시키지 않는다.
+// 기준선은 초기 수치를 확인한 뒤 팀에서 정한다.
+jacoco {
+    // Gradle 9.3 기본값보다 새 버전을 명시한다. Java 25 바이트코드(class file 69)를 읽으려면 필요하다.
+    toolVersion = '0.8.15'
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+
+    reports {
+        html.required = true   // 사람이 브라우저로 보는 리포트
+        xml.required = true    // CI 요약 및 외부 도구가 읽는 형식
+        csv.required = false
+    }
+
+    // QueryDSL 이 생성한 Q 클래스만 측정에서 뺀다. 직접 작성한 코드는 모두 포함한다.
+    // 이름 규칙(Q*)만으로 거르면 직접 작성한 QuerydslConfig 까지 빠지므로 생성 위치까지 함께 지정한다.
+    classDirectories.setFrom(
+            files(sourceSets.main.output.classesDirs.collect { dir ->
+                fileTree(dir) {
+                    exclude '**/domain/Q*.class', '**/entity/Q*.class'
+                }
+            })
+    )
 }
 
 // QueryDSL Q클래스 생성 위치
