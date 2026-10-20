@@ -3,16 +3,20 @@ import { useEffect, useState } from 'react';
 import { notificationApi } from '../api/notification';
 import type { NotificationEvent, NotificationStatus, NotificationType } from '../types';
 
-const TYPE_LABEL: Record<NotificationType, string> = { DEADLINE: '접수 마감', NEW_MATCH: '새 공고', TEST: '테스트' };
-const STATUS_LABEL: Record<NotificationStatus, string> = { PENDING: '대기', SENT: '보냄', FAILED: '실패', SKIPPED: '건너뜀' };
+const TYPE_LABEL: Record<string, string> = {
+  DEADLINE: '접수 마감', NEW_MATCH: '새 공고', TEST: '테스트', EMAIL_VERIFY: '이메일 인증', PASSWORD_CHANGED: '비밀번호 변경', NEWSLETTER: '소식',
+};
+const STATUS_LABEL: Record<NotificationStatus, string> = { PENDING: '대기', SENT: '보냄', FAILED: '실패', SKIPPED: '건너뜀', CANCELLED: '취소' };
+const typeLabel = (t: NotificationType) => TYPE_LABEL[t] ?? t;
 
 function errText(e: unknown) {
   return e instanceof Error ? e.message : '요청에 실패했어요.';
 }
 
 /**
- * 알림 설정. 슬랙 웹훅(incoming webhook URL) 또는 이메일로
- * ① 관심 공고의 접수 마감 D-day ② 내 조건에 맞는 새 공고 를 보낸다. 발송은 서버가 5분마다 확인한다.
+ * 알림 설정. 저장·발송은 알림센터(별도 서버)가 하고, 메인 서버는 그대로 넘겨 준다.
+ * 슬랙 웹훅(incoming webhook URL) 또는 이메일로 ① 관심 공고의 접수 마감 D-day ② 내 조건에 맞는 새 공고 를 보낸다.
+ * 광고성 소식은 따로 동의한 사람에게만 간다.
  */
 export default function NotificationPanel() {
   const qc = useQueryClient();
@@ -24,6 +28,7 @@ export default function NotificationPanel() {
   const [email, setEmail] = useState('');
   const [deadlineDays, setDeadlineDays] = useState('3,1,0');
   const [newMatch, setNewMatch] = useState(true);
+  const [marketing, setMarketing] = useState(false);
   const [keepWebhook, setKeepWebhook] = useState(false);
 
   useEffect(() => {
@@ -33,6 +38,7 @@ export default function NotificationPanel() {
     setEmail(s.email ?? '');
     setDeadlineDays(s.deadlineDays.join(','));
     setNewMatch(s.newMatchEnabled);
+    setMarketing(s.marketingConsent);
     setKeepWebhook(s.slackConfigured);
     setWebhook('');
   }, [setting.data]);
@@ -48,6 +54,7 @@ export default function NotificationPanel() {
         // 입력란이 비어 있고 "기존 웹훅 유지"면 저장된 값을 그대로 둔다 (서버는 null 이면 기존 값 유지)
         slackWebhookUrl: webhook.trim() ? webhook.trim() : keepWebhook ? undefined : '',
         email: email.trim() || '',
+        marketingConsent: marketing,
         deadlineDays,
         newMatchEnabled: newMatch,
       }),
@@ -87,7 +94,7 @@ export default function NotificationPanel() {
           )}
         </label>
         <label>
-          이메일 {s && !s.emailAvailable && <span className="muted small">(서버에 SMTP 설정이 없어 지금은 슬랙만 동작)</span>}
+          이메일 {s && !s.emailAvailable && <span className="muted small">(알림센터에 이메일 발송 설정이 없어 지금은 슬랙만 동작)</span>}
           <input type="email" placeholder="me@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label>
@@ -97,6 +104,15 @@ export default function NotificationPanel() {
         <label className="toggle">
           <input type="checkbox" checked={newMatch} onChange={(e) => setNewMatch(e.target.checked)} />
           내 조건에 맞는 새 공고 알림
+        </label>
+        <label className="toggle">
+          <input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
+          <span>
+            (광고) 소식·이벤트 메시지 받기
+            {s?.marketingConsent && s.marketingConsentedAt && (
+              <span className="muted small"> · 동의 {s.marketingConsentedAt.slice(0, 10)}</span>
+            )}
+          </span>
         </label>
       </div>
 
@@ -126,7 +142,7 @@ export default function NotificationPanel() {
             {history.data.map((e: NotificationEvent) => (
               <li key={e.id}>
                 <span className={`badge badge--${e.status.toLowerCase()}`}>{STATUS_LABEL[e.status]}</span>
-                <span className="muted small">{TYPE_LABEL[e.type]}</span>
+                <span className="muted small">{typeLabel(e.templateCode)}</span>
                 <span className="notif__title">
                   {e.url ? <a href={e.url} target="_blank" rel="noreferrer">{e.title}</a> : e.title}
                 </span>

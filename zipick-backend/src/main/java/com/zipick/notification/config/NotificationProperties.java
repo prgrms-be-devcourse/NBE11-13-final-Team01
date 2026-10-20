@@ -4,14 +4,17 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * @param pollInterval 아웃박스를 읽는 주기
- * @param maxAttempts  실패 시 재시도 횟수
+ * 알림센터(zipick-notification) 연결 설정.
+ * @param baseUrl      알림센터 주소 (같은 EC2 의 컨테이너: http://notification:8081)
+ * @param internalKey  X-Internal-Key 로 보내는 공유 키
+ * @param pollInterval 마감·새 공고를 찾아 알림센터에 적는 주기
  * @param schedulerEnabled false 면 스케줄러를 띄우지 않는다 (테스트·배치 실행용)
  */
 @ConfigurationProperties(prefix = "zipick.notification")
-public record NotificationProperties(Duration pollInterval, int maxAttempts, boolean schedulerEnabled) {
+public record NotificationProperties(String baseUrl, String internalKey, Duration pollInterval, boolean schedulerEnabled) {
     public NotificationProperties {
         if (pollInterval == null) pollInterval = Duration.ofMinutes(5);
-        if (maxAttempts <= 0) maxAttempts = 3;
+        if (baseUrl == null || baseUrl.isBlank()) baseUrl = "http://localhost:8081";
     }
+    public boolean configured() { return internalKey != null && !internalKey.isBlank(); }
 }

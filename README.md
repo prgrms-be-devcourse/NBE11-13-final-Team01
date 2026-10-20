@@ -42,7 +42,8 @@ psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/infra-init.sql
 | `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL 인증 정보 (필수) | 없음 |
 | `DB_HOST`, `DB_PORT`, `DB_NAME` | DB 연결 정보 | `localhost`, `5432`, `zipick` (local) |
 | `JWT_SECRET` | Base64 인코딩된 32바이트 이상의 JWT 서명 키 (필수) | 없음 |
-| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | 이메일 알림 사용 시 SMTP 설정 | 메일 미설정 시 이메일 채널 미사용 |
+| `NOTIFICATION_BASE_URL` | 알림센터(zipick-notification) 주소 | `http://localhost:8081` |
+| `NOTIFICATION_INTERNAL_KEY` | 알림센터와 공유하는 키. 알림센터에도 같은 값 | 없음 (비우면 알림 기능 꺼짐: 설정 화면 503, 스케줄러 건너뜀) |
 
 JWT 키 생성 예시 (macOS / Linux / WSL):
 
@@ -125,6 +126,7 @@ ZIPICK_INFRA_COLLECTION_INTERVAL_MS=60000 ./gradlew bootRun
 | --- | --- |
 | 인증·인가, JWT 및 프론트 로그인 연동 | [docs/auth.md](docs/auth.md) |
 | 추천 알고리즘·필터·AHP·관심 공고·알림 | [docs/recommendation.md](docs/recommendation.md) |
+| 알림센터(별도 앱, Go): 템플릿·수신 동의·아웃박스·예약 발송·채널 | [docs/notification-center.md](docs/notification-center.md), [zipick-notification/README.md](zipick-notification/README.md) |
 | 사용자 입력값·추천 필드 정의 | [docs/recommendation-fields.md](docs/recommendation-fields.md) |
 | 주변 생활 인프라 수집·캐싱·추천 연동 | [docs/housing-infra.md](docs/housing-infra.md) |
 | 배포 설정·인프라 배치 운영 | [docs/deployment.md](docs/deployment.md) |

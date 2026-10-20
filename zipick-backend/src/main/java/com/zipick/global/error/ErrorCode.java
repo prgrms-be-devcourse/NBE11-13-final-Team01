@@ -34,6 +34,7 @@ public enum ErrorCode {
     ACTIVE_PROFILE_REQUIRED(HttpStatus.CONFLICT, "사용 중인 추천 기준은 삭제할 수 없습니다."),
     PAIR_ANSWERS_NOT_ENOUGH(HttpStatus.CONFLICT, "두 집 비교 답이 부족합니다."),
 
+    NOTIFICATION_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "알림 서버에 연결할 수 없습니다. 잠시 뒤 다시 시도해 주세요."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 
     private final HttpStatus status;

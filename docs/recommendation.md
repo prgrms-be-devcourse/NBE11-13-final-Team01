@@ -5,7 +5,8 @@
 - [README](../README.md): 실행·환경 설정
 - [추천 입력값·필드](recommendation-fields.md): 입력 계약과 데이터 필드(일부 과거 측정값 포함)
 - [주변 인프라](housing-infra.md): 실제 추천 연동 및 0건 처리 규약
-- [배포·운영](deployment.md): 알림 SMTP·인증 쿠키/CORS 설정
+- [배포·운영](deployment.md): 알림센터 연결·인증 쿠키/CORS 설정
+- [알림센터](notification-center.md): 별도 앱(Go)의 설계·API
 
 ## 추천 알고리즘
 
@@ -89,7 +90,7 @@ P(왼쪽) = σ(β·d)                          ← Bradley-Terry = 차이에 대
 | GET | /api/v1/interest-notices/ids | 저장한 공고 id 목록 (카드의 ★ 표시용) |
 | DELETE | /api/v1/interest-notices/{noticeId} | 저장 해제 |
 | GET | /api/v1/interest-notices/schedule | 관심 공고의 일정(공고·접수 시작·접수 마감·당첨 발표). `from`·`to`(YYYY-MM-DD)로 기간 지정 |
-| GET, PUT | /api/v1/notifications/settings | 알림 설정 (슬랙 웹훅·이메일·마감 D-day 목록·새 공고 알림). 웹훅은 끝 6자만 돌려준다 |
+| GET, PUT | /api/v1/notifications/settings | 알림 설정 (슬랙 웹훅·이메일·광고 수신 동의·마감 D-day 목록·새 공고 알림). 알림센터로 넘긴다. 웹훅은 끝 6자만 돌려준다 |
 | POST | /api/v1/notifications/test | 테스트 알림 바로 보내기 |
 | GET | /api/v1/notifications | 알림 내역 (최근 50건) |
 
@@ -106,11 +107,11 @@ P(왼쪽) = σ(β·d)                          ← Bradley-Terry = 차이에 대
 
 - **관심 공고 저장:** 카드의 ★로 공고(`notice`)를 저장한다(`interest_notices`, 사용자·공고 unique). 주택이 아니라 **공고** 단위로 저장하는 이유는 일정(접수·발표)이 공고에 붙어 있기 때문이다.
 - **일정(캘린더):** 따로 저장하지 않고 수집된 공고의 `announced_at`·`apply_start_at`·`apply_end_at`·`winner_announced_at`을 그대로 읽어 일정으로 만든다. 공고가 갱신되면 일정도 같이 바뀐다. 프론트 `features/calendar/CalendarPanel`은 일정 목록만 받는 독립 컴포넌트라 다른 화면에도 붙일 수 있다.
-- **알림:** 아웃박스(`notification_events`) + DB 폴링(5분, `zipick.notification.poll-interval`). 설계 비교(DB 폴링 / 메시지 큐 / Kafka)는 문서의 알림 섹션에 있다. 당시 공고 69건·사용자 수십 명 규모를 가정했을 때 브로커를 두는 비용이 이득보다 커서 DB 폴링을 골랐고, 채널(`NotificationChannel`)만 추가하면 카카오 등으로 넓힐 수 있다.
-  - 종류: ① 관심 공고 **접수 마감 D-day**(기본 3·1·0일 전) ② **내 조건에 맞는 새 공고**(마지막 확인 이후 수집된 공고를 사용자별로 추천 엔진에 넣어 순위 묶음에 들면 발송, `RecommendationService.rankForNotices`).
-  - 같은 알림은 `dedupe_key`(예 `DEADLINE:{user}:{notice}:{d}`) unique 로 한 번만 적히므로 주기가 겹치거나 재시작해도 중복 발송이 없다. 실패는 `max-attempts`(3)까지 재시도 후 FAILED.
-  - 채널: **슬랙 incoming webhook**(사용자가 설정 화면에 URL 입력, `https://hooks.slack.com/` 으로 시작해야 저장됨 — 다른 주소로 서버가 요청을 보내는 것을 막기 위해) / **이메일**(`MAIL_HOST` 등 SMTP 환경 변수가 있을 때만 켜짐).
-  - 테이블 4개(`interest_notices`, `notification_settings`, `notification_events`, `notification_cursors`)는 `db/local-init.sql` 3절에 있다.
+- **알림은 별도 앱 `zipick-notification`(알림센터, Go)이 보낸다.** 메인 서버는 "무엇을 알릴지"만 찾고, 알림센터에 `templateCode + userId + variables + dedupeKey`로 요청만 적는다(`notification.client.NotificationClient`). 문구(템플릿)·수신 동의·아웃박스·예약 발송·채널(슬랙, 이메일 SMTP/SES)은 전부 알림센터에 있다. 설계·API·언어 선택 근거는 [알림센터 문서](notification-center.md).
+  - 메인 서버가 찾는 것: ① 관심 공고 **접수 마감 D-day**(기본 3·1·0일 전) ② **내 조건에 맞는 새 공고**(마지막 확인 이후 수집된 공고를 사용자별로 추천 엔진에 넣어 순위 묶음에 들면 요청, `RecommendationService.rankForNotices`). 5분 주기.
+  - 같은 알림은 `dedupeKey`(예 `DEADLINE:{user}:{notice}:{d}`)로 알림센터가 한 번만 적는다. 알림센터가 꺼져 있으면 이번 주기를 건너뛰고(새 공고 커서를 옮기지 않음) 다음 주기에 다시 요청한다.
+  - 메인 DB 에는 `interest_notices`, `notification_cursors`(새 공고 확인 시각)만 남는다. 알림 설정·아웃박스는 알림센터 DB `zipick_notification` 으로 옮겨 갔다(2026-10-20). 기존 로컬 DB 는 `DROP TABLE notification_settings, notification_events;` 만 실행하면 된다.
+  - 다른 파트에서 메일을 보낼 일(가입 인증, 비밀번호 변경)도 `NotificationClient.enqueue(NotificationRequest.toEmail("EMAIL_VERIFY", email, vars))` 처럼 요청만 보내면 된다.
 
 ## 다른 담당자와의 접점
 
