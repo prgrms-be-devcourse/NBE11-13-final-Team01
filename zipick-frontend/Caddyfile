@@ -1,0 +1,15 @@
+# SITE_ADDRESS 가 비어 있으면 :80 (IP 로 http 접속).
+# 도메인(예: zipick.example.com)을 넣으면 Caddy 가 Let's Encrypt 인증서를 자동으로 받아 https 로 연다.
+{$SITE_ADDRESS::80} {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
