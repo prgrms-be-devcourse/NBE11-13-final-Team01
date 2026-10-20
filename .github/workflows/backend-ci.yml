@@ -1,0 +1,118 @@
+name: Backend CI
+
+# dev 로 들어오는 PR 과 dev 자체의 변경을 검증한다.
+# 모노레포지만 paths 필터는 쓰지 않는다. 나중에 이 검사를 PR 병합 필수 조건으로 걸 경우,
+# 백엔드를 건드리지 않은 PR 에서 검사가 아예 실행되지 않아 병합이 영영 막히기 때문이다.
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+# 이 워크플로는 저장소 내용을 읽기만 한다. 쓰기 권한을 주지 않는다.
+# 커버리지는 Job Summary 와 Artifacts 로만 보여 주므로 PR 댓글용 쓰기 권한이 필요 없다.
+permissions:
+  contents: read
+
+# 같은 PR·브랜치에 새 커밋이 올라오면 진행 중이던 이전 실행을 취소한다.
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Gradle 빌드 (테스트 + 커버리지)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: zipick-backend
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # build.gradle 의 toolchain 이 Java 25 로 고정돼 있어 같은 버전을 설치한다.
+      # cache: gradle 이 없으면 매 실행마다 의존성을 새로 내려받아 몇 분이 더 걸린다.
+      - name: JDK 25 설치 및 Gradle 캐시
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      # build 는 컴파일 + 테스트를 포함하고, test 의 finalizedBy 로 JaCoCo 리포트까지 생성된다.
+      # 러너는 매번 새로 만들어지므로 데몬을 남길 이유가 없고, 캐시 저장 시 파일 잠금도 피한다.
+      - name: Gradle 빌드
+        run: ./gradlew build --no-daemon
+
+      # 테스트가 실패했을 때 원인을 봐야 하므로 성공·실패와 무관하게 리포트를 올린다.
+      # 취소된 실행에서는 올리지 않는다.
+      # path 는 working-directory 가 아니라 저장소 루트 기준이다.
+      - name: 테스트 리포트 업로드
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-report
+          path: |
+            zipick-backend/build/reports/tests/test
+            zipick-backend/build/test-results/test
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # HTML 은 사람이 열어 보는 용도, XML 은 아래 요약 단계와 추후 도구 연동용이다.
+      - name: 커버리지 리포트 업로드
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-report
+          path: |
+            zipick-backend/build/reports/jacoco/test/html
+            zipick-backend/build/reports/jacoco/test/jacocoTestReport.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # 리포트를 내려받지 않고도 실행 화면에서 바로 수치를 보도록 요약을 남긴다.
+      # $GITHUB_STEP_SUMMARY 는 파일에 쓰는 방식이라 토큰 쓰기 권한이 필요 없다.
+      - name: 커버리지 요약 출력
+        if: ${{ !cancelled() }}
+        run: |
+          REPORT=build/reports/jacoco/test/jacocoTestReport.xml
+          if [ ! -f "$REPORT" ]; then
+            echo "커버리지 리포트가 생성되지 않았습니다 (빌드가 테스트 전에 실패했을 수 있습니다)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 - "$REPORT" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          # 러너 로케일과 무관하게 한글이 깨지지 않도록 출력 인코딩을 고정한다.
+          sys.stdout.reconfigure(encoding="utf-8")
+
+          # report 엘리먼트의 바로 아래 counter 가 프로젝트 전체 합계다.
+          root = ET.parse(sys.argv[1]).getroot()
+          labels = {
+              "LINE": "Line (줄)",
+              "BRANCH": "Branch (분기)",
+              "INSTRUCTION": "Instruction (명령어)",
+              "METHOD": "Method (메서드)",
+              "CLASS": "Class (클래스)",
+          }
+
+          print("## 백엔드 테스트 커버리지")
+          print()
+          print("| 항목 | 커버 | 전체 | 비율 |")
+          print("| --- | ---: | ---: | ---: |")
+          for counter in root.findall("counter"):
+              kind = counter.get("type")
+              if kind not in labels:
+                  continue
+              missed = int(counter.get("missed"))
+              covered = int(counter.get("covered"))
+              total = missed + covered
+              ratio = (covered / total * 100) if total else 0.0
+              print(f"| {labels[kind]} | {covered} | {total} | {ratio:.1f}% |")
+          print()
+          print("QueryDSL 이 생성한 Q 클래스는 측정에서 제외했습니다.")
+          print("클래스별 상세 수치는 Artifacts 의 `backend-coverage-report` 에서 확인할 수 있습니다.")
+          PY
