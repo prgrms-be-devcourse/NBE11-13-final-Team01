@@ -60,7 +60,7 @@
 
 | 결정 | 이유 |
 | --- | --- |
-| **GHCR** (ECR 아님) | 저장소가 Public 이라 무료이고, Actions 는 `GITHUB_TOKEN` 으로 바로 푸시한다. 패키지를 Public 으로 두면 EC2 가 **인증 없이 pull** 하므로 서버에 토큰을 두지 않아도 된다 |
+| **GHCR** (ECR 아님) | Actions 는 `GITHUB_TOKEN` 으로 바로 푸시한다. 패키지는 **조직 정책상 비공개**라, EC2 는 배포할 때마다 **임시 토큰으로 로그인해 pull** 한다 (아래 "비공개 이미지 받기") |
 | **`ubuntu-24.04-arm` 러너** | EC2 가 t4g(ARM64)다. Public 저장소는 ARM64 러너를 무료로 쓸 수 있어 QEMU 에뮬레이션 없이 네이티브로 빌드한다 |
 | **SSM Run Command** (SSH 아님) | GitHub Actions 러너는 IP 가 고정되지 않는다. SSH 를 쓰려면 넓은 대역을 열어야 해 "배포 담당자 IP 만 허용" 정책이 깨진다. SSM 은 **인바운드 포트를 하나도 열지 않는다** |
 | **OIDC** (Access Key 아님) | GitHub Secrets 에 장기 AWS 키를 두지 않는다. 실행할 때마다 임시 자격 증명을 받는다 |
@@ -206,11 +206,17 @@ CD 를 실행하려면 아래가 먼저 끝나야 합니다. **아직 완료되�
       "Effect": "Allow",
       "Action": ["ssm:GetCommandInvocation", "ssm:DescribeInstanceInformation"],
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["ssm:PutParameter", "ssm:DeleteParameter", "ssm:AddTagsToResource"],
+      "Resource": "arn:aws:ssm:<REGION>:<ACCOUNT_ID>:parameter/zipick/deploy/*"
     }
   ]
 }
 ```
 
+> 마지막 문장은 비공개 이미지를 받기 위한 임시 토큰 파라미터용입니다. `/zipick/deploy/` 경로로만 제한합니다.
 > `ssm:DescribeInstanceInformation` 은 리소스 단위 제한을 지원하지 않아 `*` 가 필요합니다.
 > 읽기 전용이며, 배포 전에 "EC2 가 켜져 있고 SSM 에 연결됐는지" 확인하는 데만 씁니다.
 
@@ -222,16 +228,39 @@ CD 를 실행하려면 아래가 먼저 끝나야 합니다. **아직 완료되�
   sudo snap services amazon-ssm-agent
   ```
 - SSM 엔드포인트로 **아웃바운드 HTTPS(443)** 허용
+- **AWS CLI 설치** (한 번) — 서버가 Parameter Store 에서 임시 토큰을 꺼낼 때 씁니다.
+  ```bash
+  sudo snap install aws-cli --classic
+  ```
+  인스턴스 역할의 `AmazonSSMManagedInstanceCore` 에 파라미터 읽기 권한이 들어 있고, AWS 관리형 키(`aws/ssm`)로 암호화하므로 별도 권한은 필요 없습니다.
 - **인바운드 규칙은 바꾸지 않습니다.** SSH 22번은 지금처럼 담당자 IP 만 유지하세요.
 
-### 4. GHCR 패키지를 Public 으로 전환 — 최초 1회
+### 4. 비공개 이미지 받기 — 토큰을 어떻게 넘기나
 
-**EC2 는 `docker login` 없이 `docker pull` 합니다.** 패키지가 Private 이면 서버에서 받지 못해 배포가 실패합니다.
+GHCR 패키지는 **조직 관리자 정책으로 공개 전환이 막혀 있어 비공개**입니다. 그래서 EC2 는 배포할 때마다 로그인해서 받습니다.
+토큰이 SSM 명령 기록이나 Actions 로그에 직접 남지 않도록 다음 순서를 씁니다.
 
-패키지는 **처음 푸시할 때 만들어지므로, 그 전에는 공개 설정을 할 수 없습니다.**
-그래서 워크플로에 `build_only` 옵션을 뒀습니다. 아래 "최초 1회 절차"를 따르세요.
+```
+Actions                                   AWS                                EC2
+① GITHUB_TOKEN 을 SecureString 으로 저장 ─▶ Parameter Store (KMS 암호화)
+② SSM 명령에는 "파라미터 이름"만 ─────────────────────────────────────▶ ③ 이름으로 꺼내 복호화
+                                                                      ④ 임시 DOCKER_CONFIG 에 login → pull → logout → 폴더 삭제
+⑤ 성공·실패와 관계없이 파라미터 삭제
+```
 
-1차에서 공개할 패키지는 `zipick-backend`, `zipick-web` 두 개입니다 (알림센터는 2차).
+| 노출 지점 | 남는 것 |
+| --- | --- |
+| SSM 명령 기록 | 파라미터 **이름**(`/zipick/deploy/ghcr-token-<실행번호>`)뿐 |
+| Actions 로그 (저장소가 Public 이라 로그도 공개) | 토큰을 출력하지 않음. `GITHUB_TOKEN` 은 GitHub 이 자동 마스킹. 값은 명령줄 인자가 아니라 파일로 전달 |
+| CloudTrail | SecureString 값은 기록되지 않음 |
+| 서버 | 이번 실행 전용 임시 폴더에만 로그인 정보를 쓰고 pull 직후 삭제 (`~/.docker` 에 남지 않음) |
+
+- `GITHUB_TOKEN` 은 **이 저장소 패키지 읽기 권한**만 갖고(`packages: read`), 워크플로가 끝나면 GitHub 이 만료시킵니다.
+- 약점: `AmazonSSMManagedInstanceCore` 는 계정 안의 파라미터를 읽을 수 있어, 공용 계정의 다른 서버도 파라미터가 있는 몇 분 동안 이론상 읽을 수 있습니다.
+  파라미터는 배포 직후 지우고 토큰은 곧 만료되므로 위험이 작다고 판단했습니다. 더 줄이려면 인스턴스 역할을 필요한 권한만 적은 정책으로 바꿉니다.
+- 비용: Parameter Store(Standard)·SSM Run Command 는 무료, KMS 요청은 월 2만 건까지 무료라 **추가 AWS 비용은 없습니다**.
+- 비공개 패키지는 조직의 GitHub Packages 용량에 잡히므로 빌드할 때 **이미지마다 최근 5개 버전만** 남기고 지웁니다(빌드 단계의 정리 스텝). 롤백도 이 5개 안에서 가능합니다.
+- 토큰 없이 받는 대안은 ECR 이전입니다(EC2 가 IAM 역할로 pull). 레지스트리를 바꾸는 큰 변경이라 지금은 쓰지 않습니다.
 
 ---
 
@@ -270,26 +299,12 @@ Variables 가 아니라 Secrets 에 넣습니다.
 
 ## 사용법
 
-### 최초 1회 절차 — 패키지를 Public 으로 만들기
-
-GHCR 패키지는 **처음 푸시할 때 생성**되므로, 그 전에는 공개로 바꿀 수 없습니다.
-첫 실행만 빌드까지 하고 멈춘 뒤 공개 설정을 하고, 그다음에 실제 배포를 합니다.
+### AWS 설정 전에 빌드만 확인하기
 
 1. Actions → **Deploy** → Run workflow (Branch: `dev`)
 2. **`build_only` 를 켭니다.** `image_tag` 는 비워 둡니다.
-   → 이미지 2개를 GHCR 에 올리고 **배포는 하지 않습니다.**
-   AWS 설정이 아직이어도 실행됩니다 (서버에 접속하지 않으므로).
-3. 저장소 → **Packages** → `zipick-backend`, `zipick-web` 을 각각 열고
-   **Package settings → Change visibility → Public**
-4. 다시 Run workflow — 이번에는 **`build_only` 를 끕니다.**
-   같은 커밋이면 빌드 캐시로 빨리 끝나고, 배포까지 진행합니다.
-
-2단계가 끝나면 실행 화면 요약(Job Summary)에 패키지 이름과 다음 단계가 표시됩니다.
-
-> **왜 필요한가:** 이 단계를 건너뛰고 바로 배포하면 서버의 `docker pull` 에서 실패합니다.
-> 기존 컨테이너를 교체하기 전에 멈추므로 서비스는 무사하지만, 한 번 헛돌게 됩니다.
-> 그래서 배포 job 은 서버에 들어가기 전에 **인증 없는 pull 이 되는지 먼저 확인**하고,
-> 안 되면 무엇을 해야 하는지 알려 주며 멈춥니다.
+   → 이미지 3개를 GHCR 에 올리고 **배포는 하지 않습니다.** AWS 설정이 아직이어도 실행됩니다.
+3. 패키지는 비공개 그대로 둡니다. 공개 전환은 필요 없습니다.
 
 ### 배포하기
 
@@ -351,7 +366,7 @@ CD 에 문제가 있으면 기존 방식이 그대로 동작합니다.
 로컬에서는 검증할 수 없어 **첫 배포 때 직접 확인**해야 하는 항목입니다.
 
 - SSM Run Command 왕복 (OIDC → SendCommand → GetCommandInvocation)
-- EC2 에서 GHCR 공개 이미지 pull 이 인증 없이 되는지
+- EC2 가 Parameter Store 에서 임시 토큰을 꺼내 비공개 이미지를 pull 하는지, 그 뒤 SSM 명령 기록·Actions 로그에 토큰 값이 없는지
 - ARM64 이미지가 t4g 에서 실제로 실행되는지
 - 서버의 실제 compose 프로젝트명이 `zipick` 이고 볼륨이 `zipick_db-data` 인지
   (다르면 `DB_VOLUME` 가드가 먼저 막아 줍니다)

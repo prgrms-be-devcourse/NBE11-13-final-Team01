@@ -10,6 +10,8 @@
 #   - 운영 DB 볼륨이 없으면 새로 만들지 않고 중단한다. 빈 DB 가 생기는 사고를 막는다.
 #   - 운영 DB 에 DDL·초기화 SQL 을 실행하지 않는다. 알림센터 DB(zipick_notification)가 없으면 앱을 바꾸기 전에 멈춘다.
 #   - 서버의 .env 는 쓰지 않는다. 읽는 값은 헬스 체크용 HTTP_PORT 하나뿐이다.
+#   - GHCR 토큰은 SSM Parameter Store(SecureString)에서 꺼내 임시 docker 설정 폴더에만 로그인하고, pull 직후 지운다.
+#     토큰은 화면·파일·명령 기록에 남기지 않는다.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/home/ubuntu/zipick}"
@@ -100,9 +102,27 @@ fi
 # 4. 이미지 내려받기 — 실패하면 기존 컨테이너를 건드리기 전에 멈춘다
 # ---------------------------------------------------------------------------
 step "4/7 이미지 내려받기"
+# 패키지는 비공개다. GHCR_TOKEN_PARAM 이 있으면 Parameter Store 에서 토큰을 꺼내 로그인한다.
+# 로그인 정보는 이번 실행 전용 임시 폴더(DOCKER_CONFIG)에만 쓰고, pull 이 끝나면 폴더째 지운다 (~/.docker 에 남지 않음).
+if [ -n "${GHCR_TOKEN_PARAM:-}" ]; then
+  command -v aws > /dev/null || fail "서버에 AWS CLI 가 없습니다. sudo snap install aws-cli --classic 로 한 번 설치하세요."
+  DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
+  trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+  aws ssm get-parameter --region "${AWS_REGION:-ap-northeast-2}" --name "$GHCR_TOKEN_PARAM" --with-decryption \
+      --query Parameter.Value --output text 2>/dev/null \
+    | docker login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin > /dev/null 2>&1 \
+    || fail "GHCR 로그인 실패: 파라미터 $GHCR_TOKEN_PARAM 을 읽지 못했거나 토큰이 만료됐습니다.
+   인스턴스 역할(AmazonSSMManagedInstanceCore)과 리전을 확인하세요."
+  echo "GHCR 로그인 (임시 설정 폴더)"
+fi
 docker pull -q "$BACKEND_IMAGE"      || fail "백엔드 이미지를 받지 못했습니다: $BACKEND_IMAGE"
 docker pull -q "$NOTIFICATION_IMAGE" || fail "알림센터 이미지를 받지 못했습니다: $NOTIFICATION_IMAGE"
 docker pull -q "$WEB_IMAGE"          || fail "프론트 이미지를 받지 못했습니다: $WEB_IMAGE"
+if [ -n "${GHCR_TOKEN_PARAM:-}" ]; then
+  docker logout ghcr.io > /dev/null 2>&1 || true
+  rm -rf "$DOCKER_CONFIG"; unset DOCKER_CONFIG; trap - EXIT
+  echo "GHCR 로그아웃, 임시 설정 폴더 삭제"
+fi
 echo "완료."
 
 # ---------------------------------------------------------------------------
