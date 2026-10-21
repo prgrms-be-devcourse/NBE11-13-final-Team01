@@ -124,10 +124,8 @@ GitHub Actions 로 `dev` 커밋을 ARM64 이미지로 만들어 EC2 에 배포�
 
 설정·사용법·롤백 절차: **[CD 파이프라인](cd-pipeline.md)**
 
-**1차 배포 범위는 `db` · `backend` · `web` 입니다.** 전용 compose 파일
-(`deploy/docker-compose.phase1.yml`)을 쓰며, `rabbitmq` 와 `notification` 은 정의 자체가 없어
-실수로도 실행되지 않습니다. 1차에서는 서버 `.env` 에 추가할 항목이 없습니다.
+**배포 범위는 전체 구성** `db` · `rabbitmq` · `backend` · `notification` · `web` 이며, 수동 배포와 같은
+`deploy/docker-compose.prod.yml` 을 씁니다. 서버 `.env` 에 `NOTIFICATION_INTERNAL_KEY`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` 가 있어야 합니다.
 
-> `rabbitmq` · `notification` 은 담당자 구현이 끝난 뒤 2차에서 다룹니다. 그때
-> `zipick_notification` 데이터베이스를 **수동으로** 만들어야 합니다 — 기존 DB 볼륨에서는
-> compose 의 초기화 SQL 이 실행되지 않습니다. CD 는 운영 DB 에 DDL 을 실행하지 않습니다.
+> `zipick_notification` 데이터베이스는 **수동으로** 한 번 만들어야 합니다 — 기존 DB 볼륨에서는
+> compose 의 초기화 SQL 이 실행되지 않습니다. CD 는 운영 DB 에 DDL 을 실행하지 않고, 있는지 확인만 합니다.

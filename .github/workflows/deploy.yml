@@ -3,8 +3,9 @@ name: Deploy
 # 수동 실행만 허용한다. dev 에 merge 됐다고 자동으로 배포되지 않는다.
 # 자동 트리거(push)는 수동 배포가 충분히 검증된 뒤에 검토한다.
 #
-# 1차 배포 범위는 db · backend · web 이다 (deploy/docker-compose.phase1.yml).
-# rabbitmq · notification 은 담당자 구현이 끝난 뒤 2차에서 별도로 다룬다.
+# 배포 범위는 전체 구성이다: db · rabbitmq · backend · notification · web (deploy/docker-compose.prod.yml).
+# 서버에서 이미 이 구성으로 돌고 있으므로, CD 도 같은 compose 와 같은 서비스 목록을 쓴다.
+# (처음엔 db · backend · web 만 다루는 1차 구성이었으나, 알림센터·RabbitMQ 가 dev 에 머지되고 서버에 배포된 뒤 전체 구성으로 바꿨다)
 on:
   workflow_dispatch:
     inputs:
@@ -29,7 +30,7 @@ concurrency:
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
-  COMPOSE_PATH: deploy/docker-compose.phase1.yml
+  COMPOSE_PATH: deploy/docker-compose.prod.yml
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -137,7 +138,7 @@ jobs:
           [ "$failed" -eq 0 ] || exit 1
 
       # 롤백은 '실제로 배포된 적이 있는 버전' 만 대상으로 한다.
-      # 그 커밋에 1차 compose 가 있고, 그 태그의 이미지가 레지스트리에 남아 있어야 한다.
+      # 그 커밋의 compose 가 이미지 변수를 받고, 그 태그의 이미지 3개가 레지스트리에 남아 있어야 한다.
       - name: 롤백 대상 존재 확인
         if: ${{ steps.resolve.outputs.build_needed == 'false' }}
         env:
@@ -147,21 +148,27 @@ jobs:
           REGISTRY: ${{ steps.resolve.outputs.registry_path }}
           TAG: ${{ steps.resolve.outputs.image_tag }}
         run: |
-          # 1) 그 커밋에 1차 compose 파일이 있는가
-          gh api "repos/${REPOSITORY}/contents/${COMPOSE_PATH}?ref=${DEPLOY_SHA}" > /dev/null 2>&1 \
-            || { echo "::error::해당 커밋에 ${COMPOSE_PATH} 가 없습니다. 1차 CD 도입 이전 버전으로는 롤백할 수 없습니다."; exit 1; }
-          echo "OK   ${COMPOSE_PATH} (커밋 ${DEPLOY_SHA:0:7})"
+          # 1) 그 커밋의 compose 가 CD 용인가 (이미지 태그를 변수로 받는가).
+          #    CD 도입 이전의 prod compose 는 이미지 이름이 고정돼 있어 롤백 태그가 적용되지 않는다.
+          compose_body="$(gh api "repos/${REPOSITORY}/contents/${COMPOSE_PATH}?ref=${DEPLOY_SHA}" --jq '.content' 2>/dev/null | base64 -d || true)"
+          [ -n "$compose_body" ] \
+            || { echo "::error::해당 커밋에 ${COMPOSE_PATH} 가 없습니다."; exit 1; }
+          for var in BACKEND_IMAGE NOTIFICATION_IMAGE WEB_IMAGE; do
+            echo "$compose_body" | grep -q "\${${var}" \
+              || { echo "::error::해당 커밋의 compose 는 ${var} 를 받지 않습니다. 전체 구성 CD 도입 이전 버전으로는 롤백할 수 없습니다 (deploy/deploy.sh 수동 배포를 쓰세요)."; exit 1; }
+          done
+          echo "OK   ${COMPOSE_PATH} (커밋 ${DEPLOY_SHA:0:7}, 이미지 변수 3개 확인)"
 
           # 2) 그 태그의 이미지가 레지스트리에 있는가
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin > /dev/null
-          for image in zipick-backend zipick-web; do
+          for image in zipick-backend zipick-notification zipick-web; do
             docker manifest inspect "${REGISTRY}/${image}:${TAG}" > /dev/null 2>&1 \
               || { echo "::error::이미지가 없습니다: ${REGISTRY}/${image}:${TAG}"; exit 1; }
             echo "OK   ${image}:${TAG}"
           done
 
   # ---------------------------------------------------------------------------
-  # 2. ARM64 이미지를 만들어 GHCR 에 올린다. 1차 범위인 backend · web 만 만든다.
+  # 2. ARM64 이미지를 만들어 GHCR 에 올린다. backend · notification · web 세 개.
   #    공개 저장소라 ARM64 러너를 무료로 쓸 수 있어 QEMU 에뮬레이션 없이 네이티브로 빌드한다.
   # ---------------------------------------------------------------------------
   build:
@@ -211,8 +218,16 @@ jobs:
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
-      # 알림센터(zipick-notification) 이미지는 1차에서 만들지 않는다.
-      # 서비스를 띄우지 않으므로 레지스트리에 올릴 이유가 없다. 2차에서 추가한다.
+      # 알림센터(Go). 실행 파일 하나라 빌드가 빠르고 이미지는 약 30MB 다.
+      - name: 알림센터 이미지
+        uses: docker/build-push-action@v6
+        with:
+          context: zipick-notification
+          platforms: linux/arm64
+          push: true
+          tags: ${{ needs.verify.outputs.registry_path }}/zipick-notification:${{ needs.verify.outputs.image_tag }}
+          cache-from: type=gha,scope=notification
+          cache-to: type=gha,mode=max,scope=notification
 
       - name: build_only 안내
         if: ${{ inputs.build_only == true }}
@@ -226,11 +241,12 @@ jobs:
             echo "| 이미지 | 태그 |"
             echo "| --- | --- |"
             echo "| \`${REGISTRY}/zipick-backend\` | \`${TAG}\` |"
+            echo "| \`${REGISTRY}/zipick-notification\` | \`${TAG}\` |"
             echo "| \`${REGISTRY}/zipick-web\` | \`${TAG}\` |"
             echo
             echo "### 다음 단계"
             echo
-            echo "1. 저장소 → **Packages** 에서 \`zipick-backend\`, \`zipick-web\` 을 각각 열고"
+            echo "1. 저장소 → **Packages** 에서 \`zipick-backend\`, \`zipick-notification\`, \`zipick-web\` 을 각각 열고"
             echo "   Package settings → Change visibility → **Public** 으로 바꿉니다."
             echo "2. 이 워크플로를 \`build_only\` 를 **끄고** 다시 실행합니다."
             echo
@@ -263,7 +279,7 @@ jobs:
           TAG: ${{ needs.verify.outputs.image_tag }}
         run: |
           failed=0
-          for image in zipick-backend zipick-web; do
+          for image in zipick-backend zipick-notification zipick-web; do
             if docker manifest inspect "${REGISTRY}/${image}:${TAG}" > /dev/null 2>&1; then
               echo "OK   ${image}:${TAG} — 인증 없이 받을 수 있습니다"
             else
@@ -304,6 +320,7 @@ jobs:
             "COMPOSE_FILE=$(basename "${COMPOSE_PATH}")" \
             "COMPOSE_URL=${compose_url}" \
             "BACKEND_IMAGE=${REGISTRY}/zipick-backend:${TAG}" \
+            "NOTIFICATION_IMAGE=${REGISTRY}/zipick-notification:${TAG}" \
             "WEB_IMAGE=${REGISTRY}/zipick-web:${TAG}")"
 
       - name: 배포 요약
@@ -314,7 +331,7 @@ jobs:
           BUILT: ${{ needs.verify.outputs.build_needed }}
         run: |
           {
-            echo "## 배포 결과 (1차 범위: db · backend · web)"
+            echo "## 배포 결과 (db · rabbitmq · backend · notification · web)"
             echo
             echo "| 항목 | 값 |"
             echo "| --- | --- |"
