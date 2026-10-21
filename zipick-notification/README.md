@@ -43,5 +43,14 @@ DB_USERNAME=zipick DB_PASSWORD=... NOTIFICATION_INTERNAL_KEY=... go run ./cmd/se
 ## 테스트
 
 ```bash
-go test ./...
+go test ./...        # DB 없이 도는 단위 테스트 (DB 통합 테스트는 자동으로 건너뜀)
+```
+
+SQL 까지 확인하는 통합 테스트(중복 방지, 동의 규칙, 재시도, 캠페인 적재)는 테스트 DB 가 있을 때만 돈다.
+이름이 `_test` 로 끝나는 빈 DB 에 `db/init.sql` 을 적용하고 주소를 넣는다 (테스트마다 테이블을 비운다).
+
+```bash
+docker exec zipick-dev-postgres psql -U zipick -d postgres -c "CREATE DATABASE zipick_notification_test;"
+docker exec -i zipick-dev-postgres psql -U zipick -d zipick_notification_test < db/init.sql
+NOTIFICATION_TEST_DB_URL=postgres://zipick:<비밀번호>@localhost:5432/zipick_notification_test go test -p 1 ./...
 ```

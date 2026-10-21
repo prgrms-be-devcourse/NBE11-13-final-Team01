@@ -1,81 +1,87 @@
 package com.zipick.housing.service;
 
-import com.zipick.housing.domain.Candidate;
-import com.zipick.housing.domain.HousingType;
-import com.zipick.housing.domain.RentalType;
-import com.zipick.housing.dto.HouseFilter;
-import com.zipick.housing.repository.CandidateQueryRepository;
-import com.zipick.notice.domain.NoticeStatus;
-import org.junit.jupiter.api.Test;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.zipick.housing.domain.Candidate;
+import com.zipick.housing.dto.FilterOptionsResponse;
+import com.zipick.housing.dto.HouseFilter;
+import com.zipick.housing.dto.HouseListResponse;
+import com.zipick.housing.repository.CandidateQueryRepository;
+import com.zipick.housing.repository.CandidateQueryRepository.Dimension;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+/** 전체 공급주택: 호실을 주택 단위로 묶고, 필터 선택지(기관·지역)를 이름과 개수로 만든다. */
+@ExtendWith(MockitoExtension.class)
 class HouseFilterServiceTest {
 
-    private final CandidateQueryRepository repository = mock(CandidateQueryRepository.class);
-    private final HouseFilterService service = new HouseFilterService(repository);
+    @Mock CandidateQueryRepository repository;
+    @InjectMocks HouseFilterService service;
+
+    private static Candidate unit(long housingId) {
+        Candidate c = mock(Candidate.class);
+        when(c.housingId()).thenReturn(housingId);
+        return c;
+    }
 
     @Test
-    void groupsSuppliesByHousingAndAppliesRequestedLimit() {
+    void 호실을_주택_단위로_묶고_요청한_개수까지만_돌려준다() {
         HouseFilter filter = HouseFilter.openOnly();
-        when(repository.find(eq(filter), eq(null), eq(HouseFilterService.MAX_LIMIT * 5)))
-                .thenReturn(List.of(candidate(1L, 11L), candidate(2L, 11L), candidate(3L, 22L)));
+        List<Candidate> units = List.of(unit(1), unit(1), unit(2), unit(3));   // 목은 when(...) 밖에서 만든다
+        when(repository.find(eq(filter), isNull(), anyInt())).thenReturn(units);
+        when(repository.countHousings(filter)).thenReturn(3L);
+
+        HouseListResponse r = service.search(filter, 2);
+
+        assertThat(r.total()).isEqualTo(3);
+        assertThat(r.houses()).hasSize(2);
+    }
+
+    @Test
+    void 개수_제한은_1에서_최대값_사이로_맞춘다() {
+        HouseFilter filter = HouseFilter.openOnly();
+        List<Candidate> units = List.of(unit(1), unit(2));
+        when(repository.find(eq(filter), isNull(), anyInt())).thenReturn(units);
         when(repository.countHousings(filter)).thenReturn(2L);
 
-        var result = service.search(filter, 1);
-
-        assertThat(result.total()).isEqualTo(2L);
-        assertThat(result.houses()).hasSize(1);
-        assertThat(result.houses().getFirst().supplyUnits()).isEqualTo(2);
+        assertThat(service.search(filter, 0).houses()).hasSize(1);      // 0 → 1
+        assertThat(service.search(filter, null).houses()).hasSize(2);   // 기본 500
+        assertThat(service.search(filter, 99999).houses()).hasSize(2);  // 최대 2000
     }
 
     @Test
-    void clampsLimitsAndBuildsFilterOptions() {
-        HouseFilter filter = HouseFilter.openOnly();
-        when(repository.find(any(), eq(null), eq(HouseFilterService.MAX_LIMIT * 5))).thenReturn(List.of());
-        service.search(filter, 0);
-        service.search(filter, HouseFilterService.MAX_LIMIT + 1);
-        service.search(filter, null);
-
-        Map<String, String> names = Map.of("LH", "한국토지주택공사");
-        when(repository.agencyNames()).thenReturn(names);
-        when(repository.countBy(any(), eq(CandidateQueryRepository.Dimension.STATUS)))
-                .thenReturn(Map.of("OPEN", 3L));
-        when(repository.countBy(any(), eq(CandidateQueryRepository.Dimension.AGENCY)))
-                .thenReturn(Map.of("LH", 2L, "UNKNOWN", 1L));
-        when(repository.countBy(any(), eq(CandidateQueryRepository.Dimension.RENTAL_TYPE)))
-                .thenReturn(Map.of("HAPPY", 2L));
-        when(repository.countBy(any(), eq(CandidateQueryRepository.Dimension.HOUSING_TYPE)))
-                .thenReturn(Map.of("APARTMENT", 2L));
+    void 필터_선택지는_기관_이름을_붙이고_지역을_시도와_시군구로_나눈다() {
+        Map<String, Long> agencies = new LinkedHashMap<>();
+        agencies.put("LH", 10L);
+        agencies.put("UNKNOWN_CODE", 2L);
         Map<String, Long> regions = new LinkedHashMap<>();
-        regions.put("서울특별시 강남구", 2L);
+        regions.put("경상북도 구미시", 5L);
         regions.put("세종특별자치시", 1L);
-        when(repository.countBy(any(), eq(CandidateQueryRepository.Dimension.REGION))).thenReturn(regions);
+        when(repository.agencyNames()).thenReturn(Map.of("LH", "한국토지주택공사"));
+        when(repository.countBy(any(), eq(Dimension.AGENCY))).thenReturn(agencies);
+        when(repository.countBy(any(), eq(Dimension.REGION))).thenReturn(regions);
+        when(repository.countBy(any(), eq(Dimension.STATUS))).thenReturn(Map.of("OPEN", 3L));
+        when(repository.countBy(any(), eq(Dimension.RENTAL_TYPE))).thenReturn(Map.of());
+        when(repository.countBy(any(), eq(Dimension.HOUSING_TYPE))).thenReturn(Map.of());
 
-        var options = service.options();
+        FilterOptionsResponse r = service.options();
 
-        assertThat(options.agencies()).extracting("name")
-                .containsExactlyInAnyOrder("한국토지주택공사", "UNKNOWN");
-        assertThat(options.regions()).hasSize(2);
-    }
-
-    private Candidate candidate(Long supplyId, Long housingId) {
-        return new Candidate(
-                supplyId, housingId, 100L, "행복주택 모집", "행복주택", RentalType.HAPPY,
-                NoticeStatus.OPEN, LocalDate.of(2026, 10, 30), "https://example.com",
-                "LH", "한국토지주택공사", "단지", "서울 강남구", "서울특별시", "강남구",
-                new BigDecimal("37.5"), new BigDecimal("127.0"), 2020,
-                "아파트", HousingType.APARTMENT, new BigDecimal("39.5"), 2, 3, 1000, 30, 1
-        );
+        assertThat(r.agencies()).extracting(FilterOptionsResponse.AgencyOption::name)
+                .containsExactly("한국토지주택공사", "UNKNOWN_CODE");   // 이름이 없으면 코드 그대로
+        assertThat(r.regions().get(0)).isEqualTo(new FilterOptionsResponse.RegionOption("경상북도 구미시", "경상북도", "구미시", 5));
+        assertThat(r.regions().get(1)).isEqualTo(new FilterOptionsResponse.RegionOption("세종특별자치시", "세종특별자치시", null, 1));
+        assertThat(r.statuses()).containsEntry("OPEN", 3L);
     }
 }

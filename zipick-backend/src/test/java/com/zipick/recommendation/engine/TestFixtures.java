@@ -17,11 +17,12 @@ import java.util.List;
 import java.util.Map;
 
 /** 엔진 단위 테스트용 고정 데이터. application.yml 의 값과 같게 맞춘다. */
-final class TestFixtures {
+/** 엔진·서비스 테스트가 함께 쓰는 고정 데이터 (서비스 테스트에서도 쓰도록 public) */
+public final class TestFixtures {
 
     private TestFixtures() {}
 
-    static Map<String, Integer> baseWeights() {
+    public static Map<String, Integer> baseWeights() {
         Map<String, Integer> w = new LinkedHashMap<>();
         w.put("cost", 30);
         w.put("region", 25);
@@ -33,7 +34,7 @@ final class TestFixtures {
         return w;
     }
 
-    static RecommendationProperties props() {
+    public static RecommendationProperties props() {
         return new RecommendationProperties(
                 60, 30, 5, 5, 0.7, 3.0, baseWeights(), List.of("cost", "region"), List.of(), 0.3,
                 new RegionScores(1.0, 0.8, 0.6), 10,
@@ -57,18 +58,18 @@ final class TestFixtures {
     }
 
     /** 27세 미혼 1인, 월 260만 원, 자산 2,500만 원, 무주택 */
-    static UserProfile youngSingle() {
+    public static UserProfile youngSingle() {
         return profile(27, 1, 260, 2500);
     }
 
-    static UserProfile profile(int age, int household, Integer income, Integer assets) {
+    public static UserProfile profile(int age, int household, Integer income, Integer assets) {
         return UserProfile.builder().userId(1L).birthDate(LocalDate.now().minusYears(age))
                 .married(false).householdSize(household).monthlyIncome(income).totalAssets(assets).carValue(0)
                 .homeless(true).build();
     }
 
     /** 서울 마포구 1순위, 서대문구 2순위, 은평구 3순위. 면적 20~40, 방 1개 이상, 예산 45 */
-    static UserPreference mapoPreference() {
+    public static UserPreference mapoPreference() {
         return UserPreference.builder().userId(1L)
                 .regions("[{\"code\":\"서울특별시 마포구\",\"name\":\"마포구\",\"rank\":1},"
                         + "{\"code\":\"서울특별시 서대문구\",\"name\":\"서대문구\",\"rank\":2},"
@@ -80,11 +81,11 @@ final class TestFixtures {
                 .build();
     }
 
-    static UserContext context() {
+    public static UserContext context() {
         return UserContext.of(youngSingle(), mapoPreference(), null, props().baseWeights());
     }
 
-    static Candidate candidate(long id, long noticeId, RentalType type, String district, HousingType housingType,
+    public static Candidate candidate(long id, long noticeId, RentalType type, String district, HousingType housingType,
                                String area, Integer deposit, Integer rent, Integer rooms, Integer buildYear) {
         return new Candidate(id, id, noticeId, "테스트 공고", type == null ? null : type.getLabel(), type,
                 NoticeStatus.OPEN, LocalDate.now().plusDays(10 + id), null, "LH", "LH",
@@ -93,13 +94,13 @@ final class TestFixtures {
                 area == null ? null : new BigDecimal(area), rooms, 3, deposit, rent, 1);
     }
 
-    static Candidate house(RentalType type, String district, HousingType housingType, String area,
+    public static Candidate house(RentalType type, String district, HousingType housingType, String area,
                            Integer deposit, Integer rent) {
         return candidate(1, 1, type, district, housingType, area, deposit, rent, 1, null);
     }
 
     /** 마포구 다세대 29.4㎡ 방 1개, 보증금 1,500 / 월 32 → 월 환산 38.25 (이율 5%) */
-    static Candidate goodHouse() {
+    public static Candidate goodHouse() {
         return house(RentalType.YOUTH_PURCHASE, "마포구", HousingType.MULTI_HOUSEHOLD, "29.4", 1500, 32);
     }
 }
