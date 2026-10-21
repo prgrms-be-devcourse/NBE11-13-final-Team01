@@ -14,7 +14,7 @@ on:
         required: false
         default: ''
       build_only:
-        description: '이미지 빌드·푸시까지만 하고 배포하지 않음 (최초 1회: GHCR 패키지를 Public 으로 바꾸기 전)'
+        description: '이미지 빌드·푸시까지만 하고 배포하지 않음 (AWS 설정 전 빌드 확인용)'
         required: false
         type: boolean
         default: false
@@ -48,6 +48,7 @@ jobs:
       deploy_sha: ${{ steps.resolve.outputs.deploy_sha }}
       build_needed: ${{ steps.resolve.outputs.build_needed }}
       registry_path: ${{ steps.resolve.outputs.registry_path }}
+      package_prefix: ${{ steps.resolve.outputs.package_prefix }}
 
     steps:
       - name: dev 브랜치인지 확인
@@ -84,6 +85,8 @@ jobs:
           # GHCR 경로는 소문자만 허용한다. 저장소 이름에 대문자가 있어 변환이 필요하다.
           registry_path="ghcr.io/$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           echo "registry_path=${registry_path}" >> "$GITHUB_OUTPUT"
+          # 패키지 이름 앞부분 (예: nbe11-13-final-team01). 오래된 버전 정리에 쓴다
+          echo "package_prefix=$(echo "${REPOSITORY#*/}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
           # build_only 는 '새로 빌드' 전용이다. 롤백은 이미 있는 이미지를 쓰므로 빌드할 것이 없다.
           if [ "${{ inputs.build_only }}" = "true" ] && [ -n "$INPUT_TAG" ]; then
@@ -201,6 +204,8 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ needs.verify.outputs.registry_path }}/zipick-backend:${{ needs.verify.outputs.image_tag }}
+          # 출처 증명(attestation)을 따로 올리지 않는다. 태그 하나 = 패키지 버전 하나가 되어, 아래 정리 단계가 다른 태그의 이미지를 지우지 않는다
+          provenance: false
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
@@ -215,6 +220,8 @@ jobs:
           build-args: |
             VITE_KAKAO_MAP_KEY=${{ secrets.VITE_KAKAO_MAP_KEY }}
           tags: ${{ needs.verify.outputs.registry_path }}/zipick-web:${{ needs.verify.outputs.image_tag }}
+          # 출처 증명(attestation)을 따로 올리지 않는다. 태그 하나 = 패키지 버전 하나가 되어, 아래 정리 단계가 다른 태그의 이미지를 지우지 않는다
+          provenance: false
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
@@ -226,8 +233,35 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ needs.verify.outputs.registry_path }}/zipick-notification:${{ needs.verify.outputs.image_tag }}
+          # 출처 증명(attestation)을 따로 올리지 않는다. 태그 하나 = 패키지 버전 하나가 되어, 아래 정리 단계가 다른 태그의 이미지를 지우지 않는다
+          provenance: false
           cache-from: type=gha,scope=notification
           cache-to: type=gha,mode=max,scope=notification
+
+      # 패키지는 조직 정책으로 비공개다. 비공개 패키지는 조직의 GitHub Packages 저장 용량에 잡히므로,
+      # 이미지마다 최근 5개 버전만 남긴다. 롤백도 이 5개 안에서만 가능하다.
+      # 정리가 실패해도 배포를 막지 않는다 (continue-on-error).
+      - name: 오래된 이미지 정리 (최근 5개만 유지)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ format('{0}/zipick-backend', needs.verify.outputs.package_prefix) }}
+          package-type: container
+          min-versions-to-keep: 5
+      - name: 오래된 이미지 정리 (프론트)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ format('{0}/zipick-web', needs.verify.outputs.package_prefix) }}
+          package-type: container
+          min-versions-to-keep: 5
+      - name: 오래된 이미지 정리 (알림센터)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ format('{0}/zipick-notification', needs.verify.outputs.package_prefix) }}
+          package-type: container
+          min-versions-to-keep: 5
 
       - name: build_only 안내
         if: ${{ inputs.build_only == true }}
@@ -246,11 +280,8 @@ jobs:
             echo
             echo "### 다음 단계"
             echo
-            echo "1. 저장소 → **Packages** 에서 \`zipick-backend\`, \`zipick-notification\`, \`zipick-web\` 을 각각 열고"
-            echo "   Package settings → Change visibility → **Public** 으로 바꿉니다."
-            echo "2. 이 워크플로를 \`build_only\` 를 **끄고** 다시 실행합니다."
-            echo
-            echo "EC2 는 인증 없이 \`docker pull\` 하므로, 패키지가 Private 이면 배포가 실패합니다."
+            echo "패키지는 조직 정책에 따라 **비공개**로 둡니다. 서버는 배포할 때 임시 토큰으로 로그인해 받습니다."
+            echo "이 워크플로를 \`build_only\` 를 **끄고** 다시 실행하면 배포까지 진행합니다 (같은 커밋이면 빌드 캐시로 빨리 끝납니다)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
@@ -265,33 +296,35 @@ jobs:
     permissions:
       contents: read
       id-token: write      # AWS OIDC 임시 자격 증명 발급에만 필요
+      packages: read       # 비공개 GHCR 이미지 확인, 그리고 서버가 pull 할 때 쓰는 임시 토큰의 권한
 
     steps:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
 
-      # EC2 는 docker login 없이 pull 한다. 패키지가 Private 이면 서버에서 실패하므로,
-      # 서버에 들어가기 전에 여기서 '인증 없는 pull' 을 그대로 흉내 내 확인한다.
-      # 이 job 은 GHCR 에 로그인하지 않으므로 아래 요청은 익명 요청이다.
-      - name: GHCR 패키지가 Public 인지 확인
+      # 패키지는 조직 정책으로 비공개다. 서버에 들어가기 전에, 서버가 쓸 것과 같은 토큰(GITHUB_TOKEN)으로
+      # 세 이미지를 받을 수 있는지 먼저 확인한다. 안 되면 기존 컨테이너를 건드리기 전에 멈춘다.
+      - name: GHCR 이미지 확인 (임시 토큰)
         env:
           REGISTRY: ${{ needs.verify.outputs.registry_path }}
           TAG: ${{ needs.verify.outputs.image_tag }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin > /dev/null
           failed=0
           for image in zipick-backend zipick-notification zipick-web; do
             if docker manifest inspect "${REGISTRY}/${image}:${TAG}" > /dev/null 2>&1; then
-              echo "OK   ${image}:${TAG} — 인증 없이 받을 수 있습니다"
+              echo "OK   ${image}:${TAG}"
             else
-              echo "::error::${REGISTRY}/${image}:${TAG} 를 인증 없이 받을 수 없습니다."
+              echo "::error::${REGISTRY}/${image}:${TAG} 를 받을 수 없습니다."
               failed=1
             fi
           done
+          docker logout ghcr.io > /dev/null
           if [ "$failed" -ne 0 ]; then
             echo
-            echo "GHCR 패키지가 아직 Private 입니다. EC2 는 docker login 없이 pull 하므로 배포가 실패합니다."
-            echo "저장소 → Packages → 해당 패키지 → Package settings → Change visibility → Public 으로 바꾼 뒤"
-            echo "이 워크플로를 다시 실행하세요. (이미지는 이미 올라가 있어 다시 빌드되지 않습니다)"
+            echo "이미지가 없거나, 패키지의 'Manage Actions access' 에 이 저장소가 연결돼 있지 않습니다."
+            echo "패키지 → Package settings → Manage Actions access 에서 저장소 권한(Read 이상)을 확인하세요."
             exit 1
           fi
 
@@ -301,6 +334,25 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: zipick-deploy-${{ github.run_id }}
+
+      # 서버가 비공개 이미지를 받으려면 GHCR 토큰이 필요하다. 토큰을 SSM 명령에 직접 넣으면 명령 기록에 남으므로,
+      # SSM Parameter Store 에 SecureString(KMS 암호화)으로 잠깐 저장하고 SSM 명령에는 '파라미터 이름' 만 넘긴다.
+      #  - 값은 명령줄 인자가 아니라 파일로 넘긴다 (러너 프로세스 목록에도 남지 않게). 로그에 출력하지 않는다
+      #  - GITHUB_TOKEN 은 이 저장소 패키지 읽기 권한뿐이고, 이 워크플로가 끝나면 GitHub 이 만료시킨다
+      #  - 파라미터는 마지막 단계에서 성공·실패와 관계없이 지운다
+      - name: GHCR 임시 토큰을 암호화 파라미터로 저장
+        id: ghcr_param
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          name="/zipick/deploy/ghcr-token-${{ github.run_id }}-${{ github.run_attempt }}"
+          value_file="$(mktemp)"
+          trap 'rm -f "$value_file"' EXIT
+          printf '%s' "$GHCR_TOKEN" > "$value_file"
+          aws ssm put-parameter --name "$name" --type SecureString --value "file://${value_file}" \
+            --tags Key=Team,Value=devcos-team01 Key=Purpose,Value=zipick-deploy > /dev/null
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "저장: ${name} (SecureString)"
 
       - name: 서버에서 배포 실행
         env:
@@ -321,7 +373,17 @@ jobs:
             "COMPOSE_URL=${compose_url}" \
             "BACKEND_IMAGE=${REGISTRY}/zipick-backend:${TAG}" \
             "NOTIFICATION_IMAGE=${REGISTRY}/zipick-notification:${TAG}" \
-            "WEB_IMAGE=${REGISTRY}/zipick-web:${TAG}")"
+            "WEB_IMAGE=${REGISTRY}/zipick-web:${TAG}" \
+            "GHCR_USER=${{ github.actor }}" \
+            "GHCR_TOKEN_PARAM=${{ steps.ghcr_param.outputs.name }}" \
+            "AWS_REGION=${AWS_REGION}")"
+
+      - name: GHCR 임시 토큰 파라미터 삭제
+        if: ${{ always() && steps.ghcr_param.outputs.name != '' }}
+        run: |
+          aws ssm delete-parameter --name "${{ steps.ghcr_param.outputs.name }}" > /dev/null 2>&1 \
+            && echo "삭제: ${{ steps.ghcr_param.outputs.name }}" \
+            || echo "::warning::파라미터 삭제 실패 — 토큰은 이 워크플로가 끝나면 만료되지만, Parameter Store 에서 직접 지워 주세요."
 
       - name: 배포 요약
         if: ${{ !cancelled() }}
