@@ -7,53 +7,25 @@
 
 ---
 
-## 배포 범위 — 1차와 2차를 구분합니다
+## 배포 범위 — 전체 구성
 
-| | **1차 (현재)** | **2차 (예정)** |
-| --- | --- | --- |
-| compose | `deploy/docker-compose.phase1.yml` | `deploy/docker-compose.prod.yml` |
-| 서비스 | `db` · `backend` · `web` | + `rabbitmq` · `notification` |
-| 빌드하는 이미지 | `zipick-backend`, `zipick-web` | + `zipick-notification` |
-| 서버 `.env` 추가 항목 | **없음** | `RABBITMQ_USER/PASSWORD`, `NOTIFICATION_INTERNAL_KEY` |
-| DB 작업 | 없음 | `zipick_notification` 생성 + DDL (수동) |
-| 메모리 | 현행 유지 | 백엔드 메모리 한도 검토 필요 |
+| 항목 | 값 |
+| --- | --- |
+| compose | `deploy/docker-compose.prod.yml` (수동 배포 `deploy.sh` 와 같은 파일) |
+| 서비스 | `db` · `rabbitmq` · `backend` · `notification` · `web` |
+| 빌드하는 이미지 | `zipick-backend`, `zipick-notification`, `zipick-web` |
+| 서버 `.env` 필수 항목 | 기존 값 + `NOTIFICATION_INTERNAL_KEY`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` |
+| DB 사전 작업 | `zipick_notification` 데이터베이스 + `zipick-notification/db/init.sql` (수동, 한 번) |
 
-**RabbitMQ 와 알림센터는 담당자가 구현 중이며 EC2 배포가 검증되지 않았습니다.**
-1차 CD 의 목표는 **이미 정상 동작 중인 구성(db · backend · web)을 안전하게 자동화**하는 것입니다.
+처음 CD 를 만들 때는 알림센터·RabbitMQ 가 개발 중이라 `db` · `backend` · `web` 만 다루는 1차 구성(`docker-compose.phase1.yml`)을 따로 두었습니다.
+그 뒤 알림센터(#18)와 큐(#20)가 `dev` 에 머지되고 서버에도 같은 구성으로 배포되어, **CD 를 서버와 같은 전체 구성으로 맞추고 1차 파일은 삭제**했습니다.
+1차 compose 로 배포하면 백엔드의 큐 설정이 꺼지고 알림센터 주소가 빠져 알림 설정 화면이 503 이 되고, `rabbitmq` · `notification` 컨테이너가 고아로 남기 때문입니다.
 
-### 왜 compose 파일을 따로 두는가
+### 서버에서 미리 확인할 것
 
-`docker-compose.prod.yml` 하나로 1차를 처리할 수 없다는 것을 확인했습니다.
-
-- **`profiles` 로 신규 서비스를 감쌀 수 없습니다.** `backend` 가 `depends_on: rabbitmq` 를 갖고 있어,
-  프로필을 끄면 `service "backend" depends on undefined service "rabbitmq": invalid compose project` 로
-  프로젝트 자체가 무효가 됩니다.
-- **override 파일로 덜어낼 수 없습니다.** compose 의 `depends_on` 은 병합만 되고 제거가 안 됩니다.
-- **서비스를 지정해도 소용없습니다.** `docker compose ... config backend` 처럼 서비스를 지정해도
-  compose 는 **파일 전체를 먼저 해석**합니다. `${RABBITMQ_USER:?}` 같은 필수 변수가 비어 있으면
-  기존 `.env` 로는 `config` · `up` · `ps` 가 모두 실패합니다.
-
-그래서 1차 전용 파일을 따로 두었습니다. **신규 서비스가 정의 자체에 없으므로 실수로도 실행되지 않습니다.**
-`docker-compose.prod.yml` 은 **수정하지 않았습니다**(이미지 이름 변수화 제외). 2차에서 그대로 씁니다.
-
-### 백엔드는 RabbitMQ 없이 정상 기동합니다
-
-앱 코드를 바꿀 필요가 없습니다. 알림·큐 관련 빈이 모두 조건부이기 때문입니다.
-
-```java
-// NotificationQueueConfig.java · NotificationPublisher.java
-@ConditionalOnProperty(prefix = "zipick.notification", name = "queue-enabled", havingValue = "true")
-
-// NotificationScheduler.run()
-if (!client.configured()) return;     // configured() = internalKey 가 비어 있지 않을 때만 true
-```
-
-1차 compose 는 이에 맞춰 두 값을 지정합니다.
-
-| 환경 변수 | 1차 값 | 효과 |
-| --- | --- | --- |
-| `NOTIFICATION_QUEUE_ENABLED` | `"false"` | 큐 선언·발행 빈이 생성되지 않음 → RabbitMQ 연결 시도 없음 |
-| `NOTIFICATION_INTERNAL_KEY` | `${NOTIFICATION_INTERNAL_KEY:-}` (비어도 됨) | 알림 스케줄러가 즉시 return → 알림센터 호출·경고 로그 없음 |
+- `.env` 에 `NOTIFICATION_INTERNAL_KEY`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` 가 있는가 (없으면 compose 해석 단계에서 멈춥니다)
+- `zipick_notification` DB 와 테이블이 있는가 — `remote-deploy.sh` 가 앱을 바꾸기 전에 확인하고, 없으면 멈춥니다
+- 메모리: t4g.small(1.8GB)에서 실측 — backend 약 430MB, rabbitmq 약 110MB(한도 256MB), db 약 70MB, notification 약 6MB, web 약 10MB
 
 ---
 
@@ -101,18 +73,17 @@ if (!client.configured()) return;     // configured() = internalKey 가 비어 �
 
 ### 같은 compose 프로젝트·같은 볼륨을 씁니다
 
-`docker-compose.phase1.yml` 은 최상단에 프로젝트 이름을 고정합니다.
+`docker-compose.prod.yml` 은 최상단에 프로젝트 이름을 고정합니다.
 
 ```yaml
 name: zipick
 ```
 
 서버의 기존 배포는 `~/zipick` 에서 실행되어 디렉터리명 기반으로 프로젝트명이 `zipick` 이 됩니다.
-두 파일이 **같은 프로젝트·같은 볼륨**을 가리키는 것을 확인했습니다.
+CD 와 수동 배포가 **같은 프로젝트·같은 볼륨**을 가리킵니다.
 
 ```
 docker-compose.prod.yml     project=zipick → zipick_db-data, zipick_caddy-data, zipick_caddy-config, zipick_rabbitmq-data
-docker-compose.phase1.yml   project=zipick → zipick_db-data, zipick_caddy-data, zipick_caddy-config
 ```
 
 `name:` 을 고정했기 때문에 어느 경로에서 실행해도 같은 볼륨에 붙습니다.
@@ -155,7 +126,7 @@ compose 가 빈 볼륨을 만들어 DB 가 새로 초기화되므로, 존재하�
 태그의 7자리를 전체 커밋 SHA 로 되돌린 뒤, 그 커밋에서 compose 를 받습니다.
 
 ```
-sha-a1b2c3d  →  커밋 a1b2c3d...  →  raw.githubusercontent.com/<repo>/a1b2c3d.../deploy/docker-compose.phase1.yml
+sha-a1b2c3d  →  커밋 a1b2c3d...  →  raw.githubusercontent.com/<repo>/a1b2c3d.../deploy/docker-compose.prod.yml
 ```
 
 옛 이미지에 최신 compose 가 붙는 불일치가 생기지 않습니다.
@@ -166,7 +137,7 @@ sha-a1b2c3d  →  커밋 a1b2c3d...  →  raw.githubusercontent.com/<repo>/a1b2c
 | --- | --- |
 | 태그 형식이 `sha-[0-9a-f]{7}` 가 아님 | 즉시 실패 (임의 문자열이 이미지 참조에 들어가지 않음) |
 | 해당 커밋을 찾을 수 없음 | 즉시 실패 |
-| 그 커밋에 `deploy/docker-compose.phase1.yml` 이 없음 | 즉시 실패 — **1차 CD 도입 이전 버전으로는 롤백할 수 없습니다** |
+| 그 커밋의 `docker-compose.prod.yml` 이 이미지 변수(`BACKEND_IMAGE` 등)를 받지 않음 | 즉시 실패 — **전체 구성 CD 도입 이전 버전으로는 롤백할 수 없습니다** |
 | 그 태그의 이미지가 GHCR 에 없음 | 즉시 실패 |
 
 **롤백은 실제로 이 CD 로 배포한 적이 있는 버전만 대상으로 합니다.**
@@ -292,11 +263,8 @@ Variables 가 아니라 Secrets 에 넣습니다.
 운영 비밀값(`DB_PASSWORD`, `JWT_SECRET`, `MYHOME_API_KEY`, `KAKAO_REST_API_KEY` 등)은
 **EC2 의 `/home/ubuntu/zipick/.env` 에만** 둡니다. 파이프라인이 단순해지고 비밀값이 CI 로그를 거치지 않습니다.
 
-**1차 배포에는 `.env` 에 추가할 항목이 없습니다.** 기존 값 그대로 동작하는 것을 확인했습니다
-(알림·큐 변수가 하나도 없는 `.env` 로 `docker-compose.phase1.yml` 이 정상 해석됩니다).
-
-알림센터·RabbitMQ 용 항목(`RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `NOTIFICATION_INTERNAL_KEY`)은
-**2차에서 필요**합니다. 지금 미리 채워 둘 필요가 없습니다.
+알림센터·RabbitMQ 용 항목(`NOTIFICATION_INTERNAL_KEY`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`)이 **필수**입니다.
+없으면 `remote-deploy.sh` 가 compose 를 해석하는 단계에서 멈추고 기존 컨테이너는 그대로 둡니다.
 
 ---
 
@@ -371,11 +339,10 @@ CD 에 문제가 있으면 기존 방식이 그대로 동작합니다.
 | 파일 | 역할 |
 | --- | --- |
 | `.github/workflows/deploy.yml` | 검증 → 빌드 → 배포 3단계 워크플로 |
-| `deploy/docker-compose.phase1.yml` | **1차 CD 전용.** db · backend · web 만 |
 | `deploy/ssm-run.sh` | 스크립트를 SSM 으로 EC2 에 보내고 결과를 받아 온다. **전달 수단을 바꾸려면 이 파일만 교체** |
 | `deploy/remote-deploy.sh` | 서버에서 실제로 도는 배포 절차. 사람이 서버에서 직접 실행해도 동일하게 동작 |
 | `deploy/deploy.sh` | 기존 수동 배포 (변경 없음, 복구 수단으로 유지) |
-| `deploy/docker-compose.prod.yml` | 2차용 전체 구성. 이미지 이름만 변수화 |
+| `deploy/docker-compose.prod.yml` | 전체 구성. CD 와 수동 배포가 같은 파일을 쓴다 (이미지 이름은 변수, 기본값은 로컬 빌드 이미지) |
 
 ---
 
@@ -393,13 +360,10 @@ CD 에 문제가 있으면 기존 방식이 그대로 동작합니다.
 > 첫 실행은 **EC2 를 켜 둔 상태에서**, 서비스 영향이 적은 시간에 하세요.
 > DB 는 보존되지만 컨테이너 교체 중 수십 초 정도 접속이 끊길 수 있습니다.
 
-## 2차에서 할 일
+## 전체 구성 전환 때 한 것과 남은 것
 
-- 알림센터 기능 구현 완료 및 EC2 배포 검증
-- `zipick_notification` 데이터베이스 수동 생성 + `zipick-notification/db/init.sql` 적용
-  (**CD 는 운영 DB 에 DDL 을 실행하지 않습니다**)
-- 서버 `.env` 에 `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `NOTIFICATION_INTERNAL_KEY` 추가
-- 백엔드 컨테이너 메모리 한도 검토 — t4g.small(2GB)에서 컨테이너가 3개 → 5개로 늘어납니다.
-  `backend` 는 한도가 없어 `MaxRAMPercentage=40` 이 호스트 2GB 기준(힙 약 800MB)으로 계산됩니다.
-- 워크플로의 `COMPOSE_PATH` 를 `deploy/docker-compose.prod.yml` 로 바꾸고,
-  알림센터 이미지 빌드 단계와 `remote-deploy.sh` 의 서비스 목록을 함께 확장
+- 워크플로 `COMPOSE_PATH` 를 `deploy/docker-compose.prod.yml` 로, 알림센터 이미지 빌드 추가, `remote-deploy.sh` 를 서비스 5개 기준으로 확장 (완료)
+- `zipick_notification` 데이터베이스와 DDL — 서버에 수동으로 적용됨. CD 는 있는지 확인만 한다
+- 서버 `.env` 의 `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `NOTIFICATION_INTERNAL_KEY` — 적용됨
+- 남은 것: 백엔드 컨테이너 메모리 한도. `backend` 는 한도가 없어 `MaxRAMPercentage=40` 이 호스트 1.8GB 기준(힙 약 720MB)으로 계산된다.
+  실측 사용량(약 430MB)을 보고 한도와 힙 비율을 함께 정한다 — 한도만 낮추면 OOM 으로 서비스가 내려갈 수 있어 이 PR 에서는 바꾸지 않았다

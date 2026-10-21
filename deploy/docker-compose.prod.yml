@@ -2,6 +2,10 @@
 # 알림센터·RabbitMQ 는 바깥에 열지 않는다. backend 는 알림 요청을 rabbitmq 에 던지고, 조회·설정은 http://notification:8081 로 부른다.
 # 비밀 값은 같은 폴더의 .env 에서 읽는다 (.env.prod.example 참고, git 에 올리지 않음).
 # 외부에는 web 의 80/443 만 열린다. db 와 backend 는 컨테이너 네트워크 안에서만 접근할 수 있다.
+# 프로젝트 이름을 고정한다. 서버 기존 배포(~/zipick 에서 실행 → 디렉터리명 기반 'zipick')와 같은 볼륨(zipick_db-data 등)에 붙기 위해서다.
+# 이름이 달라지면 빈 볼륨이 새로 생겨 DB 가 비어 보인다.
+name: zipick
+
 services:
   db:
     image: postgres:16-alpine
