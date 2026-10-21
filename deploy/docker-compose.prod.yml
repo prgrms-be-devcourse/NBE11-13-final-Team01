@@ -43,7 +43,8 @@ services:
       retries: 10
 
   backend:
-    image: zipick-backend:latest
+    # 기본값은 기존 수동 배포(deploy.sh)가 로컬에 적재한 이미지. CD 는 레지스트리 경로를 넣어 준다.
+    image: ${BACKEND_IMAGE:-zipick-backend:latest}
     build: ../zipick-backend
     restart: unless-stopped
     depends_on:
@@ -73,7 +74,7 @@ services:
       KAKAO_LOCAL_RESTAPIKEY: ${KAKAO_REST_API_KEY:-}
 
   notification:
-    image: zipick-notification:latest
+    image: ${NOTIFICATION_IMAGE:-zipick-notification:latest}
     build: ../zipick-notification
     restart: unless-stopped
     depends_on:
@@ -107,7 +108,7 @@ services:
       retries: 10
 
   web:
-    image: zipick-web:latest
+    image: ${WEB_IMAGE:-zipick-web:latest}
     build:
       context: ../zipick-frontend
       args:
