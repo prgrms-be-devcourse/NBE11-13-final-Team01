@@ -2,7 +2,7 @@
 -- ZIPICK 주변 생활 인프라 로컬 PostgreSQL DDL
 -- =============================================================================
 --
--- [실행 순서] local-init.sql → notice-init.sql → infra-init.sql
+-- [실행 순서] notice-init.sql → local-init.sql → infra-init.sql
 --   이 스크립트는 notice-init.sql 이 만든 housing 테이블을 참조하므로 반드시 뒤에 실행한다.
 --
 --   psql -U {사용자명} -d zipick -f zipick-backend/db/infra-init.sql

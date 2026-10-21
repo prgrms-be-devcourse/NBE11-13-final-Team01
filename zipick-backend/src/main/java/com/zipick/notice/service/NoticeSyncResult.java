@@ -5,7 +5,7 @@ public record NoticeSyncResult(
         int updatedNotices,
         int synchronizedHousings,
         int synchronizedSupplies,
-        int cancelledNotices,
+        int missingClosedNotices,
         int inactiveHousings,
         int inactiveSupplies
 ) {

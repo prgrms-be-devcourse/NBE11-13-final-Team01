@@ -1,7 +1,12 @@
 -- ZIPICK 공고 수집 파트 로컬 PostgreSQL DDL
--- 팀 공통 local-init.sql 실행 후 이 파일을 실행한다.
+-- 전체 초기화 순서: notice-init.sql → local-init.sql → infra-init.sql
 -- 이 스크립트도 기존 공고 수집 테이블을 DROP하므로 로컬에서만 사용한다.
 
+-- notice와 housing을 참조하는 다른 도메인의 자식 테이블부터 제거한다.
+-- 아래 테이블은 후속 local-init.sql과 infra-init.sql에서 다시 생성된다.
+DROP TABLE IF EXISTS interest_notices;
+DROP TABLE IF EXISTS housing_infra_place;
+DROP TABLE IF EXISTS housing_infra_snapshot;
 DROP TABLE IF EXISTS housing_supply_condition;
 DROP TABLE IF EXISTS housing_supply;
 DROP TABLE IF EXISTS housing_media;
@@ -21,6 +26,16 @@ create table agency (
     primary key (agency_id),
     constraint uk_agency_code unique (agency_code)
 );
+
+-- 공고 유무와 관계없이 주요 공급기관을 기준정보로 먼저 등록한다.
+insert into agency (agency_code, agency_name, source_url, created_at, updated_at)
+values
+    ('LH',   '한국토지주택공사',   'https://apply.lh.or.kr', current_timestamp, current_timestamp),
+    ('SH',   '서울주택도시개발공사', 'https://www.i-sh.co.kr', current_timestamp, current_timestamp),
+    ('GH',   '경기주택도시공사',   'https://apply.gh.or.kr', current_timestamp, current_timestamp),
+    ('HUG',  '주택도시보증공사',   'https://www.khug.or.kr', current_timestamp, current_timestamp),
+    ('BMC',  '부산도시공사',         'https://www.bmc.busan.kr', current_timestamp, current_timestamp),
+    ('GBDC', '경상북도개발공사',     'https://www.gbdc.co.kr', current_timestamp, current_timestamp);
 
 create table notice (
     missing_count integer not null default 0,

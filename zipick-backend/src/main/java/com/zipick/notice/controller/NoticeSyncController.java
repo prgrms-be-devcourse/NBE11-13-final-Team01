@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 @SecurityRequirements
 @RestController
 @RequestMapping("/api/internal/notices")
-@Tag(name = "공고 수집", description = "마이홈·LH·SH 공고를 수집하여 DB와 동기화합니다.")
+@Tag(name = "공고 수집", description = "마이홈·LH·SH·GH·HUG 공고를 수집하여 DB와 동기화합니다.")
 public class NoticeSyncController {
 
     private final MyHomeSyncService syncService;

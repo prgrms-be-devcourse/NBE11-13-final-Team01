@@ -35,14 +35,14 @@ class NoticeTest {
     }
 
     @Test
-    void cancelsOpenNoticeAfterTwoDailyMisses() {
+    void closesOpenNoticeAfterTwoDailyMisses() {
         Notice notice = new Notice("MYHOME", "20901", "행복주택 모집공고", NoticeStatus.OPEN);
 
         notice.markMissing(LocalDate.of(2026, 10, 11), 2);
-        boolean cancelled = notice.markMissing(LocalDate.of(2026, 10, 12), 2);
+        boolean closed = notice.markMissing(LocalDate.of(2026, 10, 12), 2);
 
-        assertThat(cancelled).isTrue();
-        assertThat(notice.getStatus()).isEqualTo(NoticeStatus.CANCELLED);
+        assertThat(closed).isTrue();
+        assertThat(notice.getStatus()).isEqualTo(NoticeStatus.CLOSED);
         assertThat(notice.getStatusReason()).isEqualTo(NoticeStatusReason.SOURCE_MISSING);
     }
 

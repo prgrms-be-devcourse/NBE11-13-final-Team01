@@ -142,7 +142,7 @@ public class Notice extends BaseTimeEntity {
         this.lastMissingCheckedOn = checkedOn;
         this.missingCount++;
         if (missingCount >= cancellationThreshold) {
-            changeStatus(NoticeStatus.CANCELLED, NoticeStatusReason.SOURCE_MISSING);
+            changeStatus(NoticeStatus.CLOSED, NoticeStatusReason.SOURCE_MISSING);
             return true;
         }
         return false;

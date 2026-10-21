@@ -8,6 +8,7 @@ import com.zipick.notice.domain.HousingSupplyCondition;
 import com.zipick.notice.domain.Notice;
 import com.zipick.notice.domain.NoticeAttachment;
 import com.zipick.notice.domain.NoticeStatus;
+import com.zipick.notice.domain.NoticeStatusReason;
 import com.zipick.notice.dto.NoticeHousingResponse;
 import com.zipick.notice.dto.NoticeAttachmentResponse;
 import com.zipick.notice.dto.NoticeResponse;
@@ -46,6 +47,7 @@ import java.util.Set;
 public class NoticeSyncPersistenceService {
 
     private static final int MISSING_THRESHOLD = 2;
+    private static final int NOTICE_MISSING_THRESHOLD = 1;
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
     private static final List<DateTimeFormatter> DATE_FORMATTERS = List.of(
             DateTimeFormatter.ISO_LOCAL_DATE,
@@ -87,6 +89,15 @@ public class NoticeSyncPersistenceService {
 
     @Transactional
     public NoticeSyncResult synchronize(List<NoticeSyncCommand> commands, Instant collectedAt) {
+        return synchronize(commands, collectedAt, Set.of());
+    }
+
+    @Transactional
+    public NoticeSyncResult synchronize(
+            List<NoticeSyncCommand> commands,
+            Instant collectedAt,
+            Set<String> completedSources
+    ) {
         LocalDate collectionDate = LocalDate.ofInstant(collectedAt, KOREA_ZONE);
         Map<String, Agency> agencyCache = new HashMap<>();
         Counters counters = new Counters();
@@ -98,6 +109,11 @@ public class NoticeSyncPersistenceService {
         for (Map.Entry<String, List<NoticeSyncCommand>> sourceEntry : commandsBySource.entrySet()) {
             synchronizeSource(sourceEntry.getKey(), sourceEntry.getValue(), collectedAt,
                     collectionDate, agencyCache, counters);
+        }
+        for (String source : completedSources) {
+            if (!commandsBySource.containsKey(source)) {
+                synchronizeSource(source, List.of(), collectedAt, collectionDate, agencyCache, counters);
+            }
         }
         return counters.toResult();
     }
@@ -114,8 +130,15 @@ public class NoticeSyncPersistenceService {
         for (Notice notice : noticeRepository.findAllBySource(source)) {
             existingNotices.put(notice.getExternalNoticeId(), notice);
         }
+        Set<String> replacedNoticeIds = NoticeRevisionPolicy.previousNoticeIds(commands);
+        for (String replacedNoticeId : replacedNoticeIds) {
+            Notice replaced = existingNotices.get(replacedNoticeId);
+            if (replaced != null) {
+                replaced.changeStatus(NoticeStatus.CLOSED, NoticeStatusReason.SOURCE_REPLACED);
+            }
+        }
         Set<String> seenNoticeIds = new HashSet<>();
-        for (NoticeSyncCommand command : commands) {
+        for (NoticeSyncCommand command : NoticeRevisionPolicy.latestOnly(commands)) {
             NoticeResponse sourceNotice = command.notice();
             seenNoticeIds.add(sourceNotice.noticeId());
 
@@ -133,7 +156,8 @@ public class NoticeSyncPersistenceService {
             LocalDate applicationStartDate = parseDate(sourceNotice.applicationStartDate());
             LocalDate applicationEndDate = parseDate(sourceNotice.applicationEndDate());
             NoticeStatusEvaluator.StatusEvaluation status = statusEvaluator.evaluate(
-                    sourceNotice.statusName(), applicationStartDate, applicationEndDate, collectionDate
+                    sourceNotice.statusName(), sourceNotice.title(),
+                    applicationStartDate, applicationEndDate, collectionDate
             );
 
             notice.synchronize(
@@ -163,10 +187,8 @@ public class NoticeSyncPersistenceService {
                 synchronizeHousings(savedNotice, sourceNotice.houses(), collectedAt, collectionDate, counters);
             }
         }
-        // SH는 최근 기간만 조회하므로 기간 밖의 과거 공고를 누락으로 오판하지 않는다.
-        if (!"SH".equals(source)) {
-            markMissingNotices(existingNotices, seenNoticeIds, collectionDate, counters);
-        }
+        markMissingNotices(existingNotices, seenNoticeIds, collectionDate, counters,
+                NOTICE_MISSING_THRESHOLD);
     }
 
     private void synchronizeAttachments(
@@ -382,7 +404,8 @@ public class NoticeSyncPersistenceService {
             Map<String, Notice> existingNotices,
             Set<String> seenNoticeIds,
             LocalDate collectionDate,
-            Counters counters
+            Counters counters,
+            int cancellationThreshold
     ) {
         for (Notice notice : existingNotices.values()) {
             if (seenNoticeIds.contains(notice.getExternalNoticeId())) {
@@ -390,8 +413,8 @@ public class NoticeSyncPersistenceService {
             }
             boolean wasOpenOrUpcoming = notice.getStatus() == NoticeStatus.OPEN
                     || notice.getStatus() == NoticeStatus.UPCOMING;
-            if (notice.markMissing(collectionDate, MISSING_THRESHOLD)) {
-                counters.cancelledNotices++;
+            if (notice.markMissing(collectionDate, cancellationThreshold)) {
+                counters.missingClosedNotices++;
             }
             if (wasOpenOrUpcoming) {
                 for (Housing housing : housingRepository.findAllByNoticeId(notice.getId())) {
@@ -426,7 +449,9 @@ public class NoticeSyncPersistenceService {
         if (normalized.equals("LH") || normalized.contains("한국토지주택공사")) {
             return "LH";
         }
-        if (normalized.equals("SH") || normalized.contains("서울주택도시공사")) {
+        if (normalized.equals("SH")
+                || normalized.contains("서울주택도시공사")
+                || normalized.contains("서울주택도시개발공사")) {
             return "SH";
         }
         if (normalized.equals("GH") || normalized.contains("경기주택도시공사")) {
@@ -434,6 +459,12 @@ public class NoticeSyncPersistenceService {
         }
         if (normalized.equals("HUG") || normalized.contains("주택도시보증공사")) {
             return "HUG";
+        }
+        if (normalized.equals("BMC") || normalized.contains("부산도시공사")) {
+            return "BMC";
+        }
+        if (normalized.equals("GBDC") || normalized.contains("경상북도개발공사")) {
+            return "GBDC";
         }
         return "MYHOME_" + shortHash(normalized);
     }
@@ -544,7 +575,7 @@ public class NoticeSyncPersistenceService {
         private int updatedNotices;
         private int synchronizedHousings;
         private int synchronizedSupplies;
-        private int cancelledNotices;
+        private int missingClosedNotices;
         private int inactiveHousings;
         private int inactiveSupplies;
 
@@ -554,7 +585,7 @@ public class NoticeSyncPersistenceService {
                     updatedNotices,
                     synchronizedHousings,
                     synchronizedSupplies,
-                    cancelledNotices,
+                    missingClosedNotices,
                     inactiveHousings,
                     inactiveSupplies
             );

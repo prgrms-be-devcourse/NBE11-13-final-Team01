@@ -18,8 +18,6 @@ import java.util.function.Function;
 @Component
 public class MyHomeNoticeAggregator {
 
-    private static final String SOURCE = "MYHOME";
-
     public List<NoticeResponse> aggregate(List<MyHomeNotice> rows) {
         Map<String, List<MyHomeNotice>> rowsByNoticeId = new LinkedHashMap<>();
 
@@ -37,7 +35,7 @@ public class MyHomeNoticeAggregator {
 
     private NoticeResponse toNotice(List<MyHomeNotice> rows) {
         return new NoticeResponse(
-                SOURCE,
+                source(firstText(rows, MyHomeNotice::suplyInsttNm)),
                 firstText(rows, MyHomeNotice::pblancId),
                 firstText(rows, MyHomeNotice::sttusNm),
                 firstText(rows, MyHomeNotice::pblancNm),
@@ -54,6 +52,23 @@ public class MyHomeNoticeAggregator {
                 aggregateHouses(rows),
                 List.of()
         );
+    }
+
+    private String source(String institutionName) {
+        if (!StringUtils.hasText(institutionName)) {
+            return "MYHOME";
+        }
+        String normalized = institutionName.replaceAll("\\s+", "").toUpperCase(Locale.ROOT);
+        if (normalized.equals("LH") || normalized.contains("한국토지주택공사")) {
+            return "LH";
+        }
+        if (normalized.equals("BMC") || normalized.contains("부산도시공사")) {
+            return "BMC";
+        }
+        if (normalized.equals("GBDC") || normalized.contains("경상북도개발공사")) {
+            return "GBDC";
+        }
+        return "MYHOME";
     }
 
     private List<NoticeHousingResponse> aggregateHouses(List<MyHomeNotice> rows) {

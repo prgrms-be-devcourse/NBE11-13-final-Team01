@@ -26,12 +26,12 @@ CREATE DATABASE zipick;
 최초 스키마 생성 시 **다음 순서를 지켜** 실행합니다.
 
 ```bash
-psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/local-init.sql
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/notice-init.sql
+psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/local-init.sql
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/infra-init.sql
 ```
 
-> **주의:** 이 SQL들은 기존 테이블을 삭제하고 재생성할 수 있습니다. **새 로컬 DB 초기화 전용**으로 사용하며, 이미 데이터가 들어 있는 DB 및 배포 DB에는 실행하지 마세요. 특히 `housing_infra_snapshot`이 `housing`을 FK로 참조하므로, 인프라 테이블이 있는 상태에서 `notice-init.sql`만 다시 실행하면 실패할 수 있습니다. 상세 내용: [데이터베이스 설정](docs/database.md).
+> **주의:** 이 SQL들은 기존 테이블을 삭제하고 재생성합니다. **새 로컬 DB 초기화 전용**으로 사용하며, 배포 DB에는 실행하지 마세요. `notice-init.sql`이 공고·주택을 참조하는 관심 공고와 인프라 테이블도 먼저 삭제하므로, 반드시 위 세 파일을 순서대로 모두 실행해야 합니다. 상세 내용: [데이터베이스 설정](docs/database.md).
 
 ### 3. 환경 변수 및 API 키
 
@@ -64,6 +64,10 @@ kakao:
 ```
 
 프론트엔드는 `zipick-frontend/.env.example`을 `zipick-frontend/.env.local`로 복사하여 `VITE_KAKAO_MAP_KEY`를 설정합니다. 배포에서 `VITE_API_BASE_URL`을 사용할 경우 해당 값도 프론트엔드 **빌드 시점**에 지정해야 합니다.
+
+- `myhome.api.service-key`: LH 공공임대 공고·주택 수집
+- `kakao.local.rest-api-key`: 수집된 주소의 표준 주소·좌표 보완, **공급주택 주변 생활 인프라 수집**
+- SH·GH·HUG 공고는 각 기관의 공개 페이지에서 수집하므로 별도 API 키가 필요하지 않다.
 
 > `application-secret.yml`, `.env.local`, 비밀번호 및 실제 키는 Git에 올리지 않습니다. IntelliJ 환경 변수 설정 및 기존 DB 유지 방법은 [데이터베이스·로컬 환경 안내](docs/database.md)를 참고하세요.
 

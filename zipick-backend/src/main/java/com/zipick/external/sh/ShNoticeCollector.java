@@ -3,6 +3,7 @@ package com.zipick.external.sh;
 import com.zipick.external.housingdetail.ExternalDocumentClient;
 import com.zipick.external.housingdetail.HousingDetailEnricher;
 import com.zipick.notice.dto.NoticeResponse;
+import com.zipick.notice.service.RentalNoticePolicy;
 import com.zipick.notice.service.NoticeSyncCommand;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -19,6 +20,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -32,22 +34,26 @@ public class ShNoticeCollector {
     private static final Pattern DETAIL_SEQUENCE = Pattern.compile("getDetailView\\('(?<seq>\\d+)'\\)");
     private static final Pattern INCLUDE = Pattern.compile("입주자\\s*모집|잔여세대\\s*모집|추가\\s*모집");
     private static final Pattern EXCLUDE = Pattern.compile(
-            "경쟁률|당첨자|예비\\s*\\d*차|동호배정|서류심사|입주대상자\\s*발표|시스템.*안내"
+            "경쟁률|당첨자|예비\\s*\\d*차|동호배정|서류심사|입주대상자\\s*발표|"
+                    + "접수\\s*결과|결과\\s*안내|면접평가\\s*대상자\\s*발표|접수마감\\s*(?:안내|공지)|시스템.*안내"
     );
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
 
     private final ExternalDocumentClient documentClient;
     private final HousingDetailEnricher detailEnricher;
     private final ShCollectorProperties properties;
+    private final ShApplicationPeriodParser periodParser;
 
     public ShNoticeCollector(
             ExternalDocumentClient documentClient,
             HousingDetailEnricher detailEnricher,
-            ShCollectorProperties properties
+            ShCollectorProperties properties,
+            ShApplicationPeriodParser periodParser
     ) {
         this.documentClient = documentClient;
         this.detailEnricher = detailEnricher;
         this.properties = properties;
+        this.periodParser = periodParser;
     }
 
     public List<NoticeSyncCommand> collect() {
@@ -57,22 +63,40 @@ public class ShNoticeCollector {
         List<ShNoticeItem> items = collectList();
         List<NoticeSyncCommand> commands = new ArrayList<>();
         for (ShNoticeItem item : items) {
+            String detailHtml = documentClient.getText(URI.create(item.detailUrl()));
+            ShApplicationPeriod period = periodParser.parse(detailHtml).orElse(null);
+            LocalDate today = LocalDate.now(KOREA_ZONE);
+            if (period != null && !period.isNotExpiredOn(today)) {
+                log.info("SH 접수 마감일이 지난 공고를 제외합니다: seq={}, start={}, end={}, title={}",
+                        item.sequence(), period.startDate(), period.endDate(), item.title());
+                continue;
+            }
             NoticeResponse basic = new NoticeResponse(
                     "SH", item.sequence(), "공고중", item.title(), "서울주택도시개발공사",
-                    null, item.registeredDate().toString(), null, null, null, null,
+                    null, item.registeredDate().toString(), null,
+                    period == null ? null : period.startDate().toString(),
+                    period == null ? null : period.endDate().toString(), null,
                     item.detailUrl(), item.detailUrl(), null, List.of(), List.of()
             );
             NoticeResponse enriched = detailEnricher.enrich(basic);
-            commands.add(new NoticeSyncCommand(enriched, JSON_MAPPER.writeValueAsString(Map.of(
-                    "sequence", item.sequence(),
-                    "title", item.title(),
-                    "registeredDate", item.registeredDate().toString(),
-                    "detailUrl", item.detailUrl()
-            ))));
+            commands.add(new NoticeSyncCommand(enriched, rawPayload(item, period)));
             pause();
         }
         log.info("SH 모집공고 수집 완료: 대상={}", commands.size());
         return List.copyOf(commands);
+    }
+
+    private String rawPayload(ShNoticeItem item, ShApplicationPeriod period) {
+        Map<String, String> payload = new LinkedHashMap<>();
+        payload.put("sequence", item.sequence());
+        payload.put("title", item.title());
+        payload.put("registeredDate", item.registeredDate().toString());
+        if (period != null) {
+            payload.put("applicationStartDate", period.startDate().toString());
+            payload.put("applicationEndDate", period.endDate().toString());
+        }
+        payload.put("detailUrl", item.detailUrl());
+        return JSON_MAPPER.writeValueAsString(payload);
     }
 
     List<ShNoticeItem> parseList(String html, URI pageUri, LocalDate cutoff) {
@@ -96,7 +120,10 @@ public class ShNoticeCollector {
                 continue;
             }
             String sequence = matcher.group("seq");
-            String detailUrl = pageUri.resolve("view.do?multi_itm_seq=2&seq=" + sequence).toString();
+            String multiItemSequence = queryParameter(pageUri, "multi_itm_seq", "2");
+            String detailUrl = pageUri.resolve(
+                    "view.do?multi_itm_seq=" + multiItemSequence + "&seq=" + sequence
+            ).toString();
             items.add(new ShNoticeItem(sequence, title, registeredDate, detailUrl));
         }
         return List.copyOf(items);
@@ -104,19 +131,23 @@ public class ShNoticeCollector {
 
     private List<ShNoticeItem> collectList() {
         LocalDate cutoff = LocalDate.now(KOREA_ZONE).minusDays(properties.lookbackDays());
-        URI base = URI.create(properties.listUrl());
         List<ShNoticeItem> items = new ArrayList<>();
+        for (URI base : listUris()) {
+            collectList(base, cutoff, items);
+        }
+        return items.stream().distinct().toList();
+    }
+
+    private void collectList(URI base, LocalDate cutoff, List<ShNoticeItem> items) {
         for (int page = 1; page <= properties.maxPages(); page++) {
             URI pageUri = withPage(base, page);
             String html;
             try {
                 html = documentClient.getText(pageUri);
             } catch (RuntimeException exception) {
-                if (page == 1) {
-                    throw exception;
-                }
-                log.warn("SH 목록 후속 페이지 수집 중단: page={}, reason={}", page, exception.getMessage());
-                break;
+                throw new IllegalStateException(
+                        "SH 목록 수집을 완료하지 못했습니다: page=" + page, exception
+                );
             }
             List<ShNoticeItem> pageItems = parseList(html, pageUri, cutoff);
             items.addAll(pageItems);
@@ -126,7 +157,10 @@ public class ShNoticeCollector {
             }
             pause();
         }
-        return items.stream().distinct().toList();
+    }
+
+    private List<URI> listUris() {
+        return List.of(URI.create(properties.listUrl()));
     }
 
     private LocalDate oldestDate(String html, URI pageUri) {
@@ -157,12 +191,28 @@ public class ShNoticeCollector {
     }
 
     private boolean isRecruitmentNotice(String title) {
-        return StringUtils.hasText(title) && INCLUDE.matcher(title).find() && !EXCLUDE.matcher(title).find();
+        return StringUtils.hasText(title)
+                && INCLUDE.matcher(title).find()
+                && !EXCLUDE.matcher(title).find()
+                && !RentalNoticePolicy.isExcluded(title);
     }
 
     private URI withPage(URI base, int page) {
         String separator = base.toString().contains("?") ? "&" : "?";
         return URI.create(base + separator + "page=" + page);
+    }
+
+    private String queryParameter(URI uri, String name, String defaultValue) {
+        if (uri.getQuery() == null) {
+            return defaultValue;
+        }
+        for (String parameter : uri.getQuery().split("&")) {
+            String[] pair = parameter.split("=", 2);
+            if (pair.length == 2 && pair[0].equals(name)) {
+                return pair[1];
+            }
+        }
+        return defaultValue;
     }
 
     private void pause() {
