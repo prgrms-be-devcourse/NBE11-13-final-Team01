@@ -15,8 +15,11 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import com.zipick.housing.dto.HouseFilterParams;
+import com.zipick.notice.dto.MapHousingFilterPolicy;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -38,14 +41,14 @@ public class MapHousingController {
     @GetMapping
     @Operation(
             summary = "지도에 표시할 공급주택 목록 조회",
-            description = "모집 중이며 좌표가 확인된 공급주택을 반환합니다. 같은 위치의 여러 공급조건은 주택 하나로 묶습니다."
+            description = "공고 예정·접수 중이며 좌표가 확인된 공급주택을 주택 단위로 반환합니다. 전체 공급주택 목록(/api/v1/houses)과 같은 필터 파라미터를 쓰며 파라미터 없이 호출하면 전체를 반환합니다. 접수 마감·취소 공고는 statuses 로 요청해도 반환하지 않습니다. 보증금·월세·면적·주택유형 필터는 같은 활성 공급 호실 하나가 모든 조건을 만족해야 포함되며, 해당 값이 없는 호실은 조건을 만족하지 않은 것으로 봅니다(includeUnknown 으로 우회할 수 없습니다)."
     )
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "200", description = "지도용 공급주택 목록을 정상적으로 반환합니다.")
     })
-    public ApiResponse<MapHousingListResponse> list() {
-        return ApiResponse.ok(service.findOpenHousings());
+    public ApiResponse<MapHousingListResponse> list(@ModelAttribute HouseFilterParams params) {
+        return ApiResponse.ok(service.findHousings(MapHousingFilterPolicy.apply(params)));
     }
 
     @GetMapping("/{housingId}")

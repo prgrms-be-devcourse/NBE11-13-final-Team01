@@ -1,5 +1,6 @@
 package com.zipick.notice.controller;
 
+import com.zipick.housing.dto.HouseFilterParams;
 import com.zipick.notice.dto.MapHousingDetailResponse;
 import com.zipick.notice.dto.MapHousingListResponse;
 import com.zipick.notice.dto.NoticePageResponse;
@@ -16,6 +17,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -45,7 +47,7 @@ class NoticeControllersTest {
         MapHousingController controller = new MapHousingController(query, assets);
         MapHousingListResponse list = new MapHousingListResponse(0, List.of());
         MapHousingDetailResponse detail = mock(MapHousingDetailResponse.class);
-        when(query.findOpenHousings()).thenReturn(list);
+        when(query.findHousings(any())).thenReturn(list);
         when(query.findDetail(1L)).thenReturn(detail);
         when(assets.getAttachment(1L, 2L)).thenReturn(
                 new MapHousingAsset(new byte[]{1}, MediaType.IMAGE_PNG, "도면.png")
@@ -54,7 +56,7 @@ class NoticeControllersTest {
                 new MapHousingAsset(new byte[]{2}, MediaType.IMAGE_JPEG, "사진.jpg")
         );
 
-        assertThat(controller.list().data()).isSameAs(list);
+        assertThat(controller.list(new HouseFilterParams()).data()).isSameAs(list);
         assertThat(controller.detail(1L).data()).isSameAs(detail);
         assertThat(controller.attachmentContent(1L, 2L).getHeaders().getContentType())
                 .isEqualTo(MediaType.IMAGE_PNG);

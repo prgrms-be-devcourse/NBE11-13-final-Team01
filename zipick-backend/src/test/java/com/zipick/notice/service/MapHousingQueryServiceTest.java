@@ -8,8 +8,11 @@ import com.zipick.notice.domain.HousingSupply;
 import com.zipick.notice.domain.HousingSupplyCondition;
 import com.zipick.notice.domain.Notice;
 import com.zipick.notice.domain.NoticeAttachment;
+import com.zipick.housing.dto.HouseFilter;
 import com.zipick.notice.domain.NoticeStatus;
+import com.zipick.notice.dto.MapHousingSummaryResponse;
 import com.zipick.notice.repository.HousingMediaRepository;
+import com.zipick.notice.repository.HousingPinQueryRepository;
 import com.zipick.notice.repository.HousingRepository;
 import com.zipick.notice.repository.HousingSupplyConditionRepository;
 import com.zipick.notice.repository.HousingSupplyRepository;
@@ -37,8 +40,9 @@ class MapHousingQueryServiceTest {
     private final HousingSupplyConditionRepository conditions = mock(HousingSupplyConditionRepository.class);
     private final NoticeAttachmentRepository attachments = mock(NoticeAttachmentRepository.class);
     private final HousingMediaRepository media = mock(HousingMediaRepository.class);
+    private final HousingPinQueryRepository pins = mock(HousingPinQueryRepository.class);
     private final MapHousingQueryService service = new MapHousingQueryService(
-            housings, supplies, conditions, attachments, media
+            housings, pins, supplies, conditions, attachments, media
     );
 
     @Test
@@ -165,6 +169,35 @@ class MapHousingQueryServiceTest {
 
         assertThat(detail.applyStartAt()).isNull();
         assertThat(detail.applyEndAt()).isNull();
+    }
+
+    @Test
+    void mapsPinsToSummariesAndCountsHousings() {
+        // 지도 목록은 주택 단위라 total 이 곧 주택 수다. 호실 수에 따라 달라지지 않는다.
+        Housing first = housing(notice(NoticeStatus.OPEN));
+        Housing second = withId(new Housing(notice(NoticeStatus.UPCOMING), "h2", "단지2", "서울 마포구 1"), 5L);
+        second.enrichAddress("서울 마포구 1", "서울", "마포구", "공덕동", "마포대로",
+                "단지2", new BigDecimal("37.6"), new BigDecimal("126.9"));
+        HouseFilter filter = HouseFilter.openOnly();
+        when(pins.findPins(filter)).thenReturn(List.of(first, second));
+
+        var list = service.findHousings(filter);
+
+        assertThat(list.total()).isEqualTo(2);
+        assertThat(list.housings()).extracting(MapHousingSummaryResponse::housingId).containsExactly(2L, 5L);
+        assertThat(list.housings()).extracting(MapHousingSummaryResponse::status)
+                .containsExactly(NoticeStatus.OPEN.name(), NoticeStatus.UPCOMING.name());
+    }
+
+    @Test
+    void returnsEmptyListWhenNoHousingMatches() {
+        HouseFilter filter = HouseFilter.openOnly();
+        when(pins.findPins(filter)).thenReturn(List.of());
+
+        var list = service.findHousings(filter);
+
+        assertThat(list.total()).isZero();
+        assertThat(list.housings()).isEmpty();
     }
 
     private Notice notice(NoticeStatus status) {

@@ -11,7 +11,6 @@ import com.querydsl.core.Tuple;
 import com.querydsl.core.types.Predicate;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.ComparableExpressionBase;
-import com.querydsl.core.types.dsl.StringExpression;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
@@ -172,76 +171,11 @@ public class CandidateQueryRepository {
         out.merge(key, t.get(1, Long.class), Long::sum);
     }
 
-    private BooleanBuilder build(HouseFilter f) {
-        BooleanBuilder b = new BooleanBuilder();
-        boolean unknown = f.includeUnknown();
-
-        b.and(housing.active.isTrue()).and(housingSupply.active.isTrue());
-        if (notEmpty(f.noticeIds())) b.and(notice.id.in(f.noticeIds()));
-        if (notEmpty(f.statuses())) b.and(notice.status.in(f.statuses()));
-        if (notEmpty(f.agencies())) b.and(agency.code.in(f.agencies()));
-        if (notEmpty(f.rentalTypes())) b.and(rentalTypeIn(f.rentalTypes()));
-        if (notEmpty(f.regions())) b.and(regionIn(f.regions()));
-        if (notEmpty(f.housingTypes())) {
-            List<String> raws = f.housingTypes().stream().flatMap(h -> h.getRawNames().stream()).toList();
-            b.and(orNull(housingSupply.housingType.in(raws), housingSupply.housingType, unknown));
-        }
-        if (f.depositMin() != null) b.and(orNull(housingSupply.rentDeposit.goe(f.depositMin() * MANWON), housingSupply.rentDeposit, unknown));
-        if (f.depositMax() != null) b.and(orNull(housingSupply.rentDeposit.loe(f.depositMax() * MANWON), housingSupply.rentDeposit, unknown));
-        if (f.rentMin() != null) b.and(orNull(housingSupply.monthlyRent.goe(f.rentMin() * MANWON), housingSupply.monthlyRent, unknown));
-        if (f.rentMax() != null) b.and(orNull(housingSupply.monthlyRent.loe(f.rentMax() * MANWON), housingSupply.monthlyRent, unknown));
-        if (f.areaMin() != null) b.and(orNull(housingSupply.exclusiveArea.goe(f.areaMin()), housingSupply.exclusiveArea, unknown));
-        if (f.areaMax() != null) b.and(orNull(housingSupply.exclusiveArea.loe(f.areaMax()), housingSupply.exclusiveArea, unknown));
-        return b;
-    }
-
     /**
-     * 공공임대 유형 필터. RentalType.classify 와 같은 규칙이다:
-     * 공고 유형이 있으면 공고 유형으로, 비어 있으면 공고 제목으로 판단한다.
+     * 필터 조건은 HouseFilterPredicates 로 옮겼다. 지도 핀 조회(주택 단위)가 같은 판정식을 써야 해서다.
+     * 여기서 쓰는 조건 자체는 바뀌지 않았다 (HouseFilterPredicatesEquivalenceTest 로 고정).
      */
-    private Predicate rentalTypeIn(Set<RentalType> types) {
-        BooleanExpression typeBlank = notice.noticeType.isNull().or(notice.noticeType.trim().isEmpty());
-        BooleanBuilder or = new BooleanBuilder();
-        for (RentalType r : types) {
-            or.or(typeBlank.not().and(matches(r, notice.noticeType)));
-            or.or(typeBlank.and(matches(r, notice.title)));
-        }
-        return or;
-    }
-
-    private static BooleanExpression matches(RentalType r, StringExpression t) {
-        BooleanExpression youthOnly = t.contains("청년").and(t.contains("신혼").not());
-        return switch (r) {
-            case HAPPY -> t.contains("행복주택");
-            case NATIONAL -> t.contains("국민임대");
-            case PERMANENT -> t.contains("영구임대");
-            case INTEGRATED -> t.contains("통합공공임대");
-            case DEUNDEUN -> t.contains("든든전세");
-            case JEONSE_LEASE -> t.contains("전세임대");
-            case YOUTH_PURCHASE -> t.contains("매입").and(youthOnly);
-            case PURCHASE -> t.contains("매입").and(youthOnly.not());
-            case PUBLIC -> t.contains("공공임대").and(t.contains("통합").not())
-                    .or(t.contains("10년임대")).or(t.contains("5년임대"));
-        };
-    }
-
-    /** "시도 시군구" 키 → (시도, 시군구) 쌍 비교. 시도 이름에 공백이 없으므로 첫 공백으로 나눈다 */
-    private Predicate regionIn(Set<String> keys) {
-        BooleanBuilder or = new BooleanBuilder();
-        for (String key : keys) {
-            int i = key.indexOf(' ');
-            if (i < 0) or.or(housing.provinceName.eq(key).or(housing.districtName.eq(key)));
-            else or.or(housing.provinceName.eq(key.substring(0, i)).and(housing.districtName.eq(key.substring(i + 1))));
-        }
-        return or;
-    }
-
-    /** includeUnknown이면 "조건 OR 값 없음", 아니면 조건만 */
-    private BooleanExpression orNull(BooleanExpression cond, ComparableExpressionBase<?> col, boolean includeUnknown) {
-        return includeUnknown ? cond.or(col.isNull()) : cond;
-    }
-
-    private static boolean notEmpty(Set<?> s) {
-        return s != null && !s.isEmpty();
+    private BooleanBuilder build(HouseFilter f) {
+        return HouseFilterPredicates.all(f);
     }
 }

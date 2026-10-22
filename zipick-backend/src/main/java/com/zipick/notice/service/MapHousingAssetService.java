@@ -64,7 +64,7 @@ public class MapHousingAssetService {
     // 여기만 OPEN으로 남으면 공고 예정 주택의 상세는 열리는데 사진만 깨진다.
     private com.zipick.notice.domain.Housing findVisibleHousing(Long housingId) {
         return housingRepository.findByIdAndActiveTrue(housingId)
-                .filter(candidate -> NoticeStatus.PUBLIC_DETAIL_STATUSES.contains(candidate.getNotice().getStatus()))
+                .filter(candidate -> NoticeStatus.PUBLIC_STATUSES.contains(candidate.getNotice().getStatus()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.HOUSE_NOT_FOUND));
     }
 
