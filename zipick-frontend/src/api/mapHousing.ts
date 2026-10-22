@@ -1,4 +1,5 @@
 import { api, unwrap } from './client';
+import type { AnnouncementStatus } from '../types';
 
 export interface MapHousingSummary {
   housingId: number;
@@ -46,8 +47,9 @@ export interface MapHousingDetail {
   name?: string | null;
   address: string;
   normalizedAddress?: string | null;
-  latitude: number;
-  longitude: number;
+  /** 좌표를 아직 못 구한 주택도 상세는 열린다(핀 목록과 달리 좌표 조건이 없다). 로드뷰는 이때 숨긴다. */
+  latitude: number | null;
+  longitude: number | null;
   buildYear?: number | null;
   floor?: number | null;
   heatingMethod?: string | null;
@@ -56,7 +58,11 @@ export interface MapHousingDetail {
   noticeTitle: string;
   noticeType?: string | null;
   rentalType?: string | null;
-  status: 'OPEN';
+  /** 공개 상세는 접수 중(OPEN)과 공고 예정(UPCOMING)을 모두 내려준다. */
+  status: AnnouncementStatus;
+  /** 접수 시작·마감일(한국 시간 기준 날짜). 공고에 일정이 없으면 null */
+  applyStartAt?: string | null;
+  applyEndAt?: string | null;
   agencyName?: string | null;
   detailUrl?: string | null;
   supplies: MapHousingSupply[];

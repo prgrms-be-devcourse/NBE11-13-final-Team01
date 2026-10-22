@@ -2,10 +2,14 @@ import { api, refreshOnce, unwrap } from './client';
 import { clearSession, setAccessToken, setUser, type AuthUser } from '../hooks/useAuth';
 
 /**
- * 인증 API. 정식 로그인 화면을 만들 때 이 모듈과 useAuth를 그대로 재사용하면 된다.
+ * 인증 API. 로그인·회원가입 화면(pages/LoginPage, pages/SignupPage)이 이 모듈과 useAuth를 그대로 쓴다.
  * Access Token은 메모리, Refresh Token은 HttpOnly 쿠키라 여기서 쿠키를 직접 다루지 않는다.
  */
 export const authApi = {
+  // 가입 응답에는 토큰이 없다(userId·email만). 자동 로그인하려면 login을 한 번 더 불러야 한다.
+  signup: (email: string, password: string) =>
+    unwrap<{ userId: number; email: string }>(api.post('/api/auth/signup', { email, password })),
+
   login: (email: string, password: string) =>
     unwrap<{ accessToken: string }>(api.post('/api/auth/login', { email, password })),
 

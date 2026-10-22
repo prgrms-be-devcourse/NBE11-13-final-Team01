@@ -1,26 +1,76 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
+import AccessGate from './components/AccessGate';
 import OnboardingPage from './pages/OnboardingPage';
-import RecommendationsPage from './pages/RecommendationsPage';
 import HouseDetailPage from './pages/HouseDetailPage';
 import MapPage from './pages/MapPage';
 import CalendarPage from './pages/CalendarPage';
 import TunePage from './pages/TunePage';
-import AllHousesPage from './pages/AllHousesPage';
+import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
+
+/**
+ * 탐색은 지도 한 화면에서 한다. 전체 공고 / 맞춤 추천은 별도 페이지가 아니라 `?mode=` 로 구분되는 두 모드다.
+ * 비회원도 지도·필터·공고 상세를 볼 수 있고, 개인화 기능에서만 AccessGate·공통 팝업으로 막는다.
+ *
+ * 기존 /houses, /recommendations 는 지도 모드로 넘긴다(필터 쿼리는 그대로 넘겨 준다).
+ * 두 페이지 컴포넌트(AllHousesPage, RecommendationsPage)는 지우지 않고 라우팅에서만 뺐다.
+ */
+
+/** 기존 목록 URL을 지도 모드로 넘긴다. 필터 쿼리는 그대로 유지한다. */
+function RedirectToMap({ mode }: { mode?: 'recommended' }) {
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  if (mode) params.set('mode', mode);
+  else params.delete('mode');
+  const query = params.toString();
+  return <Navigate to={query ? `/map?${query}` : '/map'} replace />;
+}
 
 export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Navigate to="/recommendations" replace />} />
-        <Route path="/onboarding" element={<OnboardingPage />} />
-        <Route path="/recommendations" element={<RecommendationsPage />} />
-        <Route path="/houses" element={<AllHousesPage />} />
-        <Route path="/houses/:houseId" element={<HouseDetailPage />} />
-        <Route path="/tune" element={<TunePage />} />
-        {/* 아래 두 화면은 자리만 잡아 둔 것. 본체는 src/features/map, src/features/calendar */}
+        <Route index element={<Navigate to="/map" replace />} />
+
+        {/* 비회원도 볼 수 있는 화면 */}
         <Route path="/map" element={<MapPage />} />
-        <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/houses" element={<RedirectToMap />} />
+        {/* 상세는 공개 정보 + 개인화 영역으로 나뉜다. 게이트는 페이지 안에서 점수 영역만 막는다. */}
+        <Route path="/houses/:houseId" element={<HouseDetailPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+
+        {/* 로그인만 필요 */}
+        <Route
+          path="/onboarding"
+          element={
+            <AccessGate need="LOGIN">
+              <OnboardingPage />
+            </AccessGate>
+          }
+        />
+        <Route
+          path="/calendar"
+          element={
+            <AccessGate need="LOGIN">
+              <CalendarPage />
+            </AccessGate>
+          }
+        />
+
+        {/* 맞춤 추천은 지도 모드로. 로그인·온보딩 확인은 지도 화면이 직접 한다 */}
+        <Route path="/recommendations" element={<RedirectToMap mode="recommended" />} />
+
+        {/* 로그인 + 내 조건 입력까지 필요 */}
+        <Route
+          path="/tune"
+          element={
+            <AccessGate need="ONBOARDING">
+              <TunePage />
+            </AccessGate>
+          }
+        />
       </Route>
     </Routes>
   );

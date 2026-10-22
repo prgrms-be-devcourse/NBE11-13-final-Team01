@@ -1,23 +1,21 @@
-import { useState, type FormEvent } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { login, logout } from '../api/auth';
-import { ApiError } from '../api/client';
+import { logout } from '../api/auth';
 import { useAuth } from '../hooks/useAuth';
+import { closeGate, returnPath } from '../hooks/useAuthGate';
+import { DEFAULT_LANDING } from '../pages/LoginPage';
+import { usePendingInterestRunner } from '../hooks/useInterest';
+import AuthGateModal from './AuthGateModal';
 
-// 임시 로그인 UI. 인증 흐름 확인용이며 정식 로그인 화면이 생기면 이 컴포넌트만 걷어내면 된다.
-// 인증 호출과 상태는 api/auth, hooks/useAuth에 있어 그대로 재사용할 수 있다.
+/**
+ * 헤더 우측 인증 영역. 비회원에게는 로그인·회원가입 링크만 두고,
+ * 입력은 전용 화면(/login, /signup)에서 받는다.
+ */
 function AuthBox() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  // 사용자가 바뀌면 이전 사용자의 추천·조건 캐시를 버린다.
-  // clear() 는 화면에 떠 있는 쿼리를 다시 불러오지 않아 로그인 직후 목록이 비어 보였다 → resetQueries() 로 비우고 다시 불러온다.
-  const resetCache = () => qc.resetQueries();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   if (user) {
     return (
@@ -28,7 +26,12 @@ function AuthBox() {
           className="btn btn--small btn--ghost"
           onClick={async () => {
             await logout();
-            resetCache();
+            // 다음 사용자에게 이전 사용자의 추천·조건 캐시가 남지 않도록 비우고 다시 불러온다.
+            qc.resetQueries();
+            closeGate();
+            // 개인화 화면에 머물러 있으면 AccessGate가 곧바로 로그인 팝업을 띄운다.
+            // 로그아웃 직후에 로그인하라고 조르는 셈이라, 비회원도 볼 수 있는 화면으로 보낸다.
+            navigate(DEFAULT_LANDING);
           }}
         >
           로그아웃
@@ -37,57 +40,35 @@ function AuthBox() {
     );
   }
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await login(email, password);
-      setPassword('');
-      resetCache();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : '로그인에 실패했습니다.');
-    } finally {
-      setBusy(false);
-    }
-  };
+  // 로그인한 뒤 보던 화면으로 돌아오도록 현재 경로를 넘긴다.
+  const from = returnPath(location);
+  const state = from ? { from } : undefined;
 
   return (
-    <form className="auth-box" onSubmit={submit}>
-      <input
-        type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="이메일"
-        autoComplete="username"
-        required
-      />
-      <input
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        placeholder="비밀번호"
-        autoComplete="current-password"
-        required
-      />
-      <button type="submit" className="btn btn--small" disabled={busy}>
+    <div className="auth-box">
+      <Link to="/login" state={state} className="btn btn--small btn--ghost">
         로그인
-      </button>
-      {error && <span className="auth-box__error">{error}</span>}
-    </form>
+      </Link>
+      <Link to="/signup" state={state} className="btn btn--small">
+        회원가입
+      </Link>
+    </div>
   );
 }
 
 export default function Layout() {
+  // 로그인 직후 보류된 관심 공고 저장을 이어서 실행한다. 앱 전체에서 여기 한 곳만 호출한다.
+  usePendingInterestRunner();
+
   return (
     <div className="app">
       <header className="header">
-        <NavLink to="/recommendations" className="logo">
+        <NavLink to="/map" className="logo">
           ZIPICK
         </NavLink>
+        {/* 전체 공고와 맞춤 추천은 지도 화면 안에서 전환한다. 독립 메뉴를 두지 않는다. */}
         <nav className="nav">
-          <NavLink to="/recommendations">추천</NavLink>
-          <NavLink to="/map">지도</NavLink>
+          <NavLink to="/map">지도 탐색</NavLink>
           <NavLink to="/calendar">관심 공고·일정</NavLink>
           <NavLink to="/tune">취향 찾기</NavLink>
           <NavLink to="/onboarding">내 조건</NavLink>
@@ -97,6 +78,7 @@ export default function Layout() {
       <main className="main">
         <Outlet />
       </main>
+      <AuthGateModal />
     </div>
   );
 }

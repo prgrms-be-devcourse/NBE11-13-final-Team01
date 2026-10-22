@@ -2,6 +2,12 @@ import { EMPTY_FILTER, type HouseFilter } from '../types';
 
 // 필터 ↔ URL 쿼리. 추천·지도·캘린더 화면이 같은 쿼리를 공유해 서로 오가도 필터가 유지된다.
 
+/** filterToSearch 가 다루는 키. 이 밖의 쿼리(mode, housing 등)는 필터를 바꿔도 보존해야 한다. */
+export const FILTER_PARAM_KEYS = [
+  'regions', 'depositMin', 'depositMax', 'rentMin', 'rentMax', 'areaMin', 'areaMax',
+  'housingTypes', 'statuses', 'agencies', 'rentalTypes', 'includeUnknown',
+] as const;
+
 export function paramsToFilter(p: URLSearchParams): HouseFilter {
   const list = (k: string) => (p.get(k) ? p.get(k)!.split(',').filter(Boolean) : []);
   const num = (k: string) => (p.get(k) ? Number(p.get(k)) : undefined);

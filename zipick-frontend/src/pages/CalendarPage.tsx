@@ -13,15 +13,7 @@ export default function CalendarPage() {
   const list = useQuery({ queryKey: ['interest-list'], queryFn: interestApi.list, enabled: !!user });
   const schedule = useQuery({ queryKey: ['interest-schedule'], queryFn: () => interestApi.schedule(), enabled: !!user });
 
-  if (!user) {
-    return (
-      <div className="empty">
-        <h2>로그인하면 관심 공고와 일정을 볼 수 있어요</h2>
-        <p>추천 목록이나 전체 공급주택에서 ☆를 눌러 공고를 저장하세요.</p>
-      </div>
-    );
-  }
-
+  // 로그인 확인은 라우트의 AccessGate가 한다. 여기 오면 user는 항상 있다.
   const upcoming = (schedule.data ?? []).filter((e) => (e.dDay ?? -1) >= 0).slice(0, 8);
 
   return (
