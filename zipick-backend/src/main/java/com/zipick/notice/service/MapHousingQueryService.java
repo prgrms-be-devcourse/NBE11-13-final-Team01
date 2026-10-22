@@ -53,7 +53,7 @@ public class MapHousingQueryService {
 
     public MapHousingDetailResponse findDetail(Long housingId) {
         var housing = housingRepository.findByIdAndActiveTrue(housingId)
-                .filter(candidate -> candidate.getNotice().getStatus() == NoticeStatus.OPEN)
+                .filter(candidate -> NoticeStatus.PUBLIC_DETAIL_STATUSES.contains(candidate.getNotice().getStatus()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.HOUSE_NOT_FOUND));
         var supplyEntities = housingSupplyRepository.findAllByHousingIdAndActiveTrueOrderByIdAsc(housingId);
         var conditionMap = supplyEntities.isEmpty()

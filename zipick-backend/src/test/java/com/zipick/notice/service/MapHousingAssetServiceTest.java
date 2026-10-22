@@ -83,6 +83,25 @@ class MapHousingAssetServiceTest {
         assertThatThrownBy(() -> service.getMedia(2L, 4L)).isInstanceOf(BusinessException.class);
     }
 
+    @Test
+    void servesUpcomingHousingImagesButStillRejectsCancelled() {
+        // 상세 조회와 같은 상태 조건을 써야 공고 예정 주택의 상세에서 사진이 깨지지 않는다.
+        Notice upcomingNotice = withId(new Notice("LH", "n", "공고", NoticeStatus.UPCOMING), 1L);
+        Housing upcoming = withId(new Housing(upcomingNotice, "h", "단지", "서울 강남구 1"), 2L);
+        HousingMedia image = withId(new HousingMedia(upcoming, "m", "BUILDING_PHOTO", "https://lh.or.kr/p.png"), 4L);
+        image.synchronize("BUILDING_PHOTO", "p.png", image.getSourceUrl(), "{}");
+        when(housings.findByIdAndActiveTrue(2L)).thenReturn(Optional.of(upcoming));
+        when(media.findById(4L)).thenReturn(Optional.of(image));
+        when(client.getBytes(URI.create(image.getSourceUrl()))).thenReturn(new byte[]{3});
+
+        assertThat(service.getMedia(2L, 4L).contentType()).isEqualTo(MediaType.IMAGE_PNG);
+
+        Notice cancelledNotice = withId(new Notice("LH", "n", "공고", NoticeStatus.CANCELLED), 1L);
+        Housing cancelled = withId(new Housing(cancelledNotice, "h", "단지", "서울 강남구 1"), 2L);
+        when(housings.findByIdAndActiveTrue(2L)).thenReturn(Optional.of(cancelled));
+        assertThatThrownBy(() -> service.getMedia(2L, 4L)).isInstanceOf(BusinessException.class);
+    }
+
     private <T> T withId(T entity, Long id) {
         ReflectionTestUtils.setField(entity, "id", id);
         return entity;
