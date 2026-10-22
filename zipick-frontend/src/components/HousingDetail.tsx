@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { MapHousingDetail, MapHousingSupply } from '../api/mapHousing';
+import type { HouseFilter } from '../types';
+import { hasSupplyConditions, matchesSupplyConditions, sortByMatch } from '../utils/supplyMatch';
 import { HousingInfraSection, RoadviewPanel } from '../features/map';
 import InterestButton from './InterestButton';
 import { STATUS_LABEL, applySchedule, area } from '../utils/format';
@@ -17,6 +19,8 @@ interface Props {
   score?: ReactNode;
   /** 상세 페이지로 가는 링크를 보여 줄지 (지도 패널에서만 필요) */
   showPageLink?: boolean;
+  /** 전체 공고 모드에서 적용 중인 필터. 조건을 만족한 공급 유형을 앞에 두고 표시한다 */
+  filter?: HouseFilter;
 }
 
 function valueOrDash(value?: string | number | null) {
@@ -31,7 +35,10 @@ function isImageFile(fileName?: string | null) {
   return Boolean(fileName?.match(/\.(?:png|jpe?g|gif|webp)$/i));
 }
 
-export default function HousingDetail({ detail, score, showPageLink }: Props) {
+export default function HousingDetail({ detail, score, showPageLink, filter }: Props) {
+  // 상세 API 는 활성 공급 호실만 돌려준다. 비어 있으면 '수집된 활성 공급 정보가 없다'는 뜻이다.
+  const highlight = filter != null && hasSupplyConditions(filter);
+  const supplies = highlight ? sortByMatch(detail.supplies, filter!) : detail.supplies;
   const schedule = applySchedule(detail.status, detail.applyStartAt, detail.applyEndAt);
   const photos = detail.media.filter((file) => file.mediaType === 'BUILDING_PHOTO');
   const housingPlans = detail.media.filter((f) => f.mediaType === 'FLOOR_PLAN' || f.mediaType === 'SITE_PLAN');
@@ -53,8 +60,12 @@ export default function HousingDetail({ detail, score, showPageLink }: Props) {
         <p className="housing-photo-gallery__empty">공급기관이 제공한 건물 사진이 없습니다.</p>
       )}
 
-      {detail.latitude != null && detail.longitude != null && (
+      {detail.latitude != null && detail.longitude != null ? (
         <RoadviewPanel latitude={detail.latitude} longitude={detail.longitude} />
+      ) : (
+        <p className="housing-detail__warn">
+          이 주택은 아직 정확한 위치가 확인되지 않아 지도에 표시할 수 없어요. 주소와 공고 상세 정보는 확인할 수 있습니다.
+        </p>
       )}
 
       <div className="housing-detail__body">
@@ -84,10 +95,26 @@ export default function HousingDetail({ detail, score, showPageLink }: Props) {
 
         <section>
           <h3>공급 조건</h3>
-          {detail.supplies.length === 0 ? (
-            <p className="muted">등록된 공급 조건이 없습니다. 공고문에서 확인해 주세요.</p>
+          {supplies.length === 0 ? (
+            <div className="housing-detail__warn">
+              <p>공급 조건을 확인하지 못했어요. 자세한 내용은 공고문에서 확인해 주세요.</p>
+              {detail.detailUrl && (
+                <a className="btn btn--small" href={detail.detailUrl} target="_blank" rel="noreferrer">
+                  공고문에서 확인하기 ↗
+                </a>
+              )}
+            </div>
           ) : (
-            detail.supplies.map((supply) => <SupplyCard key={supply.housingSupplyId} supply={supply} />)
+            <>
+              {highlight && <p className="muted small">검색 조건을 만족한 공급 유형을 먼저 보여 드려요.</p>}
+              {supplies.map((supply) => (
+                <SupplyCard
+                  key={supply.housingSupplyId}
+                  supply={supply}
+                  matched={highlight && matchesSupplyConditions(supply, filter!)}
+                />
+              ))}
+            </>
           )}
         </section>
 
@@ -130,11 +157,14 @@ export default function HousingDetail({ detail, score, showPageLink }: Props) {
   );
 }
 
-function SupplyCard({ supply }: { supply: MapHousingSupply }) {
+function SupplyCard({ supply, matched }: { supply: MapHousingSupply; matched?: boolean }) {
   const unit = [supply.buildingDong, supply.unitNumber].filter(Boolean).join(' ');
   return (
-    <article className="map-detail__supply">
-      <strong>{supply.housingType || supply.supplyType || unit || '공급 조건'}</strong>
+    <article className={`map-detail__supply ${matched ? 'map-detail__supply--matched' : ''}`}>
+      <strong>
+        {supply.housingType || supply.supplyType || unit || '공급 조건'}
+        {matched && <span className="badge badge--matched">검색 조건 일치</span>}
+      </strong>
       <dl className="map-detail__facts">
         <div><dt>보증금</dt><dd>{money(supply.rentDeposit)}</dd></div>
         <div><dt>월 임대료</dt><dd>{money(supply.monthlyRent)}</dd></div>

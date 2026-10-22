@@ -1,20 +1,19 @@
 import { useEffect, useMemo } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { houseApi } from '../api/house';
 import { profileApi } from '../api/profile';
-import { getMapHousingDetail } from '../api/mapHousing';
+import { getMapHousingDetail, getMapHousings } from '../api/mapHousing';
 import FilterPanel from '../components/FilterPanel';
 import HousingDetail from '../components/HousingDetail';
 import ReasonList from '../components/ReasonList';
 import RecommendationSidebar from '../components/map/RecommendationSidebar';
-import { MapPanel, type MapPin } from '../features/map';
+import { MapPanel, toMapPins, type MapPin } from '../features/map';
 import { useAuth } from '../hooks/useAuth';
 import { openGate } from '../hooks/useAuthGate';
 import { useHouseFilter } from '../hooks/useHouseFilter';
 import { useOnboardingStatus } from '../hooks/useOnboardingStatus';
 import { useRecommendationBoard } from '../hooks/useRecommendationBoard';
-import type { RecommendedHouse } from '../types';
+import { EMPTY_FILTER, type RecommendedHouse } from '../types';
 
 /**
  * 지도 한 화면에서 전체 공고와 맞춤 추천을 전환해 탐색한다.
@@ -25,21 +24,19 @@ import type { RecommendedHouse } from '../types';
  *   /map?housing=123             123번 주택 상세 패널 열림
  */
 
-/**
- * 전체 공고 모드의 조회 상한. HouseFilterService 의 MAX_LIMIT 과 같은 값이다.
- * ⚠️ 서버는 이와 별개로 내부에서 호실 10,000건만 읽어 주택으로 묶으므로, 이 값을 올려도
- * 그 위에서는 더 받지 못한다. 잘렸는지는 total 과 받은 개수를 비교해 아래에서 안내한다.
- */
-const PIN_LIMIT = 2000;
-
 type MapMode = 'all' | 'recommended';
 
-function toPins(
-  houses: { houseId: number; housingName?: string; title: string; address: string; lat?: number; lng?: number }[],
-): MapPin[] {
+/** 추천 결과 → 지도 핀. 좌표가 없는 주택은 핀을 만들 수 없어 빠진다(목록에는 그대로 남는다). */
+function recommendationPins(houses: RecommendedHouse[]): MapPin[] {
   return houses
     .filter((h) => h.lat != null && h.lng != null)
-    .map((h) => ({ housingId: h.houseId, title: h.housingName || h.title, address: h.address, lat: h.lat!, lng: h.lng! }));
+    .map((h) => ({
+      housingId: h.houseId,
+      title: h.housingName || h.title,
+      address: h.address,
+      lat: h.lat!,
+      lng: h.lng!,
+    }));
 }
 
 export default function MapPage() {
@@ -69,25 +66,30 @@ export default function MapPage() {
     setParams(merged, { replace: true });
   };
 
-  // 전체 공고: 공개 필터 API. 비회원도 쓸 수 있고 공고 예정 + 접수 중을 모두 돌려준다.
+  // 전체 공고: 지도 전용 API. 주택 단위라 핀이 중복되지 않고, 좌표 없는 주택은 서버가 빼 준다.
   const allQuery = useQuery({
-    queryKey: ['houses', filter, PIN_LIMIT],
-    queryFn: () => houseApi.list(filter, PIN_LIMIT),
+    queryKey: ['map-housings', filter],
+    queryFn: () => getMapHousings(filter),
     enabled: mode === 'all',
     placeholderData: keepPreviousData,
   });
 
-  // 맞춤 추천: 서버 추천 결과와 우선순위·완화 제안·피드백을 함께 다룬다.
-  const board = useRecommendationBoard(filter, canRecommend);
+  // 맞춤 추천: 저장된 내 조건과 추천 기준으로만 계산한다.
+  // ⚠️ 전체 공고 모드의 탐색 필터(URL 쿼리)를 넘기면 안 된다. 추천 모드에는 필터 UI 가 없어
+  //    사용자가 모르는 조건이 결과를 몰래 좁히게 된다. 그래서 빈 필터를 넘긴다.
+  const board = useRecommendationBoard(EMPTY_FILTER, canRecommend);
 
   const pref = useQuery({ queryKey: ['preference'], queryFn: profileApi.getPreference, retry: false, enabled: !!user });
 
-  const houses = mode === 'all' ? (allQuery.data?.houses ?? []) : board.ranked;
-  const pins = useMemo(() => toPins(houses), [houses]);
+  const mapHousings = allQuery.data?.housings ?? [];
+  const pins = useMemo(
+    () => (mode === 'all' ? toMapPins(mapHousings) : recommendationPins(board.ranked)),
+    [mode, mapHousings, board.ranked],
+  );
 
-  // 좌표가 없어 핀을 못 찍는 수와, 서버 조회 상한에 걸려 아예 못 받은 수는 원인이 달라 따로 센다.
-  const withoutCoords = houses.length - pins.length;
-  const truncated = mode === 'all' ? Math.max(0, (allQuery.data?.total ?? 0) - houses.length) : 0;
+  // 추천 결과에는 좌표 없는 주택이 섞인다. 목록 수와 핀 수가 달라지므로 그 차이를 알려 준다.
+  // 전체 공고 모드는 서버가 좌표 없는 주택을 조회 단계에서 빼므로 그 수를 알 수 없다 → 안내하지 않는다.
+  const unmappedRecommendations = mode === 'recommended' ? board.ranked.length - pins.length : 0;
 
   const detailQuery = useQuery({
     queryKey: ['map-housing', selectedId],
@@ -121,40 +123,49 @@ export default function MapPage() {
           {loading && '불러오는 중…'}
           {!loading && mode === 'all' && allQuery.data && (
             <>
-              조건에 맞는 집 <strong>{allQuery.data.total}곳</strong> · 지도 표시 {pins.length}곳
+              조건에 맞는 집 <strong>{allQuery.data.total}곳</strong>
             </>
           )}
           {!loading && mode === 'recommended' && board.query.data && (
             <>
-              추천 <strong>{board.ranked.length}곳</strong> · 지도 표시 {pins.length}곳
+              추천 <strong>{board.ranked.length}곳</strong>
+              {unmappedRecommendations > 0 && ` · 지도 표시 ${pins.length}곳`}
             </>
           )}
         </span>
 
         {mode === 'recommended' && canRecommend && (
-          <Link to="/tune" className="btn btn--ghost btn--small">
-            취향 찾기
-          </Link>
+          <span className="map-toolbar__links">
+            <Link to="/onboarding" className="btn btn--ghost btn--small">
+              내 조건 수정
+            </Link>
+            <Link to="/tune" className="btn btn--ghost btn--small">
+              취향 찾기
+            </Link>
+          </span>
         )}
 
-        <details className="map-filter">
-          <summary>필터</summary>
-          <div className="map-filter__body">
-            <FilterPanel
-              filter={filter}
-              onChange={setFilter}
-              resultCount={mode === 'all' ? (allQuery.data?.total ?? 0) : board.ranked.length}
-              regionOptions={pref.data?.regions ?? []}
-            />
-          </div>
-        </details>
+        {/* 기본 필터는 전체 공고 모드에만 둔다. 추천 모드는 저장된 내 조건과 우선순위로 조정한다 */}
+        {mode === 'all' && (
+          <details className="map-filter">
+            <summary>필터</summary>
+            <div className="map-filter__body">
+              <FilterPanel
+                filter={filter}
+                onChange={setFilter}
+                resultCount={allQuery.data?.total ?? 0}
+                regionOptions={pref.data?.regions ?? []}
+              />
+            </div>
+          </details>
+        )}
       </div>
 
       {failed && <p className="error">공급주택 데이터를 불러오지 못했습니다.</p>}
-      {(withoutCoords > 0 || truncated > 0) && (
+      {unmappedRecommendations > 0 && (
         <p className="muted small map-page__notice">
-          {withoutCoords > 0 && `주소 좌표를 아직 확인하지 못한 ${withoutCoords}곳은 지도에 표시되지 않아요. `}
-          {truncated > 0 && `조회 상한에 걸려 ${truncated}곳은 아직 불러오지 못했어요. 지역·조건을 좁히면 모두 볼 수 있어요.`}
+          추천 {unmappedRecommendations}곳은 아직 위치가 확인되지 않아 지도에 표시할 수 없어요. 오른쪽 목록에서 확인할 수
+          있습니다.
         </p>
       )}
 
@@ -173,6 +184,7 @@ export default function MapPage() {
                 <HousingDetail
                   detail={detailQuery.data}
                   showPageLink
+                  filter={mode === 'all' ? filter : undefined}
                   score={selectedScore ? <SelectedScore house={selectedScore} /> : undefined}
                 />
               )}
@@ -181,7 +193,8 @@ export default function MapPage() {
             <RecommendationSidebar
               signedIn={!!user}
               onboarding={onboarding}
-              filter={filter}
+              /* 조건 완화 제안도 추천과 같은 기준이어야 한다. 전체 공고 모드의 탐색 필터를 넘기지 않는다 */
+              filter={EMPTY_FILTER}
               board={board}
               onSelect={(id) => patch({ housing: String(id) })}
             />

@@ -1,21 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPinLayer, type PinLayer } from './clustering';
 import { loadKakaoMaps } from './kakaoMaps';
-import type { KakaoCustomOverlay, KakaoLatLng, KakaoMap, KakaoMapsApi } from './kakaoMaps';
+import type { KakaoMap, KakaoMapsApi } from './kakaoMaps';
 import type { MapPanelProps } from './types';
 
-interface PinOverlay {
-  overlay: KakaoCustomOverlay;
-  element: HTMLButtonElement;
-  position: KakaoLatLng;
-}
-
+/**
+ * 지도 본체. 지도 인스턴스는 한 번만 만들고 핀만 갈아 끼운다.
+ * 모드 전환이나 필터 변경으로 지도를 다시 만들지 않으며, 사용자가 보던 중심·확대 수준도 유지한다.
+ *
+ * 핀 군집화는 features/map/clustering 으로 분리해 두었다(향후 교체 대비).
+ */
 export default function MapPanel({ pins, selectedId, onSelect, onBoundsChange, className }: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
   const mapsRef = useRef<KakaoMapsApi | null>(null);
-  const overlaysRef = useRef<Map<number, PinOverlay>>(new Map());
+  const layerRef = useRef<PinLayer | null>(null);
   const onSelectRef = useRef(onSelect);
   const onBoundsChangeRef = useRef<MapPanelProps['onBoundsChange']>(undefined);
+  // 첫 핀 묶음에서만 전체가 보이도록 맞춘다. 이후 필터가 바뀌어도 사용자가 보던 영역을 지킨다.
+  const fittedRef = useRef(false);
   const [readyVersion, setReadyVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const appKey = import.meta.env.VITE_KAKAO_MAP_KEY?.trim();
@@ -37,6 +40,11 @@ export default function MapPanel({ pins, selectedId, onSelect, onBoundsChange, c
           center: new maps.LatLng(36.5, 127.8),
           level: 13,
         });
+        layerRef.current = createPinLayer({
+          maps,
+          map: mapRef.current,
+          onSelect: (housingId) => onSelectRef.current?.(housingId),
+        });
         setReadyVersion((version) => version + 1);
       })
       .catch((cause: unknown) => {
@@ -45,6 +53,8 @@ export default function MapPanel({ pins, selectedId, onSelect, onBoundsChange, c
 
     return () => {
       disposed = true;
+      layerRef.current?.destroy();
+      layerRef.current = null;
       mapRef.current = null;
       mapsRef.current = null;
     };
@@ -68,58 +78,36 @@ export default function MapPanel({ pins, selectedId, onSelect, onBoundsChange, c
     return () => maps.event.removeListener(map, 'idle', notifyBounds);
   }, [readyVersion]);
 
+  // 핀 교체. 지도 중심·확대 수준은 건드리지 않는다.
   useEffect(() => {
     const map = mapRef.current;
     const maps = mapsRef.current;
-    if (!map || !maps || readyVersion === 0) return;
+    const layer = layerRef.current;
+    if (!map || !maps || !layer || readyVersion === 0) return;
 
-    overlaysRef.current.forEach(({ overlay }) => overlay.setMap(null));
-    overlaysRef.current.clear();
+    layer.render(pins);
+    layer.highlight(selectedId ?? null);
 
-    const bounds = new maps.LatLngBounds();
-    for (const pin of pins) {
-      const position = new maps.LatLng(pin.lat, pin.lng);
-      const element = document.createElement('button');
-      element.type = 'button';
-      element.className = `map-marker${selectedId === pin.housingId ? ' map-marker--selected' : ''}`;
-      const label = document.createElement('span');
-      label.textContent = '집';
-      element.appendChild(label);
-      element.title = `${pin.title} · ${pin.address}`;
-      element.setAttribute('aria-label', `${pin.title} 선택`);
-      element.addEventListener('click', () => onSelectRef.current?.(pin.housingId));
-
-      const overlay = new maps.CustomOverlay({
-        position,
-        content: element,
-        clickable: true,
-        zIndex: selectedId === pin.housingId ? 10 : 1,
-      });
-      overlay.setMap(map);
-      overlaysRef.current.set(pin.housingId, { overlay, element, position });
-      bounds.extend(position);
+    // 처음 결과가 들어왔을 때만 전체가 보이게 맞춘다.
+    // 필터를 바꿀 때마다 맞추면 특정 지역을 보던 사용자가 매번 전국으로 튕긴다.
+    if (!fittedRef.current && pins.length > 0) {
+      fittedRef.current = true;
+      if (pins.length === 1) {
+        map.setCenter(new maps.LatLng(pins[0].lat, pins[0].lng));
+        map.setLevel(5);
+      } else {
+        const bounds = new maps.LatLngBounds();
+        pins.forEach((pin) => bounds.extend(new maps.LatLng(pin.lat, pin.lng)));
+        map.setBounds(bounds, 64, 64, 64, 64);
+      }
     }
-
-    if (pins.length === 1) {
-      map.setCenter(new maps.LatLng(pins[0].lat, pins[0].lng));
-      map.setLevel(5);
-    } else if (pins.length > 1) {
-      map.setBounds(bounds, 64, 64, 64, 64);
-    }
-
-    return () => {
-      overlaysRef.current.forEach(({ overlay }) => overlay.setMap(null));
-      overlaysRef.current.clear();
-    };
+    // selectedId 는 아래 effect 가 따로 본다. 여기서 보면 핀을 고를 때마다 전부 다시 그린다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pins, readyVersion]);
 
+  // 선택 강조만 갱신한다. 마커를 다시 만들지 않는다.
   useEffect(() => {
-    overlaysRef.current.forEach(({ overlay, element, position }, houseId) => {
-      const selected = houseId === selectedId;
-      element.classList.toggle('map-marker--selected', selected);
-      overlay.setZIndex(selected ? 10 : 1);
-      if (selected) mapRef.current?.panTo(position);
-    });
+    layerRef.current?.highlight(selectedId ?? null);
   }, [selectedId, readyVersion]);
 
   return (
@@ -134,9 +122,9 @@ export default function MapPanel({ pins, selectedId, onSelect, onBoundsChange, c
         </div>
       )}
       {!error && readyVersion > 0 && pins.length === 0 && (
-        <div className="map-message">좌표가 등록된 공급주택이 없습니다.</div>
+        <div className="map-message">조건에 맞는 공급주택이 없습니다.</div>
       )}
-      {!error && readyVersion > 0 && <span className="map-count">핀 {pins.length}개</span>}
+      {!error && readyVersion > 0 && <span className="map-count">주택 {pins.length}곳</span>}
     </div>
   );
 }
