@@ -30,13 +30,13 @@ public final class NoticeCollectionApplication {
             MyHomeSyncService syncService = context.getBean(MyHomeSyncService.class);
             NoticeSyncResponse result = syncService.synchronize();
             log.info(
-                    "공고 수집 완료: 원본 행={}, 신규 공고={}, 갱신 공고={}, 주택={}, 공급정보={}, 취소 공고={}, 비활성 주택={}, 비활성 공급정보={}",
+                    "공고 수집 완료: 원본 행={}, 신규 공고={}, 갱신 공고={}, 주택={}, 공급정보={}, 목록 소실 마감 공고={}, 비활성 주택={}, 비활성 공급정보={}",
                     result.collectedRows(),
                     result.createdNotices(),
                     result.updatedNotices(),
                     result.synchronizedHousings(),
                     result.synchronizedSupplies(),
-                    result.cancelledNotices(),
+                    result.missingClosedNotices(),
                     result.inactiveHousings(),
                     result.inactiveSupplies()
             );

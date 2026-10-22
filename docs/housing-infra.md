@@ -300,7 +300,7 @@ psql -U {사용자명} -d zipick -f zipick-backend/db/infra-init.sql
 ```
 
 기존 DB에 이 파일만 한 번 실행하면 된다. 인프라 테이블 2개만 DROP/CREATE 하므로 공고·사용자 데이터에는 영향이 없다.
-DB를 새로 만들 때는 `local-init.sql` → `notice-init.sql` → **`infra-init.sql`** 순서다
+DB를 새로 만들 때는 `notice-init.sql` → `local-init.sql` → **`infra-init.sql`** 순서다
 (`housing`을 참조하므로 반드시 마지막).
 
 카카오 REST 키가 없으면 수집이 자동으로 꺼지고 로그만 남는다. 앱은 정상 동작하며 화면에는 `PENDING`이 표시된다.

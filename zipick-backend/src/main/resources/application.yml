@@ -77,6 +77,16 @@ zipick:
       lookback-days: 365
       # SH 서버 부하 방지를 위한 요청 간격(ms)
       request-delay-millis: 100
+    gh:
+      # GH 임대주택·매입임대 모집공고 수집
+      enabled: true
+      max-pages: 5
+      request-delay-millis: 100
+    hug:
+      # HUG 든든전세주택 모집공고·공급주택 수집
+      enabled: true
+      max-pages: 20
+      request-delay-millis: 100
   recommendation:
     # 추천 목록 기준 (가정 — 근거 표 참고)
     min-score: 60

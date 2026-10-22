@@ -22,6 +22,10 @@
 -- 1. DROP : 자식 테이블부터 삭제해 FK 제약 충돌을 피한다.
 -- -----------------------------------------------------------------------------
 
+-- 알림센터 분리 이전 로컬 DB에 남아 있을 수 있는 레거시 테이블도 먼저 제거한다.
+-- notification_settings가 users를 참조하므로 users보다 반드시 앞에 와야 한다.
+DROP TABLE IF EXISTS notification_events;
+DROP TABLE IF EXISTS notification_settings;
 DROP TABLE IF EXISTS notification_cursors;
 DROP TABLE IF EXISTS interest_notices;
 DROP TABLE IF EXISTS refresh_token;
@@ -181,7 +185,7 @@ alter table refresh_token
 --    interest_notices    : 사용자가 ☆로 저장한 공고. 일정(캘린더)은 notice 의 날짜를 그대로 읽는다
 --    notification_cursors : 스케줄러가 어디까지 봤는지 (NEW_MATCH = 마지막으로 확인한 공고 수집 시각)
 --    알림 설정·아웃박스는 알림센터(zipick-notification, DB zipick_notification)로 옮겨 갔다 (2026-10-20).
---    기존 DB 는 DROP TABLE notification_settings, notification_events; 만 실행하면 된다.
+--    기존 DB에 남은 notification_settings·notification_events는 위 DROP 단계에서 함께 정리한다.
 -- -----------------------------------------------------------------------------
 
 create table interest_notices (

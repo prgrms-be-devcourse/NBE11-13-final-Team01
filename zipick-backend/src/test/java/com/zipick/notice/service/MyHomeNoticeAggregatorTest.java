@@ -21,9 +21,20 @@ class MyHomeNoticeAggregatorTest {
         ));
 
         assertThat(result).hasSize(2);
-        assertThat(result.getFirst().source()).isEqualTo("MYHOME");
+        assertThat(result.getFirst().source()).isEqualTo("LH");
         assertThat(result.getFirst().noticeId()).isEqualTo("20901");
         assertThat(result.getFirst().houses()).hasSize(2);
+    }
+
+    @Test
+    void classifiesMyHomeRowsBySupplyingInstitution() {
+        MyHomeNotice lh = notice("20901", 1L, "111", "서울시 주소", "단지 A");
+        MyHomeNotice bmc = withInstitution(notice("20902", 2L, "222", "부산시 주소", "단지 B"), "부산도시공사");
+        MyHomeNotice unknown = withInstitution(notice("20903", 3L, "333", "기타 주소", "단지 C"), "기타기관");
+
+        assertThat(aggregator.aggregate(List.of(lh, bmc, unknown)))
+                .extracting(NoticeResponse::source)
+                .containsExactly("LH", "BMC", "MYHOME");
     }
 
     @Test
@@ -120,6 +131,18 @@ class MyHomeNoticeAggregatorTest {
                 150_000L,
                 "2026-10-10",
                 "2026-10-15"
+        );
+    }
+
+    private MyHomeNotice withInstitution(MyHomeNotice notice, String institution) {
+        return new MyHomeNotice(
+                notice.suplyHoCo(), notice.pblancId(), notice.houseSn(), notice.sttusNm(), notice.pblancNm(),
+                institution, notice.houseTyNm(), notice.suplyTyNm(), notice.beforePblancId(),
+                notice.rcritPblancDe(), notice.przwnerPresnatnDe(), notice.refrnc(), notice.url(),
+                notice.pcUrl(), notice.mobileUrl(), notice.hsmpNm(), notice.brtcNm(), notice.signguNm(),
+                notice.fullAdres(), notice.rnCodeNm(), notice.refrnLegaldongNm(), notice.pnu(),
+                notice.heatMthdNm(), notice.totHshldCo(), notice.sumSuplyCo(), notice.rentGtn(),
+                notice.enty(), notice.prtpay(), notice.surlus(), notice.mtRntchrg(), notice.beginDe(), notice.endDe()
         );
     }
 }
