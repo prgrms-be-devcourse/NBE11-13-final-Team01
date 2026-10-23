@@ -365,3 +365,19 @@ export interface NotificationEvent {
   duplicate: boolean;
 }
 
+/** 운영자 소식 메일 캠페인 */
+export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'CANCELLED';
+export interface CampaignProgress { total: number; pending: number; sent: number; partial: number; failed: number; cancelled: number }
+export interface Campaign {
+  id: number;
+  title: string;
+  headline: string;
+  message: string;
+  scheduledAt: string;
+  status: CampaignStatus;
+  recipientCount: number;
+  /** 알림센터 집계. 목록에서는 없고, 알림센터에 닿지 않아도 없다 */
+  progress?: CampaignProgress | null;
+  createdAt: string;
+}
+export interface CampaignRequest { title: string; headline: string; message: string; scheduledAt?: string | null }
