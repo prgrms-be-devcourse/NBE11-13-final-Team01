@@ -2,56 +2,24 @@ package scheduler
 
 import (
 	"context"
-	"errors"
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
-type step struct {
-	calls atomic.Int32
-	n     int
-	err   error
-}
+type fakeDispatcher struct{ dispatched, masked int }
 
-func (s *step) QueueDue(context.Context) (int, error)        { s.calls.Add(1); return s.n, s.err }
-func (s *step) DispatchPending(context.Context) (int, error) { s.calls.Add(1); return s.n, s.err }
+func (f *fakeDispatcher) DispatchPending(context.Context) (int, error)    { f.dispatched++; return 1, nil }
+func (f *fakeDispatcher) MaskOldAddresses(context.Context) (int64, error) { f.masked++; return 0, nil }
 
-func TestRunOnce_캠페인과_발송을_한_번씩(t *testing.T) {
-	c, m := &step{n: 2}, &step{n: 1}
-	runOnce(context.Background(), c, m)
-	if c.calls.Load() != 1 || m.calls.Load() != 1 {
-		t.Fatalf("calls %d %d", c.calls.Load(), m.calls.Load())
+func TestRun_DispatchesEveryTickAndMasksOnce(t *testing.T) {
+	d := &fakeDispatcher{}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+	defer cancel()
+	Run(ctx, 20*time.Millisecond, 0, d)
+	if d.dispatched < 3 {
+		t.Fatalf("주기마다 발송해야 함: %d", d.dispatched)
 	}
-}
-
-func TestRunOnce_한쪽이_실패해도_다른_쪽은_돈다(t *testing.T) {
-	c, m := &step{err: errors.New("x")}, &step{}
-	runOnce(context.Background(), c, m)
-	if m.calls.Load() != 1 {
-		t.Fatal("캠페인 실패 뒤 발송이 안 돎")
-	}
-}
-
-func TestRun_주기마다_돌고_취소되면_멈춘다(t *testing.T) {
-	c, m := &step{}, &step{}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { Run(ctx, 10*time.Millisecond, 0, c, m); close(done) }()
-	time.Sleep(55 * time.Millisecond)
-	cancel()
-	<-done
-	if c.calls.Load() < 2 {
-		t.Fatalf("주기 실행 횟수 %d", c.calls.Load())
-	}
-}
-
-func TestRun_첫_대기_중에_취소되면_한_번도_돌지_않는다(t *testing.T) {
-	c, m := &step{}, &step{}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	Run(ctx, time.Second, time.Hour, c, m)
-	if c.calls.Load() != 0 {
-		t.Fatal("취소됐는데 실행됨")
+	if d.masked != 1 {
+		t.Fatalf("주소 가리기는 하루 한 번(시작 때 1회): %d", d.masked)
 	}
 }

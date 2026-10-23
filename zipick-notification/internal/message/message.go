@@ -1,105 +1,143 @@
-// Package message 는 아웃박스다.
-// 요청이 오면 템플릿을 채워 notification_messages 에 적고(PENDING), 스케줄러가 scheduled_for 가 지난 것을 보낸다.
-// dedupe_key 가 unique 라 같은 알림이 두 번 적히지 않는다. 실패는 max-attempts 까지 재시도.
-// 수신자 주소는 보낼 때 구독에서 읽는다 — 그 사이 주소를 바꿨으면 새 주소로 간다.
+// Package message 는 아웃박스다. 요청을 받아 문구를 채워 적고(PENDING), 때가 되면 채널별로 보낸다.
+//
+// 알림센터가 판단하는 것은 없다. 누구에게·언제·보내도 되는지는 요청이 다 정해서 온다.
+// 여기서 하는 일은: 요청 검사 → 템플릿 채우기 → 적기 → 채널별로 보내기 → 결과 기록. 그뿐이다.
+//
+// 테이블 두 개:
+//   - notification_messages   요청 하나 (문구가 채워진 상태로 저장)
+//   - notification_deliveries 메시지 × 채널. 채널마다 따로 재시도하고, 성공한 채널로는 다시 보내지 않는다
 package message
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zipick/notification/internal/db"
-	"github.com/zipick/notification/internal/template"
 )
 
-// Status 는 아웃박스 상태.
+// Status 는 메시지 상태. 채널별 결과를 모아 정한다.
+//
+//	PENDING   아직 안 보낸 채널이 있음
+//	SENT      모든 채널 성공
+//	PARTIAL   일부 채널만 성공, 나머지는 실패(재시도 끝)
+//	FAILED    모든 채널 실패
+//	CANCELLED 보내기 전에 취소됨 (묶음 취소)
 type Status string
 
 const (
 	Pending   Status = "PENDING"
 	Sent      Status = "SENT"
+	Partial   Status = "PARTIAL"
 	Failed    Status = "FAILED"
-	Skipped   Status = "SKIPPED"
 	Cancelled Status = "CANCELLED"
+)
+
+// DeliveryStatus 는 채널 하나의 상태.
+type DeliveryStatus string
+
+const (
+	DPending DeliveryStatus = "PENDING"
+	DSent    DeliveryStatus = "SENT"
+	DFailed  DeliveryStatus = "FAILED"
 )
 
 // Message 는 notification_messages 한 행.
 type Message struct {
 	ID                int64
-	UserID            *int64 // 가입 인증처럼 아직 계정이 없으면 nil
+	Source            string
 	TemplateCode      string
-	Category          template.Category
-	CampaignID        *int64
+	BatchID           *int64
 	DedupeKey         *string
-	Variables         *string // 요청이 보낸 변수(JSON). 운영자가 "왜 이렇게 나갔나" 볼 때
-	ToEmail           *string // 요청이 직접 지정한 수신 주소 (없으면 구독에서 읽음)
+	Channels          []string // 요청한 채널
+	ToEmail           *string
 	ToSlackWebhookURL *string
-	Title             string
-	Body              string
-	URL               *string
+	Variables         string // 요청이 보낸 변수 (JSON). "왜 이렇게 나갔나" 볼 때
+	MissingVariables  []string
+	EmailSubject      *string // 채워진 문구 (채널 문구가 없으면 nil)
+	EmailBody         *string
+	SlackText         *string
+	Tags              map[string]string
 	ScheduledFor      time.Time
 	Status            Status
-	Attempts          int
-	LastError         *string
-	SentAt            *time.Time
-	Channels          *string // 실제로 나간 채널 (예: "slack,email")
+	CreatedAt         time.Time
 }
 
-// Response 는 메인 서버의 NotificationEventResponse 와 같은 모양.
-type Response struct {
-	ID           int64             `json:"id"`
-	UserID       *int64            `json:"userId"`
-	TemplateCode string            `json:"templateCode"`
-	Category     template.Category `json:"category"`
-	CampaignID   *int64            `json:"campaignId"`
-	Title        string            `json:"title"`
-	Body         string            `json:"body"`
-	URL          *string           `json:"url"`
-	Status       Status            `json:"status"`
-	Attempts     int               `json:"attempts"`
-	LastError    *string           `json:"lastError"`
-	Channels     *string           `json:"channels"`
-	ScheduledFor db.LocalDateTime  `json:"scheduledFor"`
-	SentAt       *db.LocalDateTime `json:"sentAt"`
-	Duplicate    bool              `json:"duplicate"` // dedupeKey 가 같아 기존 건을 돌려준 경우 true
+// Delivery 는 notification_deliveries 한 행.
+type Delivery struct {
+	ID        int64
+	MessageID int64
+	Channel   string
+	Status    DeliveryStatus
+	Attempts  int
+	LastError *string
+	SentAt    *time.Time
 }
 
-func ToResponse(m Message, duplicate bool) Response {
-	return Response{ID: m.ID, UserID: m.UserID, TemplateCode: m.TemplateCode, Category: m.Category, CampaignID: m.CampaignID,
-		Title: m.Title, Body: m.Body, URL: m.URL, Status: m.Status, Attempts: m.Attempts, LastError: m.LastError,
-		Channels: m.Channels, ScheduledFor: db.LocalDateTime{Time: db.FromDB(m.ScheduledFor)}, SentAt: db.FromDBPtr(m.SentAt), Duplicate: duplicate}
-}
-
-// Repo 는 아웃박스 조회·저장. 트랜잭션이 필요한 발송 처리는 service.go 의 dispatchOne 에 있다.
+// Repo 는 SQL 모음. 트랜잭션이 필요한 발송은 service.go 가 tx 를 넘겨 부른다.
 type Repo struct{ pool *pgxpool.Pool }
 
 func NewRepo(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
-
-// Pool 은 캠페인 등 다른 패키지가 같은 연결 풀로 트랜잭션을 열 때 쓴다.
-func (r *Repo) Pool() *pgxpool.Pool { return r.pool }
-
-const cols = `id, user_id, template_code, category, campaign_id, dedupe_key, variables, to_email, to_slack_webhook_url,
-	title, body, url, scheduled_for, status, attempts, last_error, sent_at, channels`
+func (r *Repo) Pool() *pgxpool.Pool    { return r.pool }
 
 // querier 는 풀과 트랜잭션 양쪽에서 쓸 수 있게 하는 작은 인터페이스 (pgx.Tx 와 pgxpool.Pool 둘 다 만족).
 type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	Exec(ctx context.Context, sql string, args ...any) (pgconnCommandTag, error)
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
-func scan(row pgx.Row) (Message, error) {
+const msgCols = `id, source, template_code, batch_id, dedupe_key, channels, to_email, to_slack_webhook_url, variables,
+	missing_variables, email_subject, email_body, slack_text, tags, scheduled_for, status, created_at`
+
+func scanMessage(row pgx.Row) (Message, error) {
 	var m Message
-	err := row.Scan(&m.ID, &m.UserID, &m.TemplateCode, &m.Category, &m.CampaignID, &m.DedupeKey, &m.Variables, &m.ToEmail,
-		&m.ToSlackWebhookURL, &m.Title, &m.Body, &m.URL, &m.ScheduledFor, &m.Status, &m.Attempts, &m.LastError, &m.SentAt, &m.Channels)
-	return m, err
+	var channels, missing string
+	var tags []byte
+	err := row.Scan(&m.ID, &m.Source, &m.TemplateCode, &m.BatchID, &m.DedupeKey, &channels, &m.ToEmail, &m.ToSlackWebhookURL,
+		&m.Variables, &missing, &m.EmailSubject, &m.EmailBody, &m.SlackText, &tags, &m.ScheduledFor, &m.Status, &m.CreatedAt)
+	if err != nil {
+		return m, err
+	}
+	m.Channels = splitCSV(channels)
+	m.MissingVariables = splitCSV(missing)
+	m.Tags = map[string]string{}
+	if len(tags) > 0 {
+		_ = json.Unmarshal(tags, &m.Tags)
+	}
+	return m, nil
+}
+
+func (r *Repo) Insert(ctx context.Context, q querier, m Message) (Message, error) {
+	tags, _ := json.Marshal(m.Tags)
+	if m.Tags == nil {
+		tags = []byte("{}")
+	}
+	err := q.QueryRow(ctx, `
+		insert into notification_messages (source, template_code, batch_id, dedupe_key, channels, to_email, to_slack_webhook_url, variables,
+		  missing_variables, email_subject, email_body, slack_text, tags, scheduled_for, status, created_at, updated_at)
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,'PENDING',$15,$15) returning id, created_at`,
+		m.Source, m.TemplateCode, m.BatchID, m.DedupeKey, strings.Join(m.Channels, ","), m.ToEmail, m.ToSlackWebhookURL, m.Variables,
+		strings.Join(m.MissingVariables, ","), m.EmailSubject, m.EmailBody, m.SlackText, string(tags), m.ScheduledFor, db.Now()).Scan(&m.ID, &m.CreatedAt)
+	if err != nil {
+		return m, err
+	}
+	m.Status = Pending
+	for _, ch := range m.Channels {
+		if _, err := q.Exec(ctx, `insert into notification_deliveries (message_id, channel, status, attempts, updated_at) values ($1,$2,'PENDING',0,$3)`, m.ID, ch, db.Now()); err != nil {
+			return m, err
+		}
+	}
+	return m, nil
 }
 
 func (r *Repo) FindByDedupeKey(ctx context.Context, q querier, key string) (*Message, error) {
-	m, err := scan(q.QueryRow(ctx, `select `+cols+` from notification_messages where dedupe_key = $1`, key))
+	m, err := scanMessage(q.QueryRow(ctx, `select `+msgCols+` from notification_messages where dedupe_key = $1`, key))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -109,25 +147,20 @@ func (r *Repo) FindByDedupeKey(ctx context.Context, q querier, key string) (*Mes
 	return &m, nil
 }
 
-// Insert 는 새 행을 넣고 id 를 채워 돌려준다. (returning 으로 만들어진 id 를 바로 받는다)
-func (r *Repo) Insert(ctx context.Context, q querier, m Message) (Message, error) {
-	err := q.QueryRow(ctx, `
-		insert into notification_messages (user_id, template_code, category, campaign_id, dedupe_key, variables, to_email, to_slack_webhook_url,
-		  title, body, url, scheduled_for, status, attempts, created_at, updated_at)
-		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'PENDING',0,$13,$13) returning id`,
-		m.UserID, m.TemplateCode, m.Category, m.CampaignID, m.DedupeKey, m.Variables, m.ToEmail, m.ToSlackWebhookURL,
-		m.Title, m.Body, m.URL, m.ScheduledFor, db.Now()).Scan(&m.ID)
-	m.Status, m.Attempts = Pending, 0
-	return m, err
+func (r *Repo) FindByID(ctx context.Context, q querier, id int64) (*Message, error) {
+	m, err := scanMessage(q.QueryRow(ctx, `select `+msgCols+` from notification_messages where id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
-func (r *Repo) FindByID(ctx context.Context, q querier, id int64) (Message, error) {
-	return scan(q.QueryRow(ctx, `select `+cols+` from notification_messages where id = $1`, id))
-}
-
-// LockPending 은 트랜잭션 안에서 행을 잠근다. SKIP LOCKED 덕분에 서버가 여러 대여도 같은 행을 둘이 보내지 않는다.
+// LockPending 은 트랜잭션 안에서 메시지를 잠근다. SKIP LOCKED 덕분에 서버가 여러 대여도 같은 메시지를 둘이 보내지 않는다.
 func (r *Repo) LockPending(ctx context.Context, tx pgx.Tx, id int64) (*Message, error) {
-	m, err := scan(tx.QueryRow(ctx, `select `+cols+` from notification_messages where id = $1 and status = 'PENDING' for update skip locked`, id))
+	m, err := scanMessage(tx.QueryRow(ctx, `select `+msgCols+` from notification_messages where id = $1 and status = 'PENDING' for update skip locked`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -137,7 +170,7 @@ func (r *Repo) LockPending(ctx context.Context, tx pgx.Tx, id int64) (*Message, 
 	return &m, nil
 }
 
-// DuePendingIDs 는 때가 된 PENDING 메시지 id 를 오래된 순으로 최대 limit 개.
+// DuePendingIDs 는 때가 된 PENDING 메시지 id (오래된 순, 최대 limit).
 func (r *Repo) DuePendingIDs(ctx context.Context, now time.Time, limit int) ([]int64, error) {
 	rows, err := r.pool.Query(ctx, `select id from notification_messages where status = 'PENDING' and scheduled_for <= $1 order by id limit $2`, now, limit)
 	if err != nil {
@@ -155,15 +188,21 @@ func (r *Repo) DuePendingIDs(ctx context.Context, now time.Time, limit int) ([]i
 	return ids, rows.Err()
 }
 
-func (r *Repo) History(ctx context.Context, userID int64) ([]Message, error) {
-	rows, err := r.pool.Query(ctx, `select `+cols+` from notification_messages where user_id = $1 order by id desc limit 50`, userID)
+// Search 는 꼬리표(tags)와 source 로 최근 limit 건. tags 는 JSON 포함 검색 (jsonb @>).
+func (r *Repo) Search(ctx context.Context, tags map[string]string, source string, limit int) ([]Message, error) {
+	tagJSON, _ := json.Marshal(tags)
+	if tags == nil {
+		tagJSON = []byte("{}")
+	}
+	rows, err := r.pool.Query(ctx, `select `+msgCols+` from notification_messages
+		where tags @> $1::jsonb and ($2 = '' or source = $2) order by id desc limit $3`, string(tagJSON), source, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []Message{}
 	for rows.Next() {
-		m, err := scan(rows)
+		m, err := scanMessage(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -172,34 +211,48 @@ func (r *Repo) History(ctx context.Context, userID int64) ([]Message, error) {
 	return out, rows.Err()
 }
 
-// 상태 변경 셋. 호출한 쪽의 트랜잭션(q) 안에서 실행된다.
+func (r *Repo) Deliveries(ctx context.Context, q querier, messageID int64) ([]Delivery, error) {
+	rows, err := q.Query(ctx, `select id, message_id, channel, status, attempts, last_error, sent_at from notification_deliveries where message_id = $1 order by id`, messageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Delivery{}
+	for rows.Next() {
+		var d Delivery
+		if err := rows.Scan(&d.ID, &d.MessageID, &d.Channel, &d.Status, &d.Attempts, &d.LastError, &d.SentAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
 
-func (r *Repo) MarkSent(ctx context.Context, q querier, id int64, channels string, at time.Time) error {
-	_, err := q.Exec(ctx, `update notification_messages set status='SENT', attempts=attempts+1, channels=$2, sent_at=$3, last_error=null, updated_at=$3 where id=$1`, id, channels, at)
+func (r *Repo) MarkDeliverySent(ctx context.Context, q querier, id int64, at time.Time) error {
+	_, err := q.Exec(ctx, `update notification_deliveries set status='SENT', attempts=attempts+1, last_error=null, sent_at=$2, updated_at=$2 where id=$1`, id, at)
 	return err
 }
 
-// MarkFailed 는 attempts 를 올리고, 상한에 닿았을 때만 FAILED 로 바꾼다 (그 전까지는 PENDING 으로 남아 재시도).
-func (r *Repo) MarkFailed(ctx context.Context, q querier, id int64, reason string, maxAttempts int) error {
-	_, err := q.Exec(ctx, `update notification_messages set attempts=attempts+1, last_error=$2,
+// MarkDeliveryFailed 는 attempts 를 올리고, 상한에 닿았을 때만 FAILED 로 (그 전엔 PENDING 으로 남아 재시도).
+func (r *Repo) MarkDeliveryFailed(ctx context.Context, q querier, id int64, reason string, maxAttempts int) error {
+	_, err := q.Exec(ctx, `update notification_deliveries set attempts=attempts+1, last_error=$2,
 		status = case when attempts+1 >= $3 then 'FAILED' else status end, updated_at=$4 where id=$1`, id, cut(reason, 500), maxAttempts, db.Now())
 	return err
 }
 
-func (r *Repo) MarkSkipped(ctx context.Context, q querier, id int64, why string) error {
-	_, err := q.Exec(ctx, `update notification_messages set status='SKIPPED', last_error=$2, updated_at=$3 where id=$1`, id, cut(why, 500), db.Now())
+func (r *Repo) SetStatus(ctx context.Context, q querier, id int64, s Status) error {
+	_, err := q.Exec(ctx, `update notification_messages set status=$2, updated_at=$3 where id=$1`, id, s, db.Now())
 	return err
 }
 
-// CancelPendingOfCampaign 은 캠페인 취소 때 아직 안 나간 메시지만 취소한다.
-func (r *Repo) CancelPendingOfCampaign(ctx context.Context, campaignID int64) (int64, error) {
-	tag, err := r.pool.Exec(ctx, `update notification_messages set status='CANCELLED', updated_at=$2 where campaign_id=$1 and status='PENDING'`, campaignID, db.Now())
+// CancelPendingOfBatch 는 묶음 취소: 아직 안 나간 메시지만 취소한다.
+func (r *Repo) CancelPendingOfBatch(ctx context.Context, batchID int64) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `update notification_messages set status='CANCELLED', updated_at=$2 where batch_id=$1 and status='PENDING'`, batchID, db.Now())
 	return tag.RowsAffected(), err
 }
 
-// CountByCampaign 은 캠페인 결과 집계 (상태별 건수).
-func (r *Repo) CountByCampaign(ctx context.Context, campaignID int64) (map[Status]int64, error) {
-	rows, err := r.pool.Query(ctx, `select status, count(*) from notification_messages where campaign_id = $1 group by status`, campaignID)
+func (r *Repo) CountByBatch(ctx context.Context, batchID int64) (map[Status]int64, error) {
+	rows, err := r.pool.Query(ctx, `select status, count(*) from notification_messages where batch_id = $1 group by status`, batchID)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +267,25 @@ func (r *Repo) CountByCampaign(ctx context.Context, campaignID int64) (map[Statu
 		out[s] = n
 	}
 	return out, rows.Err()
+}
+
+// MaskAddressesOlderThan 은 오래된 기록의 수신 주소를 가린다 (개인정보 보관 규칙). 반환: 가린 행 수.
+//   - 이메일: 첫 글자 + *** + @도메인   (ab@x.com → a***@x.com)
+//   - 슬랙 웹훅: 끝 6자만 남김
+func (r *Repo) MaskAddressesOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `update notification_messages set
+		to_email = case when to_email is null then null else left(to_email, 1) || '***' || substring(to_email from position('@' in to_email)) end,
+		to_slack_webhook_url = case when to_slack_webhook_url is null then null else '…' || right(to_slack_webhook_url, 6) end,
+		address_masked = true, updated_at = $2
+		where created_at < $1 and address_masked = false`, before, db.Now())
+	return tag.RowsAffected(), err
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return []string{}
+	}
+	return strings.Split(s, ",")
 }
 
 func cut(s string, n int) string {

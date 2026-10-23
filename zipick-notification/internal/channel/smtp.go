@@ -16,10 +16,10 @@ type SMTPEmail struct{ cfg config.EmailConfig }
 
 func NewSMTPEmail(cfg config.EmailConfig) *SMTPEmail { return &SMTPEmail{cfg: cfg} }
 
-func (e *SMTPEmail) Name() string              { return "email" }
-func (e *SMTPEmail) Supports(r Recipient) bool { return r.Email != nil }
+func (e *SMTPEmail) Name() string                { return "email" }
+func (e *SMTPEmail) HasAddress(r Recipient) bool { return r.Email != nil }
 
-func (e *SMTPEmail) Send(_ context.Context, r Recipient, m Message) error {
+func (e *SMTPEmail) Send(_ context.Context, r Recipient, c Content) error {
 	from := e.cfg.From
 	if from == "" {
 		from = e.cfg.SMTPUser
@@ -28,7 +28,7 @@ func (e *SMTPEmail) Send(_ context.Context, r Recipient, m Message) error {
 	if e.cfg.SMTPUser != "" {
 		auth = smtp.PlainAuth("", e.cfg.SMTPUser, e.cfg.SMTPPass, e.cfg.SMTPHost)
 	}
-	msg := buildMail(from, e.cfg.FromName, *r.Email, m.Title, m.Text())
+	msg := buildMail(from, e.cfg.FromName, *r.Email, c.Subject, c.Body)
 	return smtp.SendMail(e.cfg.SMTPHost+":"+e.cfg.SMTPPort, auth, from, []string{*r.Email}, msg)
 }
 

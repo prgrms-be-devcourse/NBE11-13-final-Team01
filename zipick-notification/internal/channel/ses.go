@@ -29,10 +29,10 @@ func NewSESEmail(ctx context.Context, cfg config.EmailConfig) (*SESEmail, error)
 	return &SESEmail{cfg: cfg, client: sesv2.NewFromConfig(aws)}, nil
 }
 
-func (e *SESEmail) Name() string              { return "email" }
-func (e *SESEmail) Supports(r Recipient) bool { return r.Email != nil }
+func (e *SESEmail) Name() string                { return "email" }
+func (e *SESEmail) HasAddress(r Recipient) bool { return r.Email != nil }
 
-func (e *SESEmail) Send(ctx context.Context, r Recipient, m Message) error {
+func (e *SESEmail) Send(ctx context.Context, r Recipient, c Content) error {
 	from := e.cfg.From
 	if e.cfg.FromName != "" {
 		from = e.cfg.FromName + " <" + e.cfg.From + ">"
@@ -42,8 +42,8 @@ func (e *SESEmail) Send(ctx context.Context, r Recipient, m Message) error {
 		FromEmailAddress: &from,
 		Destination:      &types.Destination{ToAddresses: []string{*r.Email}},
 		Content: &types.EmailContent{Simple: &types.Message{
-			Subject: utf8(m.Title),
-			Body:    &types.Body{Text: utf8(m.Text())},
+			Subject: utf8(c.Subject),
+			Body:    &types.Body{Text: utf8(c.Body)},
 		}},
 	})
 	return err
@@ -65,14 +65,4 @@ func Build(ctx context.Context, cfg config.EmailConfig) ([]Channel, error) {
 		channels = append(channels, ses)
 	}
 	return channels, nil
-}
-
-// HasEmail 은 이메일 채널이 켜져 있는지 (설정 화면의 emailAvailable).
-func HasEmail(channels []Channel) bool {
-	for _, c := range channels {
-		if c.Name() == "email" {
-			return true
-		}
-	}
-	return false
 }

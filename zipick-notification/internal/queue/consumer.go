@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	QueueName = "notification.requests"
-	DLQName   = "notification.requests.dlq"
+	QueueName = "notification.requests.v1"
+	DLQName   = "notification.requests.v1.dlq"
 	// MaxPriority 0~9. 메인 서버가 거래성(인증 메일) 9, 정보성 5 로 보낸다. 큰 값이 먼저 처리된다
 	MaxPriority = 9
 	prefetch    = 10
@@ -123,7 +123,7 @@ func handle(ctx context.Context, svc Enqueuer, d amqp.Delivery) {
 	}
 	res, err := svc.Enqueue(ctx, req)
 	if err == nil {
-		slog.Info("큐 요청 적음", "template", req.TemplateCode, "message", res.ID, "duplicate", res.Duplicate, "redelivered", d.Redelivered)
+		slog.Info("큐 요청 적음", "source", req.Source, "template", req.TemplateCode, "message", res.ID, "duplicate", res.Duplicate, "redelivered", d.Redelivered)
 		_ = d.Ack(false)
 		return
 	}

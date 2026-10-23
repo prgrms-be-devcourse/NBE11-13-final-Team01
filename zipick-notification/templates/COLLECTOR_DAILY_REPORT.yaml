@@ -1,0 +1,12 @@
+# 공고 수집 일일 현황. 요청: collector (공고 수집 배치가 끝날 때). 받는 곳은 운영 슬랙·운영자 메일 (수집기 설정)
+code: COLLECTOR_DAILY_REPORT
+owner: 김주형 (공고 수집)
+variables: [date, collectedRows, createdNotices, updatedNotices, missingClosedNotices, synchronizedHousings, elapsedSeconds]
+email:
+  subject: "[ZIPICK 운영] {{date}} 공고 수집 결과: 신규 {{createdNotices}}건"
+  body: |-
+    {{date}} 공고 수집이 끝났습니다. ({{elapsedSeconds}}초)
+
+    원본 행 {{collectedRows}} · 신규 공고 {{createdNotices}} · 갱신 {{updatedNotices}} · 마감 처리 {{missingClosedNotices}} · 주택 {{synchronizedHousings}}
+slack:
+  text: "*{{date}} 공고 수집 결과* ({{elapsedSeconds}}초)\n원본 {{collectedRows}} · 신규 {{createdNotices}} · 갱신 {{updatedNotices}} · 마감 처리 {{missingClosedNotices}} · 주택 {{synchronizedHousings}}"

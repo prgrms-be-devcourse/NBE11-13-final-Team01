@@ -2,187 +2,148 @@ package message
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zipick/notification/internal/channel"
 	"github.com/zipick/notification/internal/config"
 	"github.com/zipick/notification/internal/db"
-	"github.com/zipick/notification/internal/httpx"
-	"github.com/zipick/notification/internal/subscription"
-	"github.com/zipick/notification/internal/template"
 	"github.com/zipick/notification/internal/testdb"
 )
 
-// fakeChannel 은 실제로 보내지 않고 기록만 한다. fail 이 있으면 그 오류로 실패한다.
-type fakeChannel struct {
-	name string
-	sent []channel.Message
-	fail error
-}
-
-func (f *fakeChannel) Name() string { return f.name }
-func (f *fakeChannel) Supports(r channel.Recipient) bool {
-	if f.name == "email" {
-		return r.Email != nil
-	}
-	return r.SlackWebhookURL != nil
-}
-func (f *fakeChannel) Send(_ context.Context, _ channel.Recipient, m channel.Message) error {
-	if f.fail != nil {
-		return f.fail
-	}
-	f.sent = append(f.sent, m)
-	return nil
-}
-
-type env struct {
-	ctx   context.Context
-	pool  *pgxpool.Pool
-	svc   *Service
-	subs  *subscription.Repo
-	slack *fakeChannel
-	email *fakeChannel
-}
-
-func setup(t *testing.T) env {
-	t.Helper()
+// 실제 Postgres 로 아웃박스 흐름을 확인한다 (NOTIFICATION_TEST_DB_URL 이 있을 때만).
+func dbService(t *testing.T, chs ...channel.Channel) *Service {
 	pool := testdb.Pool(t)
+	return NewService(NewRepo(pool), testTemplates(), chs, config.Config{MaxAttempts: 2, RetentionDays: 90})
+}
+
+func TestEnqueueDedupeAndDispatch(t *testing.T) {
+	email, slack := &fakeChannel{name: "email"}, &fakeChannel{name: "slack", fail: true}
+	svc := dbService(t, email, slack)
 	ctx := context.Background()
-	templates := template.NewRepo(pool)
-	if err := template.Seed(ctx, templates); err != nil {
-		t.Fatal(err)
-	}
-	subs := subscription.NewRepo(pool)
-	slack, email := &fakeChannel{name: "slack"}, &fakeChannel{name: "email"}
-	svc, err := NewService(NewRepo(pool), subs, templates, []channel.Channel{slack, email},
-		config.Config{AppURL: "https://zipick.kr", QuietStart: "21:00", QuietEnd: "08:00", MaxAttempts: 3})
+	req := Request{Source: "main", TemplateCode: "MAIN_TEST", Channels: []string{"email", "slack"},
+		To:        Recipient{Email: str("a@b.co"), SlackWebhookURL: str("https://hooks.slack.com/x")},
+		Variables: map[string]any{"name": "지우"}, DedupeKey: str("k1"), Tags: map[string]string{"user": "2"}}
+	first, err := svc.Enqueue(ctx, req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return env{ctx, pool, svc, subs, slack, email}
-}
+	if first.Status != Pending || len(first.Deliveries) != 2 || first.Duplicate {
+		t.Fatalf("%+v", first)
+	}
+	again, _ := svc.Enqueue(ctx, req)
+	if !again.Duplicate || again.ID != first.ID {
+		t.Fatalf("같은 dedupeKey 는 기존 건: %+v", again)
+	}
 
-func (e env) subscribe(t *testing.T, userID int64, enabled, marketing bool) {
-	t.Helper()
-	slackURL := "https://hooks.slack.com/services/T/B/x"
-	if _, err := e.subs.Save(e.ctx, userID, subscription.Request{Enabled: enabled, SlackWebhookURL: &slackURL,
-		MarketingConsent: &marketing, NewMatchEnabled: true}); err != nil {
+	// 1회차: 이메일 성공, 슬랙 실패(attempts 1, 아직 PENDING)
+	if _, err := svc.DispatchPending(ctx); err != nil {
 		t.Fatal(err)
+	}
+	got, _ := svc.Get(ctx, first.ID)
+	if got.Status != Pending || got.Deliveries[0].Status != DSent || got.Deliveries[1].Status != DPending || got.Deliveries[1].Attempts != 1 {
+		t.Fatalf("1회차: %+v", got.Deliveries)
+	}
+	if len(email.sent) != 1 || email.sent[0].Subject != "[ZIPICK] 테스트 지우" {
+		t.Fatalf("이메일 문구: %+v", email.sent)
+	}
+	// 2회차: 슬랙 두 번째 실패 → FAILED, 이메일로는 다시 보내지 않음 → PARTIAL
+	if _, err := svc.DispatchPending(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = svc.Get(ctx, first.ID)
+	if got.Status != Partial || got.Deliveries[1].Status != DFailed || len(email.sent) != 1 {
+		t.Fatalf("2회차: status=%s deliveries=%+v emailSent=%d", got.Status, got.Deliveries, len(email.sent))
+	}
+
+	list, err := svc.Search(ctx, map[string]string{"user": "2"}, "")
+	if err != nil || len(list) != 1 || list[0].ID != first.ID {
+		t.Fatalf("tag 조회: %v %+v", err, list)
+	}
+	if none, _ := svc.Search(ctx, map[string]string{"user": "3"}, ""); len(none) != 0 {
+		t.Fatal("다른 태그는 나오면 안 됨")
 	}
 }
 
-func (e env) status(t *testing.T, id int64) (Status, int) {
-	t.Helper()
-	m, err := e.svc.repo.FindByID(e.ctx, e.pool, id)
+func TestDeliveryNow(t *testing.T) {
+	email := &fakeChannel{name: "email"}
+	svc := dbService(t, email)
+	res, err := svc.Enqueue(context.Background(), Request{Source: "main", TemplateCode: "MAIN_TEST", Channels: []string{"email"},
+		To: Recipient{Email: str("a@b.co")}, Delivery: "now"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return m.Status, m.Attempts
-}
-
-func TestEnqueue_같은_dedupeKey_는_한_번만_적힌다(t *testing.T) {
-	e := setup(t)
-	req := Request{TemplateCode: "DEADLINE", UserID: ptr[int64](1), DedupeKey: ptr("DEADLINE:1:10:3"),
-		Variables: map[string]any{"dDayLabel": "D-3", "noticeTitle": "행복주택"}}
-	first, err := e.svc.Enqueue(e.ctx, req)
-	if err != nil || first.Duplicate {
-		t.Fatalf("%v %+v", err, first)
-	}
-	second, _ := e.svc.Enqueue(e.ctx, req)
-	if !second.Duplicate || second.ID != first.ID {
-		t.Fatalf("중복이 새로 적힘: %+v", second)
+	if res.Status != Sent || res.Deliveries[0].SentAt == nil || len(email.sent) != 1 {
+		t.Fatalf("now 는 바로 보내고 결과까지: %+v", res)
 	}
 }
 
-func TestEnqueue_없는_템플릿과_꺼진_템플릿은_거부(t *testing.T) {
-	e := setup(t)
-	_, err := e.svc.Enqueue(e.ctx, Request{TemplateCode: "NOPE", UserID: ptr[int64](1)})
-	var he *httpx.Error
-	if !errors.As(err, &he) || he.Code != httpx.TemplateNotFound {
-		t.Fatalf("%v", err)
-	}
-	if _, err := e.pool.Exec(e.ctx, `update notification_templates set enabled=false where code='TEST'`); err != nil {
+func TestScheduledIsNotSentEarly(t *testing.T) {
+	email := &fakeChannel{name: "email"}
+	svc := dbService(t, email)
+	later := db.LocalDateTime{Time: db.Now().Add(time.Hour)}
+	res, _ := svc.Enqueue(context.Background(), Request{Source: "main", TemplateCode: "MAIN_TEST", Channels: []string{"email"},
+		To: Recipient{Email: str("a@b.co")}, ScheduledAt: &later})
+	if _, err := svc.DispatchPending(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Enqueue(e.ctx, Request{TemplateCode: "TEST", UserID: ptr[int64](1)}); !errors.As(err, &he) || he.Code != httpx.InvalidInput {
-		t.Fatalf("%v", err)
+	if got, _ := svc.Get(context.Background(), res.ID); got.Status != Pending || len(email.sent) != 0 {
+		t.Fatalf("예약 건은 아직: %+v", got)
 	}
 }
 
-func TestDispatch_카테고리별_수신_규칙(t *testing.T) {
-	e := setup(t)
-	e.subscribe(t, 1, true, false)  // 정보성 켬, 광고 동의 안 함
-	e.subscribe(t, 2, false, false) // 알림 끔
-	info1, _ := e.svc.Enqueue(e.ctx, Request{TemplateCode: "DEADLINE", UserID: ptr[int64](1)})
-	info2, _ := e.svc.Enqueue(e.ctx, Request{TemplateCode: "DEADLINE", UserID: ptr[int64](2)})
-	ad1, _ := e.svc.Enqueue(e.ctx, Request{TemplateCode: "NEWSLETTER", UserID: ptr[int64](1),
-		ScheduledFor: &db.LocalDateTime{Time: time.Date(2026, 1, 1, 12, 0, 0, 0, db.Seoul)}})
-	verify, _ := e.svc.Enqueue(e.ctx, Request{TemplateCode: "EMAIL_VERIFY", Email: ptr("new@example.com"),
-		Variables: map[string]any{"code": "123456", "expiresInMinutes": 10}})
-
-	sent, err := e.svc.DispatchPending(e.ctx)
+func TestBatchCreateCancelAndMask(t *testing.T) {
+	email := &fakeChannel{name: "email"}
+	svc := dbService(t, email)
+	ctx := context.Background()
+	later := db.LocalDateTime{Time: db.Now().Add(time.Hour)}
+	b, err := svc.CreateBatch(ctx, BatchRequest{Source: "main", TemplateCode: "MAIN_TEST", Channels: []string{"email"}, ScheduledAt: &later,
+		Tags: map[string]string{"campaign": "7"}, Recipients: []BatchRecipient{
+			{To: Recipient{Email: str("a@b.co")}, DedupeKey: str("c7-a"), Tags: map[string]string{"user": "1"}},
+			{To: Recipient{Email: str("b@b.co")}, DedupeKey: str("c7-b"), Tags: map[string]string{"user": "2"}},
+			{To: Recipient{Email: str("a@b.co")}, DedupeKey: str("c7-a")}, // 중복 → 건너뜀
+		}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent != 2 {
-		t.Fatalf("보낸 건수 %d, want 2 (정보성 1 + 인증 메일 1)", sent)
+	if b.Total != 2 || b.Pending != 2 || b.Skipped != 1 || b.Status != "SCHEDULED" {
+		t.Fatalf("%+v", b)
 	}
-	for id, want := range map[int64]Status{info1.ID: Sent, info2.ID: Skipped, ad1.ID: Skipped, verify.ID: Sent} {
-		if got, _ := e.status(t, id); got != want {
-			t.Errorf("message %d: %s, want %s", id, got, want)
-		}
+	if byUser, _ := svc.Search(ctx, map[string]string{"user": "2", "campaign": "7"}, ""); len(byUser) != 1 {
+		t.Fatalf("수신자 tags 는 묶음 tags 와 합쳐진다: %+v", byUser)
 	}
-	if len(e.email.sent) != 1 || e.email.sent[0].Title != "[ZIPICK] 이메일 인증 코드: 123456" {
-		t.Fatalf("email %+v", e.email.sent)
+	// 수신자 하나가 잘못되면 전체 거부
+	if _, err := svc.CreateBatch(ctx, BatchRequest{Source: "main", TemplateCode: "MAIN_TEST", Channels: []string{"email"},
+		Recipients: []BatchRecipient{{To: Recipient{Email: str("ok@b.co")}}, {To: Recipient{}}}}); err == nil {
+		t.Fatal("주소 없는 수신자가 있으면 거부돼야 함")
 	}
-}
+	c, err := svc.CancelBatch(ctx, b.ID)
+	if err != nil || c.Status != "CANCELLED" || c.Cancelled != 2 || c.Pending != 0 {
+		t.Fatalf("%v %+v", err, c)
+	}
+	if _, err := svc.DispatchPending(ctx); err != nil || len(email.sent) != 0 {
+		t.Fatal("취소된 건은 나가면 안 됨")
+	}
+	if _, err := svc.GetBatch(ctx, 9999); err == nil {
+		t.Fatal("없는 묶음은 404")
+	}
 
-func TestDispatch_실패하면_재시도하고_3번째에_FAILED(t *testing.T) {
-	e := setup(t)
-	e.subscribe(t, 1, true, false)
-	e.slack.fail = errors.New("404 no_team")
-	m, _ := e.svc.Enqueue(e.ctx, Request{TemplateCode: "DEADLINE", UserID: ptr[int64](1)})
-
-	for i := 1; i <= 3; i++ {
-		if _, err := e.svc.DispatchPending(e.ctx); err != nil {
-			t.Fatal(err)
-		}
-		st, attempts := e.status(t, m.ID)
-		want := Pending
-		if i == 3 {
-			want = Failed
-		}
-		if st != want || attempts != i {
-			t.Fatalf("%d번째: %s attempts=%d", i, st, attempts)
-		}
+	// 주소 가리기: 방금 만든 건은 보관 기간 전이라 그대로
+	if n, _ := svc.MaskOldAddresses(ctx); n != 0 {
+		t.Fatalf("아직 가리면 안 됨: %d", n)
 	}
-}
-
-func TestDispatch_예약_시각_전에는_보내지_않는다(t *testing.T) {
-	e := setup(t)
-	e.subscribe(t, 1, true, false)
-	_, _ = e.svc.Enqueue(e.ctx, Request{TemplateCode: "DEADLINE", UserID: ptr[int64](1),
-		ScheduledFor: &db.LocalDateTime{Time: db.Now().Add(time.Hour)}})
-	if sent, _ := e.svc.DispatchPending(e.ctx); sent != 0 {
-		t.Fatalf("예약 전 발송 %d", sent)
+	if _, err := svc.repo.pool.Exec(ctx, `update notification_messages set created_at = created_at - interval '100 days'`); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestSendTest_설정이_없으면_거부_있으면_바로_보낸다(t *testing.T) {
-	e := setup(t)
-	var he *httpx.Error
-	if _, err := e.svc.SendTest(e.ctx, 1); !errors.As(err, &he) || he.Code != httpx.SubscriptionNotFound {
-		t.Fatalf("%v", err)
+	if n, _ := svc.MaskOldAddresses(ctx); n != 2 {
+		t.Fatalf("가린 수: %d", n)
 	}
-	e.subscribe(t, 1, true, false)
-	r, err := e.svc.SendTest(e.ctx, 1)
-	if err != nil || r.Status != Sent || len(e.slack.sent) != 1 {
-		t.Fatalf("%v %+v", err, r)
+	var masked string
+	_ = svc.repo.pool.QueryRow(ctx, `select to_email from notification_messages order by id limit 1`).Scan(&masked)
+	if masked != "a***@b.co" {
+		t.Fatalf("masked=%q", masked)
 	}
-	if h, _ := e.svc.History(e.ctx, 1); len(h) != 1 || h[0].TemplateCode != "TEST" {
-		t.Fatalf("history %+v", h)
+	if n, _ := svc.MaskOldAddresses(ctx); n != 0 {
+		t.Fatal("두 번 가리지 않음")
 	}
 }

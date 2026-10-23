@@ -10,61 +10,62 @@ import (
 	"github.com/zipick/notification/internal/message"
 )
 
-// fakeAck 는 브로커 대신 ack/nack 호출을 기록한다 (amqp.Delivery 가 이 인터페이스로 응답한다)
-type fakeAck struct {
-	acked, nacked, requeued bool
+type fakeEnqueuer struct {
+	err error
+	got message.Request
 }
 
-func (f *fakeAck) Ack(uint64, bool) error { f.acked = true; return nil }
+func (f *fakeEnqueuer) Enqueue(_ context.Context, r message.Request) (message.Response, error) {
+	f.got = r
+	return message.Response{ID: 1}, f.err
+}
+
+// amqp.Delivery 의 Ack/Nack 은 Acknowledger 인터페이스로 간다. 가짜로 바꿔 어떤 결정을 했는지 본다.
+type fakeAck struct{ result string }
+
+func (f *fakeAck) Ack(uint64, bool) error { f.result = "ack"; return nil }
 func (f *fakeAck) Nack(_ uint64, _ bool, requeue bool) error {
-	f.nacked, f.requeued = true, requeue
+	if requeue {
+		f.result = "requeue"
+	} else {
+		f.result = "dlq"
+	}
 	return nil
 }
-func (f *fakeAck) Reject(_ uint64, requeue bool) error { return f.Nack(0, false, requeue) }
+func (f *fakeAck) Reject(uint64, bool) error { f.result = "reject"; return nil }
 
-type stubEnqueuer struct{ err error }
-
-func (s stubEnqueuer) Enqueue(context.Context, message.Request) (message.Response, error) {
-	return message.Response{ID: 1}, s.err
-}
-
-func deliver(t *testing.T, body string, err error) *fakeAck {
-	t.Helper()
-	ack := &fakeAck{}
-	handle(context.Background(), stubEnqueuer{err: err}, amqp.Delivery{Acknowledger: ack, Body: []byte(body)})
-	return ack
-}
-
-const okBody = `{"templateCode":"DEADLINE","userId":1,"dedupeKey":"DEADLINE:1:10:3"}`
-
-func TestHandle_적으면_ack(t *testing.T) {
-	if a := deliver(t, okBody, nil); !a.acked || a.nacked {
-		t.Fatalf("%+v", a)
+func TestHandle(t *testing.T) {
+	body := []byte(`{"source":"main","templateCode":"MAIN_TEST","channels":["email"],"to":{"email":"a@b.co"},"variables":{"deadlineDays":3},"tags":{"user":"2"}}`)
+	cases := []struct {
+		name string
+		body []byte
+		err  error
+		want string
+	}{
+		{"정상", body, nil, "ack"},
+		{"JSON 깨짐 → 실패 큐", []byte(`{`), nil, "dlq"},
+		{"요청 오류 → 실패 큐", body, httpx.Fail(httpx.TemplateNotFound, "x"), "dlq"},
+		{"일시 오류 → 되돌림", body, errors.New("db down"), "requeue"},
+	}
+	for _, c := range cases {
+		ack := &fakeAck{}
+		svc := &fakeEnqueuer{err: c.err}
+		handle(context.Background(), svc, delivery(c.body, ack))
+		if ack.result != c.want {
+			t.Errorf("%s: %s, want %s", c.name, ack.result, c.want)
+		}
+		if c.name == "정상" && (svc.got.Source != "main" || svc.got.Tags["user"] != "2" || svc.got.Variables["deadlineDays"] != float64(3)) {
+			t.Errorf("요청 해석: %+v", svc.got)
+		}
 	}
 }
 
-func TestHandle_JSON_이_깨졌으면_실패_큐로(t *testing.T) {
-	if a := deliver(t, "{broken", nil); !a.nacked || a.requeued {
-		t.Fatalf("%+v", a)
+func TestQueueNamesAreV1(t *testing.T) {
+	if QueueName != "notification.requests.v1" || DLQName != "notification.requests.v1.dlq" {
+		t.Fatal("메인 서버의 NotificationQueueConfig 와 같아야 한다")
 	}
 }
 
-func TestHandle_요청이_잘못됐으면_다시_시도하지_않고_실패_큐로(t *testing.T) {
-	if a := deliver(t, okBody, httpx.Fail(httpx.TemplateNotFound, "없는 템플릿")); !a.nacked || a.requeued {
-		t.Fatalf("%+v", a)
-	}
-}
-
-func TestHandle_DB_장애_같은_일시_오류는_큐에_되돌린다(t *testing.T) {
-	if a := deliver(t, okBody, errors.New("db down")); !a.nacked || !a.requeued {
-		t.Fatalf("%+v", a)
-	}
-}
-
-func TestRun_취소되면_바로_끝난다(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	done := make(chan struct{})
-	go func() { Run(ctx, "amqp://nobody:nothing@127.0.0.1:1/", stubEnqueuer{}); close(done) }()
-	<-done
+func delivery(body []byte, ack amqp.Acknowledger) amqp.Delivery {
+	return amqp.Delivery{Acknowledger: ack, Body: body}
 }
