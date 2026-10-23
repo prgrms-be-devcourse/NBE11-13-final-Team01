@@ -1,5 +1,12 @@
 import { api, unwrap } from './client';
+import { filterToParams } from './recommendation';
+import type { AnnouncementStatus, HouseFilter } from '../types';
 
+/**
+ * 지도 핀 하나. 백엔드 MapHousingSummaryResponse 와 1:1 이며 **9개 필드뿐**이다.
+ * 보증금·면적 같은 공급 정보는 들어 있지 않다(상세 조회에서 받는다).
+ * 좌표가 없는 주택은 서버가 조회 단계에서 빼므로 위도·경도는 항상 있다.
+ */
 export interface MapHousingSummary {
   housingId: number;
   name?: string | null;
@@ -9,7 +16,7 @@ export interface MapHousingSummary {
   noticeTitle: string;
   agencyName?: string | null;
   rentalType?: string | null;
-  status: 'OPEN';
+  status: AnnouncementStatus;
 }
 
 export interface MapHousingSupply {
@@ -46,8 +53,9 @@ export interface MapHousingDetail {
   name?: string | null;
   address: string;
   normalizedAddress?: string | null;
-  latitude: number;
-  longitude: number;
+  /** 좌표를 아직 못 구한 주택도 상세는 열린다(핀 목록과 달리 좌표 조건이 없다). 로드뷰는 이때 숨긴다. */
+  latitude: number | null;
+  longitude: number | null;
   buildYear?: number | null;
   floor?: number | null;
   heatingMethod?: string | null;
@@ -56,7 +64,11 @@ export interface MapHousingDetail {
   noticeTitle: string;
   noticeType?: string | null;
   rentalType?: string | null;
-  status: 'OPEN';
+  /** 공개 상세는 접수 중(OPEN)과 공고 예정(UPCOMING)을 모두 내려준다. */
+  status: AnnouncementStatus;
+  /** 접수 시작·마감일(한국 시간 기준 날짜). 공고에 일정이 없으면 null */
+  applyStartAt?: string | null;
+  applyEndAt?: string | null;
   agencyName?: string | null;
   detailUrl?: string | null;
   supplies: MapHousingSupply[];
@@ -69,8 +81,16 @@ export interface MapHousingList {
   housings: MapHousingSummary[];
 }
 
-export function getOpenMapHousings() {
-  return unwrap(api.get('/api/v1/map/housings')) as Promise<MapHousingList>;
+/**
+ * 지도에 찍을 공급주택. 공고 예정 + 접수 중을 주택 단위로 돌려준다.
+ *
+ * 필터는 전체 공급주택 목록과 같은 파라미터를 쓴다. 서버가 지도 전용 정책을 덧씌우므로
+ * - 마감·취소 공고는 statuses 로 요청해도 나오지 않고
+ * - 고른 공급 조건의 값이 없는 호실은 조건 불충족으로 보며(includeUnknown 으로 우회 불가)
+ * - 보증금·면적 같은 공급 조건은 **같은 활성 호실 하나**가 모두 만족해야 주택이 포함된다.
+ */
+export function getMapHousings(filter: HouseFilter) {
+  return unwrap(api.get('/api/v1/map/housings', { params: filterToParams(filter) })) as Promise<MapHousingList>;
 }
 
 export function getMapHousingDetail(housingId: number) {

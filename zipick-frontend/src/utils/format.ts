@@ -85,13 +85,79 @@ export function area(v?: number | null): string {
   return `${v}㎡ (${(v / 3.3058).toFixed(1)}평)`;
 }
 
-export function dDay(date?: string): string {
-  if (!date) return '';
+/** 오늘부터 그 날짜까지 남은 일수. 날짜가 없거나 해석할 수 없으면 null */
+export function daysUntil(date?: string | null): number | null {
+  if (!date) return null;
+  const target = new Date(date);
+  if (Number.isNaN(target.getTime())) return null;
+  target.setHours(0, 0, 0, 0);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const target = new Date(date);
-  const diff = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+export function dDay(date?: string): string {
+  const diff = daysUntil(date);
+  if (diff === null) return '';
   if (diff < 0) return '마감';
   if (diff === 0) return 'D-day';
   return `D-${diff}`;
+}
+
+/** "2026-10-15" → "2026.10.15" */
+function dotted(date: string): string {
+  return date.replaceAll('-', '.');
+}
+
+export interface ScheduleView {
+  /** 배지에 쓰는 한 줄. 예: "접수 시작 D-3", "마감 D-5", "오늘 마감", "접수 일정 미정" */
+  label: string;
+  /** 알 수 있는 접수 기간. 예: "2026.10.01 ~ 2026.10.15". 모르면 null */
+  period: string | null;
+  /** 마감 임박(3일 이내)이라 강조할지 */
+  urgent: boolean;
+}
+
+/**
+ * 공고의 접수 일정 안내. 모집 상태에 따라 기준 날짜가 다르다.
+ * - UPCOMING: 접수 시작일까지 D-day (시작일이 없으면 마감일로 안내)
+ * - OPEN: 접수 마감일까지 D-day
+ * 날짜가 없으면 임의 값을 만들지 않고 '미정'이라고 알린다.
+ *
+ * 지도 상세 패널·공고 상세 페이지·추천 목록이 모두 이 함수를 쓴다.
+ */
+export function applySchedule(
+  status: AnnouncementStatus,
+  applyStartAt?: string | null,
+  applyEndAt?: string | null,
+): ScheduleView {
+  const period =
+    applyStartAt && applyEndAt
+      ? `${dotted(applyStartAt)} ~ ${dotted(applyEndAt)}`
+      : applyStartAt
+        ? `${dotted(applyStartAt)} 접수 시작`
+        : applyEndAt
+          ? `${dotted(applyEndAt)} 접수 마감`
+          : null;
+
+  const byEnd = (): ScheduleView => {
+    const d = daysUntil(applyEndAt);
+    if (d === null) return { label: '마감일 미정', period, urgent: false };
+    if (d > 0) return { label: `마감 D-${d}`, period, urgent: d <= 3 };
+    if (d === 0) return { label: '오늘 마감', period, urgent: true };
+    return { label: '접수 마감', period, urgent: false };
+  };
+
+  if (status === 'CLOSED') return { label: '접수 마감', period, urgent: false };
+
+  if (status === 'UPCOMING') {
+    const d = daysUntil(applyStartAt);
+    // 추천·목록 응답에는 마감일만 있어 시작일을 모를 때가 있다. 그때는 마감 기준으로 안내한다.
+    if (d === null) return applyEndAt ? byEnd() : { label: '접수 일정 미정', period, urgent: false };
+    if (d > 0) return { label: `접수 시작 D-${d}`, period, urgent: false };
+    if (d === 0) return { label: '오늘 접수 시작', period, urgent: true };
+    return byEnd();
+  }
+
+  return byEnd();
 }
