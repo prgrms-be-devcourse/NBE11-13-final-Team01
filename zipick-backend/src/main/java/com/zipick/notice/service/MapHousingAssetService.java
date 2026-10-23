@@ -41,7 +41,7 @@ public class MapHousingAssetService {
     }
 
     public MapHousingAsset getAttachment(Long housingId, Long attachmentId) {
-        var housing = findOpenHousing(housingId);
+        var housing = findVisibleHousing(housingId);
         var attachment = noticeAttachmentRepository.findById(attachmentId)
                 .filter(candidate -> candidate.getNotice().getId().equals(housing.getNotice().getId()))
                 .filter(candidate -> IMAGE_ATTACHMENT_TYPES.contains(candidate.getAttachmentType()))
@@ -51,7 +51,7 @@ public class MapHousingAssetService {
     }
 
     public MapHousingAsset getMedia(Long housingId, Long mediaId) {
-        findOpenHousing(housingId);
+        findVisibleHousing(housingId);
         var media = housingMediaRepository.findById(mediaId)
                 .filter(candidate -> candidate.getHousing().getId().equals(housingId))
                 .filter(candidate -> IMAGE_ATTACHMENT_TYPES.contains(candidate.getMediaType()))
@@ -60,9 +60,11 @@ public class MapHousingAssetService {
         return download(media.getSourceUrl(), media.getFileName());
     }
 
-    private com.zipick.notice.domain.Housing findOpenHousing(Long housingId) {
+    // 상세 화면에서 바로 쓰는 이미지·첨부라 상세 조회와 같은 상태 조건을 써야 한다.
+    // 여기만 OPEN으로 남으면 공고 예정 주택의 상세는 열리는데 사진만 깨진다.
+    private com.zipick.notice.domain.Housing findVisibleHousing(Long housingId) {
         return housingRepository.findByIdAndActiveTrue(housingId)
-                .filter(candidate -> candidate.getNotice().getStatus() == NoticeStatus.OPEN)
+                .filter(candidate -> NoticeStatus.PUBLIC_STATUSES.contains(candidate.getNotice().getStatus()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.HOUSE_NOT_FOUND));
     }
 

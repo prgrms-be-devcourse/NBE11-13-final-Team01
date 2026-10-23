@@ -10,6 +10,8 @@ import com.zipick.notice.dto.MapHousingSummaryResponse;
 import com.zipick.notice.dto.MapHousingSupplyResponse;
 import com.zipick.notice.dto.MapHousingSupplyConditionResponse;
 import com.zipick.notice.dto.MapHousingMediaResponse;
+import com.zipick.housing.dto.HouseFilter;
+import com.zipick.notice.repository.HousingPinQueryRepository;
 import com.zipick.notice.repository.HousingRepository;
 import com.zipick.notice.repository.HousingSupplyRepository;
 import com.zipick.notice.repository.HousingSupplyConditionRepository;
@@ -23,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MapHousingQueryService {
 
     private final HousingRepository housingRepository;
+    private final HousingPinQueryRepository housingPinQueryRepository;
     private final HousingSupplyRepository housingSupplyRepository;
     private final HousingSupplyConditionRepository housingSupplyConditionRepository;
     private final NoticeAttachmentRepository noticeAttachmentRepository;
@@ -30,18 +33,35 @@ public class MapHousingQueryService {
 
     public MapHousingQueryService(
             HousingRepository housingRepository,
+            HousingPinQueryRepository housingPinQueryRepository,
             HousingSupplyRepository housingSupplyRepository,
             HousingSupplyConditionRepository housingSupplyConditionRepository,
             NoticeAttachmentRepository noticeAttachmentRepository,
             HousingMediaRepository housingMediaRepository
     ) {
         this.housingRepository = housingRepository;
+        this.housingPinQueryRepository = housingPinQueryRepository;
         this.housingSupplyRepository = housingSupplyRepository;
         this.housingSupplyConditionRepository = housingSupplyConditionRepository;
         this.noticeAttachmentRepository = noticeAttachmentRepository;
         this.housingMediaRepository = housingMediaRepository;
     }
 
+    /**
+     * 지도에 찍을 공급주택. 주택 단위로 조회하므로 호실 수와 무관하게 결과가 잘리지 않는다.
+     * 필터는 MapHousingFilterPolicy 를 거친 것이어야 한다(상태 교집합 + 공급 조건 엄격 판정).
+     */
+    public MapHousingListResponse findHousings(HouseFilter filter) {
+        var housings = housingPinQueryRepository.findPins(filter).stream()
+                .map(MapHousingSummaryResponse::from)
+                .toList();
+        return new MapHousingListResponse(housings.size(), housings);
+    }
+
+    /**
+     * 접수 중(OPEN)만 좌표와 함께 돌려주던 이전 조회. 필터·상태 정책을 되돌려야 할 때를 위해 남겨 둔다.
+     * 현재 컨트롤러는 findHousings 를 쓴다.
+     */
     public MapHousingListResponse findOpenHousings() {
         var housings = housingRepository
                 .findAllByActiveTrueAndLatitudeIsNotNullAndLongitudeIsNotNullAndNoticeStatusOrderByIdAsc(NoticeStatus.OPEN)
@@ -53,7 +73,7 @@ public class MapHousingQueryService {
 
     public MapHousingDetailResponse findDetail(Long housingId) {
         var housing = housingRepository.findByIdAndActiveTrue(housingId)
-                .filter(candidate -> candidate.getNotice().getStatus() == NoticeStatus.OPEN)
+                .filter(candidate -> NoticeStatus.PUBLIC_STATUSES.contains(candidate.getNotice().getStatus()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.HOUSE_NOT_FOUND));
         var supplyEntities = housingSupplyRepository.findAllByHousingIdAndActiveTrueOrderByIdAsc(housingId);
         var conditionMap = supplyEntities.isEmpty()
