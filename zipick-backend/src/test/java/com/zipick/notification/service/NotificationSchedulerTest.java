@@ -21,7 +21,9 @@ import com.zipick.interest.repository.NoticeSummaryQueryRepository;
 import com.zipick.notification.client.NotificationClient;
 import com.zipick.notification.client.NotificationRequest;
 import com.zipick.notification.domain.NotificationCursor;
-import com.zipick.notification.dto.NotificationSettingResponse;
+import com.zipick.notification.domain.NotificationSetting;
+import com.zipick.notification.dto.NotificationSettingRequest;
+import com.zipick.notification.repository.NotificationSettingRepository;
 import com.zipick.notification.queue.NotificationPriority;
 import com.zipick.notification.repository.NotificationCursorRepository;
 import com.zipick.recommendation.engine.HouseScore;
@@ -50,14 +52,24 @@ class NotificationSchedulerTest {
     private static final LocalDate TODAY = LocalDate.now(ZoneId.of("Asia/Seoul"));
 
     @Mock NotificationClient client;
+    @Mock NotificationSettingRepository settingRepository;
     @Mock InterestNoticeRepository interestRepository;
     @Mock NoticeSummaryQueryRepository noticeRepository;
     @Mock NotificationCursorRepository cursorRepository;
     @Mock RecommendationService recommendationService;
     @InjectMocks NotificationScheduler scheduler;
 
-    private static NotificationSettingResponse subscriber(long userId, boolean newMatch) {
-        return new NotificationSettingResponse(userId, true, true, null, null, false, null, List.of(3, 1, 0), newMatch, false);
+    @org.junit.jupiter.api.BeforeEach
+    void channelsPassThrough() {
+        // 알림센터의 채널이 전부 켜져 있다고 가정 (원하는 채널 그대로)
+        org.mockito.Mockito.lenient().when(client.usableChannels(any())).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    /** 슬랙 주소가 있는 사용자 설정 */
+    private static NotificationSetting subscriber(long userId, boolean newMatch) {
+        NotificationSetting s = NotificationSetting.defaults(userId);
+        s.apply(new NotificationSettingRequest(true, "https://hooks.slack.com/services/x", null, null, "3,1,0", newMatch), LocalDateTime.now());
+        return s;
     }
 
     private static NoticeSummary notice(long id, LocalDate applyEnd, List<String> regions) {
@@ -94,7 +106,12 @@ class NotificationSchedulerTest {
                 .containsEntry("regionsText", " (경상북도 구미시)");
         assertThat(reqs.get(1).variables()).containsEntry("dDayLabel", "D-day").containsEntry("whenText", "오늘")
                 .containsEntry("regionsText", "");
-        assertThat(reqs.get(0).templateCode()).isEqualTo("DEADLINE");
+        assertThat(reqs.get(0).templateCode()).isEqualTo("NOTICE_DEADLINE_REMINDER");
+        // 알림센터는 판단하지 않는다 — 주소·채널·꼬리표를 요청이 다 들고 간다
+        assertThat(reqs.get(0).source()).isEqualTo("main");
+        assertThat(reqs.get(0).channels()).containsExactly("slack");
+        assertThat(reqs.get(0).to().slackWebhookUrl()).startsWith("https://hooks.slack.com/");
+        assertThat(reqs.get(0).tags()).containsEntry("user", "1");
     }
 
     @Test
@@ -121,6 +138,7 @@ class NotificationSchedulerTest {
 
         assertThat(scheduler.enqueueNewMatches(List.of(subscriber(1, true)))).isZero();
         assertThat(cursor.getCheckedAt()).isAfter(before);
+        verify(cursorRepository).save(cursor);   // run() 은 트랜잭션 밖이라 명시적으로 저장
     }
 
     @Test
@@ -147,6 +165,7 @@ class NotificationSchedulerTest {
         assertThat(reqs.get(1).variables()).containsEntry("deadlineText", "");
         verify(recommendationService, never()).rankForNotices(eq(2L), any());   // 새 공고 알림을 끈 사용자
         assertThat(cursor.getCheckedAt()).isAfter(before);
+        verify(cursorRepository).save(cursor);   // run() 은 트랜잭션 밖이라 명시적으로 저장
     }
 
     private static HouseScore score(long noticeId, int score) {
@@ -163,21 +182,34 @@ class NotificationSchedulerTest {
     void 키가_없으면_아무것도_하지_않는다() {
         when(client.configured()).thenReturn(false);
         scheduler.run();
-        verify(client, never()).listEnabledSubscriptions();
+        verify(settingRepository, never()).findAllByEnabledTrue();
+    }
+
+    @Test
+    void 주소가_없는_사용자는_대상에서_뺀다() {
+        when(client.configured()).thenReturn(true);
+        NotificationSetting noAddress = NotificationSetting.defaults(9L);
+        noAddress.apply(new NotificationSettingRequest(true, null, null, null, "3", true), LocalDateTime.now());
+        when(settingRepository.findAllByEnabledTrue()).thenReturn(List.of(noAddress));
+        scheduler.run();
+        verify(interestRepository, never()).findAllByUserIdOrderByIdDesc(anyLong());
     }
 
     @Test
     void 알림센터에_닿지_않으면_이번_주기를_건너뛴다() {
         when(client.configured()).thenReturn(true);
-        when(client.listEnabledSubscriptions()).thenThrow(new BusinessException(ErrorCode.NOTIFICATION_UNAVAILABLE));
+        when(settingRepository.findAllByEnabledTrue()).thenReturn(List.of(subscriber(1, true)));
+        when(interestRepository.findAllByUserIdOrderByIdDesc(1L)).thenReturn(List.of(saved(10)));
+        when(noticeRepository.findByIds(anyList())).thenReturn(Map.of(10L, notice(10, TODAY, List.of())));
+        org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.NOTIFICATION_UNAVAILABLE)).when(client).request(any(), any());
         scheduler.run();   // 예외가 밖으로 나오지 않아야 한다
-        verify(interestRepository, never()).findAllByUserIdOrderByIdDesc(anyLong());
+        verify(cursorRepository, never()).save(any());
     }
 
     @Test
     void 정상_주기는_두_가지를_모두_돈다() {
         when(client.configured()).thenReturn(true);
-        when(client.listEnabledSubscriptions()).thenReturn(List.of(subscriber(1, true)));
+        when(settingRepository.findAllByEnabledTrue()).thenReturn(List.of(subscriber(1, true)));
         when(interestRepository.findAllByUserIdOrderByIdDesc(1L)).thenReturn(List.of());
         when(cursorRepository.findById(NotificationCursor.NEW_MATCH)).thenReturn(Optional.empty());
 

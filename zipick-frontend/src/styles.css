@@ -333,6 +333,7 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 .notif__title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge--sent { background: #ecfdf5; border-color: var(--ok, #059669); color: var(--ok, #059669); }
 .badge--failed { background: #fef2f2; border-color: var(--bad); color: var(--bad); }
+.badge--partial { background: #fff7ed; border-color: var(--warn); color: var(--warn); }
 @media (max-width: 640px) { .notif__grid { grid-template-columns: 1fr; } }
 .badge--skipped, .badge--cancelled { opacity: 0.7; }
 

@@ -23,8 +23,8 @@
 -- -----------------------------------------------------------------------------
 
 -- 알림센터 분리 이전 로컬 DB에 남아 있을 수 있는 레거시 테이블도 먼저 제거한다.
--- notification_settings가 users를 참조하므로 users보다 반드시 앞에 와야 한다.
-DROP TABLE IF EXISTS notification_events;
+-- notification_settings 가 users를 참조하므로 users보다 반드시 앞에 와야 한다.
+DROP TABLE IF EXISTS notification_events;   -- 이전 버전의 아웃박스 (지금은 알림센터 DB 에)
 DROP TABLE IF EXISTS notification_settings;
 DROP TABLE IF EXISTS notification_cursors;
 DROP TABLE IF EXISTS interest_notices;
@@ -184,8 +184,8 @@ alter table refresh_token
 -- 3. 관심 공고 · 알림 (안서호)
 --    interest_notices    : 사용자가 ☆로 저장한 공고. 일정(캘린더)은 notice 의 날짜를 그대로 읽는다
 --    notification_cursors : 스케줄러가 어디까지 봤는지 (NEW_MATCH = 마지막으로 확인한 공고 수집 시각)
---    알림 설정·아웃박스는 알림센터(zipick-notification, DB zipick_notification)로 옮겨 갔다 (2026-10-20).
---    기존 DB에 남은 notification_settings·notification_events는 위 DROP 단계에서 함께 정리한다.
+--    notification_settings: 사용자의 알림 설정 (주소, on/off, 마감 일수, 광고 수신 동의 + 시각)
+--    발송 기록(아웃박스)은 알림센터(zipick-notification, DB zipick_notification)에 있다. 알림센터는 판단하지 않고 보내기만 한다 (2026-10-23).
 -- -----------------------------------------------------------------------------
 
 create table interest_notices (
@@ -204,6 +204,21 @@ create table notification_cursors (
     primary key (name)
 );
 
+create table notification_settings (
+    user_id bigint not null,
+    enabled boolean not null default false,
+    slack_webhook_url varchar(500),
+    email varchar(255),
+    marketing_consent boolean not null default false,
+    marketing_consented_at timestamp(6),
+    deadline_days varchar(50) not null default '3,1,0',
+    new_match_enabled boolean not null default true,
+    created_at timestamp(6),
+    updated_at timestamp(6),
+    primary key (user_id)
+);
+
+
 create index idx_interest_user
    on interest_notices (user_id);
 
@@ -212,5 +227,10 @@ alter table interest_notices
 
 alter table interest_notices
    add constraint fk_interest_notices_user
+   foreign key (user_id)
+   references users (user_id);
+
+alter table notification_settings
+   add constraint fk_notification_settings_user
    foreign key (user_id)
    references users (user_id);

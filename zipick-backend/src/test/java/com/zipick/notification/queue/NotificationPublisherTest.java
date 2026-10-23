@@ -78,10 +78,10 @@ class NotificationPublisherTest {
     void 큐_선언은_알림센터와_같은_인자를_쓴다() {
         var config = new NotificationQueueConfig();
         var queue = config.notificationRequestQueue();
-        assertThat(queue.getName()).isEqualTo("notification.requests");
+        assertThat(queue.getName()).isEqualTo("notification.requests.v1");
         assertThat(queue.isDurable()).isTrue();
         assertThat(queue.getArguments()).containsEntry("x-max-priority", 9)
-                .containsEntry("x-dead-letter-routing-key", "notification.requests.dlq");
-        assertThat(config.notificationRequestDlq().getName()).isEqualTo("notification.requests.dlq");
+                .containsEntry("x-dead-letter-routing-key", "notification.requests.v1.dlq");
+        assertThat(config.notificationRequestDlq().getName()).isEqualTo("notification.requests.v1.dlq");
     }
 }

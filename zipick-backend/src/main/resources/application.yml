@@ -202,3 +202,8 @@ zipick:
     queue-enabled: ${NOTIFICATION_QUEUE_ENABLED:false}
     poll-interval: PT5M
     scheduler-enabled: true
+    # 알림 문구에 넣는 서비스 주소 (소식 메일의 수신 거부 안내)
+    app-url: ${APP_URL:http://localhost:5173}
+    # 공고 수집 일일 보고를 받을 곳. 둘 다 비우면 보고를 보내지 않는다
+    ops-slack-webhook-url: ${NOTIFICATION_OPS_SLACK_WEBHOOK_URL:}
+    ops-email: ${NOTIFICATION_OPS_EMAIL:}
