@@ -8,6 +8,7 @@ import CalendarPage from './pages/CalendarPage';
 import TunePage from './pages/TunePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
+import AdminCampaignPage from './pages/AdminCampaignPage';
 
 /**
  * 탐색은 지도 한 화면에서 한다. 전체 공고 / 맞춤 추천은 별도 페이지가 아니라 `?mode=` 로 구분되는 두 모드다.
@@ -55,6 +56,16 @@ export default function App() {
           element={
             <AccessGate need="LOGIN">
               <CalendarPage />
+            </AccessGate>
+          }
+        />
+
+        {/* 운영자(ROLE_ADMIN)만. 권한은 서버가 확인한다 (아니면 403) */}
+        <Route
+          path="/admin/campaigns"
+          element={
+            <AccessGate need="LOGIN">
+              <AdminCampaignPage />
             </AccessGate>
           }
         />

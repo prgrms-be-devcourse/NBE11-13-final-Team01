@@ -1,20 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { notificationApi } from '../api/notification';
-import type { NotificationEvent, NotificationStatus, NotificationType } from '../types';
+import type { NotificationEvent, NotificationStatus } from '../types';
 
 const TYPE_LABEL: Record<string, string> = {
-  DEADLINE: '접수 마감', NEW_MATCH: '새 공고', TEST: '테스트', EMAIL_VERIFY: '이메일 인증', PASSWORD_CHANGED: '비밀번호 변경', NEWSLETTER: '소식',
+  NOTICE_DEADLINE_REMINDER: '접수 마감', NOTICE_NEW_MATCH: '새 공고', MAIN_TEST: '테스트',
+  AUTH_EMAIL_VERIFY: '이메일 인증', AUTH_PASSWORD_CHANGED: '비밀번호 변경', MARKETING_NEWSLETTER: '소식',
 };
-const STATUS_LABEL: Record<NotificationStatus, string> = { PENDING: '대기', SENT: '보냄', FAILED: '실패', SKIPPED: '건너뜀', CANCELLED: '취소' };
-const typeLabel = (t: NotificationType) => TYPE_LABEL[t] ?? t;
+const STATUS_LABEL: Record<NotificationStatus, string> = { PENDING: '대기', SENT: '보냄', PARTIAL: '일부 실패', FAILED: '실패', CANCELLED: '취소' };
+const typeLabel = (t: string) => TYPE_LABEL[t] ?? t;
+/** 채널별 결과를 한 줄로: "email 보냄 · slack 실패(이유)" */
+const deliveryText = (e: NotificationEvent) =>
+  e.deliveries.map((d) => `${d.channel} ${d.status === 'SENT' ? '보냄' : d.status === 'FAILED' ? '실패' : '대기'}${d.lastError ? `(${d.lastError})` : ''}`).join(' · ');
 
 function errText(e: unknown) {
   return e instanceof Error ? e.message : '요청에 실패했어요.';
 }
 
 /**
- * 알림 설정. 저장·발송은 알림센터(별도 서버)가 하고, 메인 서버는 그대로 넘겨 준다.
+ * 알림 설정. 설정은 메인 서버가 갖고, 보내는 일만 알림센터(별도 서버)가 한다.
  * 슬랙 웹훅(incoming webhook URL) 또는 이메일로 ① 관심 공고의 접수 마감 D-day ② 내 조건에 맞는 새 공고 를 보낸다.
  * 광고성 소식은 따로 동의한 사람에게만 간다.
  */
@@ -121,8 +125,7 @@ export default function NotificationPanel() {
       {test.isSuccess && (
         <p className="small">
           테스트 알림: <b>{STATUS_LABEL[test.data.status]}</b>
-          {test.data.channels && ` (${test.data.channels})`}
-          {test.data.lastError && ` · ${test.data.lastError}`}
+          {test.data.deliveries.length > 0 && ` — ${deliveryText(test.data)}`}
         </p>
       )}
 
@@ -143,10 +146,8 @@ export default function NotificationPanel() {
               <li key={e.id}>
                 <span className={`badge badge--${e.status.toLowerCase()}`}>{STATUS_LABEL[e.status]}</span>
                 <span className="muted small">{typeLabel(e.templateCode)}</span>
-                <span className="notif__title">
-                  {e.url ? <a href={e.url} target="_blank" rel="noreferrer">{e.title}</a> : e.title}
-                </span>
-                <span className="muted small">{(e.sentAt ?? e.scheduledFor).slice(0, 16).replace('T', ' ')}</span>
+                <span className="notif__title" title={deliveryText(e)}>{e.title}</span>
+                <span className="muted small">{e.scheduledAt.slice(0, 16).replace('T', ' ')}</span>
               </li>
             ))}
           </ul>

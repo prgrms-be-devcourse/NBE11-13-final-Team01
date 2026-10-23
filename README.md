@@ -45,6 +45,8 @@ psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/infra-init.sql
 | `NOTIFICATION_BASE_URL` | 알림센터(zipick-notification) 주소 | `http://localhost:8081` |
 | `NOTIFICATION_INTERNAL_KEY` | 알림센터와 공유하는 키. 알림센터에도 같은 값 | 없음 (비우면 알림 기능 꺼짐: 설정 화면 503, 스케줄러 건너뜀) |
 | `NOTIFICATION_QUEUE_ENABLED`, `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | 알림 요청을 RabbitMQ 로 던질 때 | `false` (HTTP 로 보냄), `localhost`, `5672`, `guest`/`guest` |
+| `APP_URL` | 알림 문구에 넣는 서비스 주소 (소식 메일의 수신 거부 안내) | `http://localhost:5173` |
+| `NOTIFICATION_OPS_SLACK_WEBHOOK_URL`, `NOTIFICATION_OPS_EMAIL` | 공고 수집 일일 보고를 받을 운영 슬랙·메일. 둘 다 비우면 보고를 보내지 않는다 | 없음 |
 
 JWT 키 생성 예시 (macOS / Linux / WSL):
 

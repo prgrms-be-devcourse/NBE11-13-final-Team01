@@ -14,8 +14,8 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnProperty(prefix = "zipick.notification", name = "queue-enabled", havingValue = "true")
 public class NotificationQueueConfig {
 
-    public static final String QUEUE = "notification.requests";
-    public static final String DLQ = "notification.requests.dlq";
+    public static final String QUEUE = "notification.requests.v1";
+    public static final String DLQ = "notification.requests.v1.dlq";
     public static final int MAX_PRIORITY = 9;
 
     /** 요청 큐: 우선순위 0~9, 알림센터가 거부한 메시지는 실패 큐로 */

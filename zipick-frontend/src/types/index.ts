@@ -308,9 +308,8 @@ export interface ScheduleEvent {
 // ---- 알림 (관심 공고 마감 · 새 공고) ----
 
 /** 알림센터 템플릿 코드. 운영자가 템플릿을 더 만들 수 있어 문자열로 둔다 */
-export type NotificationType = 'DEADLINE' | 'NEW_MATCH' | 'TEST' | 'EMAIL_VERIFY' | 'PASSWORD_CHANGED' | 'NEWSLETTER' | (string & {});
-export type NotificationCategory = 'TRANSACTIONAL' | 'INFORMATIONAL' | 'MARKETING';
-export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'CANCELLED';
+export type NotificationStatus = 'PENDING' | 'SENT' | 'PARTIAL' | 'FAILED' | 'CANCELLED';
+export type NotificationChannel = 'email' | 'slack';
 
 export interface NotificationSetting {
   userId?: number;
@@ -319,7 +318,7 @@ export interface NotificationSetting {
   /** 웹훅은 비밀값이라 끝 6자만 온다 */
   slackWebhookMasked?: string | null;
   email?: string | null;
-  /** 광고성 정보 수신 동의 (소식 메일 등). 동의 시각은 알림센터가 보관 */
+  /** 광고성 정보 수신 동의 (소식 메일 등). 동의 시각은 메인 서버가 보관 */
   marketingConsent: boolean;
   marketingConsentedAt?: string | null;
   deadlineDays: number[];
@@ -340,18 +339,45 @@ export interface NotificationSettingRequest {
   newMatchEnabled: boolean;
 }
 
-export interface NotificationEvent {
-  id: number;
-  templateCode: NotificationType;
-  category: NotificationCategory;
-  campaignId?: number | null;
-  title: string;
-  body: string;
-  url?: string | null;
-  status: NotificationStatus;
+/** 알림센터 v1 의 메시지. 채널별 결과는 deliveries 에 */
+export interface NotificationDelivery {
+  channel: NotificationChannel;
+  status: 'PENDING' | 'SENT' | 'FAILED';
   attempts: number;
   lastError?: string | null;
-  channels?: string | null;
-  scheduledFor: string;
   sentAt?: string | null;
 }
+
+export interface NotificationEvent {
+  id: number;
+  source: string;
+  /** templates/*.yaml 의 코드 (NOTICE_DEADLINE_REMINDER, NOTICE_NEW_MATCH, MAIN_TEST, MARKETING_NEWSLETTER …) */
+  templateCode: string;
+  batchId?: number | null;
+  channels: NotificationChannel[];
+  title: string;
+  status: NotificationStatus;
+  deliveries: NotificationDelivery[];
+  missingVariables: string[];
+  tags: Record<string, string>;
+  scheduledAt: string;
+  createdAt: string;
+  duplicate: boolean;
+}
+
+/** 운영자 소식 메일 캠페인 */
+export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'CANCELLED';
+export interface CampaignProgress { total: number; pending: number; sent: number; partial: number; failed: number; cancelled: number }
+export interface Campaign {
+  id: number;
+  title: string;
+  headline: string;
+  message: string;
+  scheduledAt: string;
+  status: CampaignStatus;
+  recipientCount: number;
+  /** 알림센터 집계. 목록에서는 없고, 알림센터에 닿지 않아도 없다 */
+  progress?: CampaignProgress | null;
+  createdAt: string;
+}
+export interface CampaignRequest { title: string; headline: string; message: string; scheduledAt?: string | null }

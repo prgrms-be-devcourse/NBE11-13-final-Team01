@@ -68,6 +68,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/notices", "/api/notices/**").permitAll()
                         // TODO 내부·외부 연동 API. 운영에서는 별도 보호가 필요하다.
                         .requestMatchers("/api/internal/**", "/api/external/**").permitAll()
+                        // 운영자 기능 (알림 캠페인 등). 컨트롤러의 @PreAuthorize 와 이중으로 막는다
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(new TokenAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)

@@ -3,6 +3,7 @@ package com.zipick.batch;
 import com.zipick.ZipickApplication;
 import com.zipick.notice.dto.NoticeSyncResponse;
 import com.zipick.notice.service.MyHomeSyncService;
+import com.zipick.notification.service.CollectorReportNotifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -40,6 +41,13 @@ public final class NoticeCollectionApplication {
                     result.inactiveHousings(),
                     result.inactiveSupplies()
             );
+            // 운영 슬랙·메일로 일일 보고 (알림센터 스펙 견본). 받을 곳이 설정돼 있지 않으면 건너뛴다.
+            // 보고가 실패해도 수집은 이미 끝났으므로 수집 결과를 실패로 만들지 않는다
+            try {
+                if (context.getBean(CollectorReportNotifier.class).report(result)) log.info("수집 보고를 알림센터에 요청했습니다.");
+            } catch (RuntimeException e) {
+                log.warn("수집 보고를 보내지 못했습니다: {}", e.toString());
+            }
         }
     }
 }

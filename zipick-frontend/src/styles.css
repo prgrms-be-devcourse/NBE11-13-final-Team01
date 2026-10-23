@@ -333,6 +333,17 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 .notif__title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge--sent { background: #ecfdf5; border-color: var(--ok, #059669); color: var(--ok, #059669); }
 .badge--failed { background: #fef2f2; border-color: var(--bad); color: var(--bad); }
+.badge--partial { background: #fff7ed; border-color: var(--warn); color: var(--warn); }
+.badge--scheduled { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.badge--cancelled, .badge--draft { background: #f3f4f6; }
+/* 운영자 캠페인 */
+.admin-campaign { display: flex; flex-direction: column; gap: 12px; }
+.admin-campaign__message { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin-top: 8px; }
+.admin-campaign__message textarea { width: 100%; font: inherit; }
+.admin-campaign__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.admin-campaign__list .linklike { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.admin-campaign__list li.is-selected .linklike { font-weight: 600; }
+.admin-campaign__preview { white-space: pre-wrap; }
 @media (max-width: 640px) { .notif__grid { grid-template-columns: 1fr; } }
 .badge--skipped, .badge--cancelled { opacity: 0.7; }
 
