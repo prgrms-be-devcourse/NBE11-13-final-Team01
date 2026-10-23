@@ -1,5 +1,6 @@
 # 운영 배포: EC2 한 대에 db(PostgreSQL) + rabbitmq + backend(메인) + notification(알림센터) + web(Caddy: 프론트 정적 파일 + /api 프록시)
-# 알림센터·RabbitMQ 는 바깥에 열지 않는다. backend 는 알림 요청을 rabbitmq 에 던지고, 조회·설정은 http://notification:8081 로 부른다.
+# 알림센터·RabbitMQ 는 바깥에 열지 않는다. backend 는 알림 요청을 rabbitmq 에 던지고, 테스트 발송·내역·묶음은 http://notification:8081 로 부른다.
+# 알림센터는 판단 없이 보내기만 한다(스펙: docs/notification-api.md). 알림 설정은 메인 DB 에 있다.
 # 비밀 값은 같은 폴더의 .env 에서 읽는다 (.env.prod.example 참고, git 에 올리지 않음).
 # 외부에는 web 의 80/443 만 열린다. db 와 backend 는 컨테이너 네트워크 안에서만 접근할 수 있다.
 # 프로젝트 이름을 고정한다. 서버 기존 배포(~/zipick 에서 실행 → 디렉터리명 기반 'zipick')와 같은 볼륨(zipick_db-data 등)에 붙기 위해서다.
@@ -67,6 +68,10 @@ services:
       NOTIFICATION_BASE_URL: http://notification:8081
       NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?NOTIFICATION_INTERNAL_KEY 필요}
       NOTIFICATION_QUEUE_ENABLED: "true"
+      # 알림 문구에 넣는 서비스 주소 + 공고 수집 일일 보고를 받을 운영 슬랙·메일 (비우면 보고 안 보냄)
+      APP_URL: ${APP_ORIGIN}
+      NOTIFICATION_OPS_SLACK_WEBHOOK_URL: ${NOTIFICATION_OPS_SLACK_WEBHOOK_URL:-}
+      NOTIFICATION_OPS_EMAIL: ${NOTIFICATION_OPS_EMAIL:-}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
@@ -93,7 +98,6 @@ services:
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY}
-      APP_ORIGIN: ${APP_ORIGIN}
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       # 이메일: none | smtp | ses
       NOTIFICATION_EMAIL_PROVIDER: ${NOTIFICATION_EMAIL_PROVIDER:-none}

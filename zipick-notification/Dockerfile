@@ -10,7 +10,9 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /notification ./cmd/server
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 1001 zipick
 COPY --from=build /notification /notification
+COPY templates /templates
 USER zipick
-ENV TZ=Asia/Seoul
+ENV TZ=Asia/Seoul \
+    NOTIFICATION_TEMPLATES_DIR=/templates
 EXPOSE 8081
 ENTRYPOINT ["/notification"]

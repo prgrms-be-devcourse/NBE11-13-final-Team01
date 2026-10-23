@@ -5,185 +5,198 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
-	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/zipick/notification/internal/channel"
 	"github.com/zipick/notification/internal/config"
 	"github.com/zipick/notification/internal/db"
 	"github.com/zipick/notification/internal/httpx"
-	"github.com/zipick/notification/internal/subscription"
 	"github.com/zipick/notification/internal/template"
 )
 
-// Service 는 요청 → 템플릿 렌더링 → 아웃박스 적기 → (스케줄러) 보내기.
-// 카테고리별 규칙:
-//
-//	TRANSACTIONAL: 동의와 무관. 구독이 없으면 요청의 email 로.
-//	INFORMATIONAL: 구독 enabled 인 사용자만. 아니면 SKIPPED.
-//	MARKETING    : 광고 수신 동의자만. 제목 앞 "(광고)", 21~08시는 다음 08시로 미룸.
+// Service 는 요청 검사 → 문구 채우기 → 적기 → 보내기. 판단 로직은 없다.
 type Service struct {
 	repo      *Repo
-	subs      *subscription.Repo
-	templates *template.Repo
-	channels  []channel.Channel
+	templates *template.Store
+	channels  map[string]channel.Channel // 이름 → 채널 (켜진 것만)
 	cfg       config.Config
-	quiet     quietHours
 }
 
-func NewService(repo *Repo, subs *subscription.Repo, templates *template.Repo, channels []channel.Channel, cfg config.Config) (*Service, error) {
-	q, err := parseQuietHours(cfg.QuietStart, cfg.QuietEnd)
-	if err != nil {
-		return nil, err
+func NewService(repo *Repo, templates *template.Store, channels []channel.Channel, cfg config.Config) *Service {
+	return &Service{repo: repo, templates: templates, channels: channel.ByName(channels), cfg: cfg}
+}
+
+// Available 은 채널 이름 → 켜져 있는지 (GET /internal/v1/channels).
+func (s *Service) Available() map[string]bool {
+	out := map[string]bool{"email": false, "slack": false}
+	for name := range s.channels {
+		out[name] = true
 	}
-	return &Service{repo: repo, subs: subs, templates: templates, channels: channels, cfg: cfg, quiet: q}, nil
+	return out
 }
 
-// EmailAvailable 은 이메일 채널이 켜져 있는지.
-func (s *Service) EmailAvailable() bool { return channel.HasEmail(s.channels) }
+// Recipient 는 요청의 to.
+type Recipient struct {
+	Email           *string `json:"email"`
+	SlackWebhookURL *string `json:"slackWebhookUrl"`
+}
 
-// Request 는 다른 서버가 보내는 "알림 요청". 문구는 모르고, 템플릿 코드와 변수만 안다.
-//   - UserID       : 구독(수신 주소·동의)을 찾는 키. 가입 인증처럼 계정이 없으면 비우고 Email 을 직접 준다
-//   - DedupeKey    : 같은 알림을 두 번 적지 않기 위한 키 (예 DEADLINE:{user}:{notice}:{d}). 없으면 매번 적는다
-//   - ScheduledFor : 비우면 바로. 넣으면 그 시각 이후 첫 주기에 보낸다
+// Request 는 스펙 v1 의 알림 요청. 문구는 모르고, 템플릿 코드와 변수만 안다. 큐로 오든 HTTP 로 오든 같다.
 type Request struct {
-	TemplateCode    string            `json:"templateCode"`
-	UserID          *int64            `json:"userId"`
-	Email           *string           `json:"email"`
-	SlackWebhookURL *string           `json:"slackWebhookUrl"`
-	Variables       map[string]any    `json:"variables"`
-	DedupeKey       *string           `json:"dedupeKey"`
-	ScheduledFor    *db.LocalDateTime `json:"scheduledFor"`
+	Source       string            `json:"source"`       // 요청한 서비스 (main, collector, auth …)
+	TemplateCode string            `json:"templateCode"` // templates/*.yaml 의 code
+	Channels     []string          `json:"channels"`     // email, slack
+	To           Recipient         `json:"to"`           // 고른 채널의 주소
+	Variables    map[string]any    `json:"variables"`
+	DedupeKey    *string           `json:"dedupeKey"`   // 같은 키는 한 번만 적힌다
+	ScheduledAt  *db.LocalDateTime `json:"scheduledAt"` // 비우면 바로
+	Tags         map[string]string `json:"tags"`        // 알림센터가 해석하지 않는 꼬리표 (조회용)
+	Delivery     string            `json:"delivery"`    // "" | "now": now 면 기다리지 않고 바로 보내고 채널별 결과를 돌려준다 (재시도 없음)
 }
 
-func (r Request) validate() error {
+var (
+	sourcePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
+	emailPattern  = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+)
+
+// Validate 는 요청 단계에서 거르는 것. 잘못된 요청은 적히지 않고 바로 400 이라 요청한 쪽이 실수를 금방 안다.
+func (s *Service) Validate(r Request) (template.Template, error) {
+	var t template.Template
 	switch {
-	case strings.TrimSpace(r.TemplateCode) == "" || len(r.TemplateCode) > 60:
-		return httpx.Fail(httpx.InvalidInput, "templateCode 는 1~60자여야 합니다.")
-	case r.UserID == nil && r.Email == nil && r.SlackWebhookURL == nil:
-		return httpx.Fail(httpx.NoRecipient, "userId 또는 email/slackWebhookUrl 중 하나는 있어야 합니다.")
-	case r.DedupeKey != nil && len(*r.DedupeKey) > 120:
-		return httpx.Fail(httpx.InvalidInput, "dedupeKey 는 120자 이하여야 합니다.")
+	case !sourcePattern.MatchString(r.Source):
+		return t, httpx.Fail(httpx.InvalidInput, "source 는 소문자·숫자·- 로 1~40자여야 합니다 (예 main, collector)")
+	case len(r.Channels) == 0:
+		return t, httpx.Fail(httpx.InvalidInput, "channels 는 하나 이상 골라야 합니다 (email, slack)")
+	case r.DedupeKey != nil && (len(*r.DedupeKey) == 0 || len(*r.DedupeKey) > 120):
+		return t, httpx.Fail(httpx.InvalidInput, "dedupeKey 는 1~120자여야 합니다")
+	case r.Delivery != "" && r.Delivery != "now":
+		return t, httpx.Fail(httpx.InvalidInput, "delivery 는 비우거나 now 여야 합니다")
+	case len(r.Tags) > 20:
+		return t, httpx.Fail(httpx.InvalidInput, "tags 는 20개 이하여야 합니다")
 	}
-	return nil
+	t, ok := s.templates.Get(r.TemplateCode)
+	if !ok {
+		return t, httpx.Fail(httpx.TemplateNotFound, "템플릿이 없습니다: "+r.TemplateCode)
+	}
+	seen := map[string]bool{}
+	for _, ch := range r.Channels {
+		if seen[ch] {
+			return t, httpx.Fail(httpx.InvalidInput, "channels 에 같은 채널이 두 번 있습니다: "+ch)
+		}
+		seen[ch] = true
+		c, on := s.channels[ch]
+		if ch != "email" && ch != "slack" {
+			return t, httpx.Fail(httpx.InvalidInput, "모르는 채널입니다: "+ch)
+		}
+		if !on {
+			return t, httpx.Fail(httpx.ChannelUnavailable, "이 서버에 "+ch+" 채널이 꺼져 있습니다")
+		}
+		if !t.HasChannel(ch) {
+			return t, httpx.Fail(httpx.InvalidInput, "템플릿 "+t.Code+" 에 "+ch+" 문구가 없습니다")
+		}
+		if !c.HasAddress(channel.Recipient{Email: r.To.Email, SlackWebhookURL: r.To.SlackWebhookURL}) {
+			return t, httpx.Fail(httpx.NoRecipient, ch+" 채널을 골랐는데 to 에 그 주소가 없습니다")
+		}
+	}
+	if r.To.Email != nil && (len(*r.To.Email) > 255 || !emailPattern.MatchString(*r.To.Email)) {
+		return t, httpx.Fail(httpx.InvalidInput, "to.email 형식이 올바르지 않습니다")
+	}
+	if r.To.SlackWebhookURL != nil && (len(*r.To.SlackWebhookURL) > 500 || !strings.HasPrefix(*r.To.SlackWebhookURL, channel.SlackWebhookPrefix)) {
+		return t, httpx.Fail(httpx.InvalidInput, "to.slackWebhookUrl 은 https://hooks.slack.com/ 으로 시작해야 합니다")
+	}
+	return t, nil
 }
 
-// Enqueue 는 아웃박스에 적는다. 같은 dedupeKey 가 이미 있으면 적지 않고 기존 건을 duplicate=true 로 돌려준다 (멱등).
+// Build 는 검사가 끝난 요청으로 아직 저장하지 않은 Message 를 만든다 (묶음 요청도 이 함수를 쓴다).
+func Build(t template.Template, r Request, batchID *int64) Message {
+	vars := r.Variables
+	if vars == nil {
+		vars = map[string]any{}
+	}
+	rendered, missing := t.RenderAll(r.Channels, vars)
+	when := db.Now()
+	if r.ScheduledAt != nil && !r.ScheduledAt.IsZero() {
+		when = r.ScheduledAt.Time
+	}
+	varsJSON, _ := json.Marshal(vars)
+	m := Message{Source: r.Source, TemplateCode: t.Code, BatchID: batchID, DedupeKey: r.DedupeKey, Channels: r.Channels,
+		ToEmail: r.To.Email, ToSlackWebhookURL: r.To.SlackWebhookURL, Variables: string(varsJSON), MissingVariables: missing,
+		Tags: r.Tags, ScheduledFor: when}
+	if e, ok := rendered["email"]; ok {
+		subj, body := cutRunes(e.Subject, 300), e.Body
+		m.EmailSubject, m.EmailBody = &subj, &body
+	}
+	if sl, ok := rendered["slack"]; ok {
+		text := sl.Body
+		m.SlackText = &text
+	}
+	return m
+}
+
+// Enqueue 는 요청 하나를 적는다. 같은 dedupeKey 가 이미 있으면 기존 건을 duplicate=true 로 돌려준다 (멱등).
+// delivery=now 면 적은 뒤 바로 보내고 채널별 결과를 돌려준다.
 func (s *Service) Enqueue(ctx context.Context, r Request) (Response, error) {
-	if err := r.validate(); err != nil {
+	t, err := s.Validate(r)
+	if err != nil {
 		return Response{}, err
 	}
 	if r.DedupeKey != nil {
-		if existing, err := s.repo.FindByDedupeKey(ctx, s.repo.pool, *r.DedupeKey); err != nil {
+		existing, err := s.repo.FindByDedupeKey(ctx, s.repo.pool, *r.DedupeKey)
+		if err != nil {
 			return Response{}, err
-		} else if existing != nil {
-			return ToResponse(*existing, true), nil
+		}
+		if existing != nil {
+			return s.response(ctx, *existing, true)
 		}
 	}
-	t, err := s.templates.FindByCode(ctx, r.TemplateCode)
+	m, err := s.repo.Insert(ctx, s.repo.pool, Build(t, r, nil))
 	if err != nil {
 		return Response{}, err
 	}
-	if !t.Enabled {
-		return Response{}, httpx.Fail(httpx.InvalidInput, "꺼져 있는 템플릿입니다: "+t.Code)
+	if len(m.MissingVariables) > 0 {
+		slog.Warn("템플릿 변수 비어 있음", "source", r.Source, "template", t.Code, "missing", m.MissingVariables)
 	}
-	var when time.Time
-	if r.ScheduledFor != nil {
-		when = r.ScheduledFor.Time
-	}
-	m := s.Build(t, r.UserID, r.Email, r.SlackWebhookURL, r.Variables, r.DedupeKey, when, nil)
-	saved, err := s.repo.Insert(ctx, s.repo.pool, m)
-	if err != nil {
-		return Response{}, err
-	}
-	return ToResponse(saved, false), nil
-}
-
-// Build 는 템플릿을 채워 아직 저장하지 않은 Message 를 만든다. 캠페인도 이 함수를 써서 규칙(광고 표기·야간 금지)이 한 곳에만 있다.
-func (s *Service) Build(t template.Template, userID *int64, email, slack *string, vars map[string]any,
-	dedupeKey *string, scheduledFor time.Time, campaignID *int64) Message {
-	v := map[string]any{"appUrl": s.cfg.AppURL}
-	for k, val := range vars {
-		v[k] = val
-	}
-	title, body := template.Render(t.TitleTemplate, v), template.Render(t.BodyTemplate, v)
-	var url *string
-	missing := append(title.Missing, body.Missing...)
-	if t.URLTemplate != nil {
-		u := template.Render(*t.URLTemplate, v)
-		missing = append(missing, u.Missing...)
-		if strings.TrimSpace(u.Text) != "" {
-			url = &u.Text
+	if r.Delivery == "now" {
+		// 테스트 발송 같은 용도: 재시도 없이 한 번 보내고 결과를 바로 알려 준다
+		if err := s.dispatchOne(ctx, m.ID, 1); err != nil {
+			return Response{}, err
 		}
+		return s.Get(ctx, m.ID) // 발송 결과가 반영된 상태로
 	}
-	if len(missing) > 0 {
-		slog.Warn("템플릿 변수 비어 있음", "template", t.Code, "missing", missing)
-	}
-	when := scheduledFor
-	if when.IsZero() {
-		when = db.Now()
-	}
-	titleText := title.Text
-	if t.Category == template.Marketing {
-		when = s.quiet.shift(when)
-		if !strings.HasPrefix(titleText, "(광고)") {
-			titleText = "(광고) " + titleText
-		}
-	}
-	varsJSON, _ := json.Marshal(v)
-	vs := string(varsJSON)
-	return Message{UserID: userID, TemplateCode: t.Code, Category: t.Category, CampaignID: campaignID, DedupeKey: dedupeKey,
-		Variables: &vs, ToEmail: email, ToSlackWebhookURL: slack, Title: cutRunes(titleText, 300), Body: body.Text, URL: url, ScheduledFor: when}
+	return s.response(ctx, m, false)
 }
 
-// SendTest 는 설정 화면의 "테스트 발송": 바로 적고 바로 보낸다. 재시도하지 않고 결과를 즉시 보여 준다.
-func (s *Service) SendTest(ctx context.Context, userID int64) (Response, error) {
-	sub, err := s.subs.FindByUser(ctx, userID)
+// Get 은 메시지 하나와 채널별 상태.
+func (s *Service) Get(ctx context.Context, id int64) (Response, error) {
+	m, err := s.repo.FindByID(ctx, s.repo.pool, id)
 	if err != nil {
 		return Response{}, err
 	}
-	if sub == nil {
-		return Response{}, httpx.Fail(httpx.SubscriptionNotFound, "알림 설정을 먼저 저장해 주세요.")
+	if m == nil {
+		return Response{}, httpx.Fail(httpx.MessageNotFound, fmt.Sprintf("메시지가 없습니다: %d", id))
 	}
-	to := channel.Recipient{Email: sub.Email, SlackWebhookURL: sub.SlackWebhookURL}
-	if !s.anySupports(to) {
-		return Response{}, httpx.Fail(httpx.NoChannel, "보낼 채널이 없습니다. 슬랙 웹훅 주소나 이메일을 넣어 주세요.")
-	}
-	t, err := s.templates.FindByCode(ctx, "TEST")
-	if err != nil {
-		return Response{}, err
-	}
-	days := make([]string, 0)
-	for _, d := range sub.DeadlineDayList() {
-		days = append(days, fmt.Sprint(d))
-	}
-	key := fmt.Sprintf("TEST:%d:%s", userID, db.Now().Format("2006-01-02T15:04:05.000"))
-	m, err := s.repo.Insert(ctx, s.repo.pool, s.Build(t, &userID, nil, nil, map[string]any{"deadlineDays": strings.Join(days, "·")}, &key, time.Time{}, nil))
-	if err != nil {
-		return Response{}, err
-	}
-	s.deliver(ctx, s.repo.pool, m, to, 1)
-	saved, err := s.repo.FindByID(ctx, s.repo.pool, m.ID)
-	if err != nil {
-		return Response{}, err
-	}
-	return ToResponse(saved, false), nil
+	return s.response(ctx, *m, false)
 }
 
-func (s *Service) History(ctx context.Context, userID int64) ([]Response, error) {
-	list, err := s.repo.History(ctx, userID)
+// Search 는 꼬리표·source 로 최근 50건.
+func (s *Service) Search(ctx context.Context, tags map[string]string, source string) ([]Response, error) {
+	list, err := s.repo.Search(ctx, tags, source, 50)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Response, 0, len(list))
 	for _, m := range list {
-		out = append(out, ToResponse(m, false))
+		res, err := s.response(ctx, m, false)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, res)
 	}
 	return out, nil
 }
 
-// DispatchPending 은 때가 된 PENDING 메시지를 보낸다. 건마다 트랜잭션이라 하나가 실패해도 나머지는 진행된다. 반환: 보낸 건수.
+// DispatchPending 은 때가 된 PENDING 메시지를 보낸다. 건마다 트랜잭션. 반환: 이번에 SENT 가 된 메시지 수.
 func (s *Service) DispatchPending(ctx context.Context) (int, error) {
 	ids, err := s.repo.DuePendingIDs(ctx, db.Now(), 200)
 	if err != nil {
@@ -191,107 +204,111 @@ func (s *Service) DispatchPending(ctx context.Context) (int, error) {
 	}
 	sent := 0
 	for _, id := range ids {
-		ok, err := s.dispatchOne(ctx, id)
-		if err != nil {
+		if err := s.dispatchOne(ctx, id, s.cfg.MaxAttempts); err != nil {
 			slog.Error("발송 처리 실패", "message", id, "err", err)
 			continue
 		}
-		if ok {
+		if m, _ := s.repo.FindByID(ctx, s.repo.pool, id); m != nil && m.Status == Sent {
 			sent++
 		}
 	}
 	return sent, nil
 }
 
-// dispatchOne 은 메시지 하나를 트랜잭션 안에서 잠그고(SKIP LOCKED) 보낸다.
-func (s *Service) dispatchOne(ctx context.Context, id int64) (bool, error) {
+// dispatchOne 은 메시지 하나를 잠그고(SKIP LOCKED) 아직 안 보낸 채널에만 보낸다. 끝나면 메시지 상태를 다시 정한다.
+func (s *Service) dispatchOne(ctx context.Context, id int64, maxAttempts int) error {
 	tx, err := s.repo.pool.Begin(ctx)
 	if err != nil {
-		return false, err
+		return err
 	}
-	defer tx.Rollback(ctx) // Commit 이 끝났으면 Rollback 은 아무 일도 하지 않는다 (Java 의 finally 와 같음)
+	defer tx.Rollback(ctx) // Commit 뒤의 Rollback 은 아무 일도 하지 않는다
 
 	m, err := s.repo.LockPending(ctx, tx, id)
 	if err != nil || m == nil {
-		return false, err // 다른 서버가 잡았거나 이미 처리됨
+		return err // 다른 서버가 잡았거나 이미 처리됨
 	}
-	var sub *subscription.Subscription
-	if m.UserID != nil {
-		if sub, err = s.subs.FindByUser(ctx, *m.UserID); err != nil {
-			return false, err
-		}
-	}
-	skip := ""
-	switch m.Category {
-	case template.Informational:
-		if sub == nil || !sub.Enabled {
-			skip = "정보성 알림이 꺼져 있음"
-		}
-	case template.Marketing:
-		if sub == nil || !sub.MarketingConsent {
-			skip = "광고 수신 동의 없음"
-		}
-	}
-	if skip != "" {
-		return false, finish(ctx, tx, s.repo.MarkSkipped(ctx, tx, m.ID, skip))
-	}
-	// 요청이 직접 준 주소가 우선, 없으면 구독의 주소
-	to := channel.Recipient{Email: m.ToEmail, SlackWebhookURL: m.ToSlackWebhookURL}
-	if sub != nil {
-		if to.Email == nil {
-			to.Email = sub.Email
-		}
-		if to.SlackWebhookURL == nil {
-			to.SlackWebhookURL = sub.SlackWebhookURL
-		}
-	}
-	if to.IsEmpty() {
-		return false, finish(ctx, tx, s.repo.MarkSkipped(ctx, tx, m.ID, "받을 주소가 없음"))
-	}
-	ok := s.deliver(ctx, tx, *m, to, s.cfg.MaxAttempts)
-	return ok, tx.Commit(ctx)
-}
-
-func finish(ctx context.Context, tx pgx.Tx, err error) error {
+	deliveries, err := s.repo.Deliveries(ctx, tx, m.ID)
 	if err != nil {
+		return err
+	}
+	to := channel.Recipient{Email: m.ToEmail, SlackWebhookURL: m.ToSlackWebhookURL}
+	for _, d := range deliveries {
+		if d.Status != DPending {
+			continue // 이미 성공했거나 포기한 채널로는 다시 보내지 않는다
+		}
+		c, on := s.channels[d.Channel]
+		if !on {
+			_ = s.repo.MarkDeliveryFailed(ctx, tx, d.ID, "채널이 꺼져 있음", 1)
+			continue
+		}
+		if err := c.Send(ctx, to, contentFor(*m, d.Channel)); err != nil {
+			slog.Warn("발송 실패", "message", m.ID, "channel", d.Channel, "err", err)
+			_ = s.repo.MarkDeliveryFailed(ctx, tx, d.ID, err.Error(), maxAttempts)
+			continue
+		}
+		_ = s.repo.MarkDeliverySent(ctx, tx, d.ID, db.Now())
+	}
+	after, err := s.repo.Deliveries(ctx, tx, m.ID)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.SetStatus(ctx, tx, m.ID, Summarize(after)); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-// deliver 는 받는 쪽이 지원하는 채널 전부로 보내고 결과를 기록한다. 하나라도 성공하면 SENT.
-func (s *Service) deliver(ctx context.Context, q querier, m Message, to channel.Recipient, maxAttempts int) bool {
-	var ok, errs []string
-	for _, c := range s.channels {
-		if !c.Supports(to) {
-			continue
+// Summarize 는 채널별 결과로 메시지 상태를 정한다.
+func Summarize(ds []Delivery) Status {
+	sent, failed, pending := 0, 0, 0
+	for _, d := range ds {
+		switch d.Status {
+		case DSent:
+			sent++
+		case DFailed:
+			failed++
+		default:
+			pending++
 		}
-		if err := c.Send(ctx, to, channel.Message{Title: m.Title, Body: m.Body, URL: m.URL}); err != nil {
-			slog.Warn("발송 실패", "message", m.ID, "channel", c.Name(), "err", err)
-			errs = append(errs, c.Name()+": "+err.Error())
-			continue
-		}
-		ok = append(ok, c.Name())
 	}
-	if len(ok) > 0 {
-		_ = s.repo.MarkSent(ctx, q, m.ID, strings.Join(ok, ","), db.Now())
-		return true
+	switch {
+	case pending > 0:
+		return Pending
+	case failed == 0:
+		return Sent
+	case sent == 0:
+		return Failed
 	}
-	reason := "보낼 채널이 없음 (이메일 provider 설정 확인)"
-	if len(errs) > 0 {
-		reason = strings.Join(errs, " / ")
-	}
-	_ = s.repo.MarkFailed(ctx, q, m.ID, reason, maxAttempts)
-	return false
+	return Partial
 }
 
-func (s *Service) anySupports(to channel.Recipient) bool {
-	for _, c := range s.channels {
-		if c.Supports(to) {
-			return true
-		}
+func contentFor(m Message, ch string) channel.Content {
+	switch ch {
+	case "email":
+		return channel.Content{Subject: deref(m.EmailSubject), Body: deref(m.EmailBody)}
+	default:
+		return channel.Content{Body: deref(m.SlackText)}
 	}
-	return false
+}
+
+// MaskOldAddresses 는 보관 기간이 지난 기록의 주소를 가린다 (하루 한 번).
+func (s *Service) MaskOldAddresses(ctx context.Context) (int64, error) {
+	return s.repo.MaskAddressesOlderThan(ctx, db.Now().AddDate(0, 0, -s.cfg.RetentionDays))
+}
+
+func (s *Service) response(ctx context.Context, m Message, duplicate bool) (Response, error) {
+	ds, err := s.repo.Deliveries(ctx, s.repo.pool, m.ID)
+	if err != nil {
+		return Response{}, err
+	}
+	return ToResponse(m, ds, duplicate), nil
+}
+
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // cutRunes 는 글자 수 기준으로 자른다 (한글은 바이트가 3개라 len() 으로 자르면 깨진다).

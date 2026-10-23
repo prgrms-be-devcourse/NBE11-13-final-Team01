@@ -34,7 +34,7 @@ func Pool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	if _, err := pool.Exec(context.Background(),
-		`truncate notification_messages, campaigns, subscriptions, notification_templates restart identity`); err != nil {
+		`truncate notification_deliveries, notification_messages, notification_batches restart identity`); err != nil {
 		t.Fatal(err)
 	}
 	return pool

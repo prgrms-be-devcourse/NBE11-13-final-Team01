@@ -1,0 +1,11 @@
+# 알림 설정 화면의 "테스트 발송". 요청: main
+code: MAIN_TEST
+owner: 안서호 (메인 서버)
+description: 사용자가 설정 화면에서 누르는 테스트 알림
+variables: [deadlineDays]
+email:
+  subject: "[ZIPICK] 알림 테스트"
+  body: |-
+    알림이 잘 도착했어요. 관심 공고의 접수 마감 {{deadlineDays}}일 전과, 내 조건에 맞는 새 공고가 들어올 때 알려 드려요.
+slack:
+  text: "*ZIPICK 알림 테스트*\n알림이 잘 도착했어요. 관심 공고의 접수 마감 {{deadlineDays}}일 전과, 내 조건에 맞는 새 공고가 들어올 때 알려 드려요."

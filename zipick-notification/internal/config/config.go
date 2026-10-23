@@ -12,16 +12,15 @@ import (
 
 // Config 는 서버 전체 설정. main.go 가 한 번 만들어 필요한 패키지에 넘긴다.
 type Config struct {
-	Port        string        // 서버 포트 (NOTIFICATION_PORT, 기본 8081)
-	InternalKey string        // 메인 서버 ↔ 알림센터 공유 키 (NOTIFICATION_INTERNAL_KEY). 비어 있으면 /internal 전부 거부
-	AppURL      string        // 알림 링크가 열릴 서비스 주소. 템플릿 {{appUrl}} (APP_ORIGIN)
-	DBURL       string        // postgres://user:pass@host:port/db
-	PollEvery   time.Duration // 스케줄러 주기 (NOTIFICATION_POLL_INTERVAL, 기본 1m)
-	MaxAttempts int           // 발송 실패 재시도 횟수 (기본 3)
-	Scheduler   bool          // false 면 스케줄러를 띄우지 않음 (테스트용)
-	QuietStart  string        // 광고 발송 금지 시작 "21:00"
-	QuietEnd    string        // 광고 발송 금지 끝 "08:00"
-	RabbitURL   string        // RabbitMQ 주소 (RABBITMQ_URL, 예 amqp://user:pass@host:5672/). 비우면 큐 리스너를 띄우지 않는다 (HTTP 만)
+	Port          string        // 서버 포트 (NOTIFICATION_PORT, 기본 8081)
+	InternalKey   string        // 메인 서버 ↔ 알림센터 공유 키 (NOTIFICATION_INTERNAL_KEY). 비어 있으면 /internal 전부 거부
+	DBURL         string        // postgres://user:pass@host:port/db
+	PollEvery     time.Duration // 스케줄러 주기 (NOTIFICATION_POLL_INTERVAL, 기본 1m)
+	MaxAttempts   int           // 발송 실패 재시도 횟수 (기본 3)
+	Scheduler     bool          // false 면 스케줄러를 띄우지 않음 (테스트용)
+	TemplatesDir  string        // 템플릿 yaml 폴더 (NOTIFICATION_TEMPLATES_DIR, 기본 ./templates)
+	RetentionDays int           // 발송 기록의 수신 주소를 가리기까지 (기본 90일)
+	RabbitURL     string        // RabbitMQ 주소 (RABBITMQ_URL, 예 amqp://user:pass@host:5672/). 비우면 큐 리스너를 띄우지 않는다 (HTTP 만)
 
 	Email EmailConfig
 }
@@ -42,15 +41,14 @@ type EmailConfig struct {
 // Go 에는 예외가 없다. 실패할 수 있는 함수는 마지막 반환값으로 error 를 주고, 호출한 쪽이 if err != nil 로 확인한다.
 func Load() (Config, error) {
 	c := Config{
-		Port:        env("NOTIFICATION_PORT", "8081"),
-		InternalKey: os.Getenv("NOTIFICATION_INTERNAL_KEY"),
-		AppURL:      env("APP_ORIGIN", "http://localhost:5173"),
-		PollEvery:   envDuration("NOTIFICATION_POLL_INTERVAL", time.Minute),
-		MaxAttempts: envInt("NOTIFICATION_MAX_ATTEMPTS", 3),
-		Scheduler:   env("NOTIFICATION_SCHEDULER_ENABLED", "true") == "true",
-		QuietStart:  env("NOTIFICATION_QUIET_START", "21:00"),
-		QuietEnd:    env("NOTIFICATION_QUIET_END", "08:00"),
-		RabbitURL:   os.Getenv("RABBITMQ_URL"),
+		Port:          env("NOTIFICATION_PORT", "8081"),
+		InternalKey:   os.Getenv("NOTIFICATION_INTERNAL_KEY"),
+		PollEvery:     envDuration("NOTIFICATION_POLL_INTERVAL", time.Minute),
+		MaxAttempts:   envInt("NOTIFICATION_MAX_ATTEMPTS", 3),
+		Scheduler:     env("NOTIFICATION_SCHEDULER_ENABLED", "true") == "true",
+		RabbitURL:     os.Getenv("RABBITMQ_URL"),
+		TemplatesDir:  env("NOTIFICATION_TEMPLATES_DIR", "./templates"),
+		RetentionDays: envInt("NOTIFICATION_RETENTION_DAYS", 90),
 		Email: EmailConfig{
 			Provider:  strings.ToLower(env("NOTIFICATION_EMAIL_PROVIDER", "none")),
 			From:      os.Getenv("NOTIFICATION_EMAIL_FROM"),

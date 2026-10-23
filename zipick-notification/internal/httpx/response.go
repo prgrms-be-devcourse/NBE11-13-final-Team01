@@ -16,21 +16,21 @@ import (
 type Code string
 
 const (
-	InvalidInput         Code = "INVALID_INPUT"
-	AuthRequired         Code = "AUTH_REQUIRED"
-	ResourceNotFound     Code = "RESOURCE_NOT_FOUND"
-	TemplateNotFound     Code = "TEMPLATE_NOT_FOUND"
-	SubscriptionNotFound Code = "SUBSCRIPTION_NOT_FOUND"
-	CampaignNotFound     Code = "CAMPAIGN_NOT_FOUND"
-	NoRecipient          Code = "NO_RECIPIENT"
-	NoChannel            Code = "NO_CHANNEL"
-	InternalError        Code = "INTERNAL_ERROR"
+	InvalidInput       Code = "INVALID_INPUT"
+	AuthRequired       Code = "AUTH_REQUIRED"
+	ResourceNotFound   Code = "RESOURCE_NOT_FOUND"
+	TemplateNotFound   Code = "TEMPLATE_NOT_FOUND"
+	MessageNotFound    Code = "MESSAGE_NOT_FOUND"
+	BatchNotFound      Code = "BATCH_NOT_FOUND"
+	NoRecipient        Code = "NO_RECIPIENT"        // 고른 채널의 주소가 없음
+	ChannelUnavailable Code = "CHANNEL_UNAVAILABLE" // 서버에 그 채널이 꺼져 있음 (예: 이메일 provider=none)
+	InternalError      Code = "INTERNAL_ERROR"
 )
 
 // HTTP 상태는 코드마다 정해져 있다.
 var statusOf = map[Code]int{
 	InvalidInput: 400, AuthRequired: 401, ResourceNotFound: 404, TemplateNotFound: 404,
-	SubscriptionNotFound: 404, CampaignNotFound: 404, NoRecipient: 400, NoChannel: 400, InternalError: 500,
+	MessageNotFound: 404, BatchNotFound: 404, NoRecipient: 400, ChannelUnavailable: 400, InternalError: 500,
 }
 
 // Error 는 "사용자에게 보여 줄 수 있는" 오류. Spring 의 BusinessException.

@@ -1,0 +1,12 @@
+# 관심 공고 접수 마감 D-day. 요청: main 의 알림 스케줄러
+code: NOTICE_DEADLINE_REMINDER
+owner: 안서호 (메인 서버)
+variables: [dDayLabel, whenText, applyEndAt, noticeTitle, regionsText, detailUrl]
+email:
+  subject: "[ZIPICK] 접수 마감 {{dDayLabel}} · {{noticeTitle}}"
+  body: |-
+    관심 공고의 접수가 {{whenText}}({{applyEndAt}}) 마감돼요.{{regionsText}}
+
+    공고 보기: {{detailUrl}}
+slack:
+  text: "*접수 마감 {{dDayLabel}} · {{noticeTitle}}*\n관심 공고의 접수가 {{whenText}}({{applyEndAt}}) 마감돼요.{{regionsText}}\n{{detailUrl}}"
