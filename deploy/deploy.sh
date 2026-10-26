@@ -25,16 +25,18 @@ docker build --platform linux/arm64 --build-arg "VITE_KAKAO_MAP_KEY=${VITE_KAKAO
 echo "==> 2/4 배포 묶음 준비"
 rm -rf "$BUNDLE" && mkdir -p "$BUNDLE/db"
 cp "$ROOT/deploy/docker-compose.prod.yml" "$ROOT/deploy/.env.prod.example" "$ROOT/deploy/collect-notices.sh" "$BUNDLE/"
-# DB 가 처음 뜰 때 이름 순서대로 실행된다: 인증·추천 → 공고 수집 → 주변 인프라(housing 참조)
+# DB 가 처음 뜰 때 이름 순서대로 실행된다. 번호가 곧 실행 순서이므로 FK 의존 순서를 지켜야 한다:
+#   인증·추천 → 공고 수집 → 주변 인프라(housing 참조) → AI 가이드(users·notice 참조)
 cp "$ROOT/zipick-backend/db/local-init.sql"  "$BUNDLE/db/01-local-init.sql"
 cp "$ROOT/zipick-backend/db/notice-init.sql" "$BUNDLE/db/02-notice-init.sql"
 cp "$ROOT/zipick-backend/db/infra-init.sql"  "$BUNDLE/db/03-infra-init.sql"
-# 알림센터는 별도 DB. 처음 뜰 때 DB 를 만들고(04), 그 DB 에 테이블을 만든다(05)
-cat > "$BUNDLE/db/04-notification-db.sql" <<'SQL'
+cp "$ROOT/zipick-backend/db/guide-init.sql"  "$BUNDLE/db/04-guide-init.sql"
+# 알림센터는 별도 DB. 처음 뜰 때 DB 를 만들고(05), 그 DB 에 테이블을 만든다(06)
+cat > "$BUNDLE/db/05-notification-db.sql" <<'SQL'
 CREATE DATABASE zipick_notification;
 SQL
-printf '\\connect zipick_notification\n' > "$BUNDLE/db/05-notification-init.sql"
-cat "$ROOT/zipick-notification/db/init.sql" >> "$BUNDLE/db/05-notification-init.sql"
+printf '\\connect zipick_notification\n' > "$BUNDLE/db/06-notification-init.sql"
+cat "$ROOT/zipick-notification/db/init.sql" >> "$BUNDLE/db/06-notification-init.sql"
 
 echo "==> 3/4 서버로 전송"
 "${SSH[@]}" "mkdir -p ~/zipick/db"
