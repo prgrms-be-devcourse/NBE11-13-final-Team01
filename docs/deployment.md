@@ -13,7 +13,9 @@
 | 알림센터 연결 | 백엔드와 알림센터에 같은 `NOTIFICATION_INTERNAL_KEY`. 백엔드는 `NOTIFICATION_BASE_URL`(compose 안에서는 `http://notification:8081`) |
 | 알림 요청 큐 | RabbitMQ 컨테이너(`RABBITMQ_USER`, `RABBITMQ_PASSWORD`). 백엔드 `NOTIFICATION_QUEUE_ENABLED=true` + `RABBITMQ_HOST`, 알림센터 `RABBITMQ_URL`. 큐가 없으면 HTTP 로만 동작 |
 | 이메일 알림 | 알림센터에 `NOTIFICATION_EMAIL_PROVIDER=smtp`(+ `MAIL_*`) 또는 `ses`(+ `NOTIFICATION_EMAIL_FROM`, AWS 자격 증명). 비우면 슬랙만 동작 |
+| AI 신청 준비 가이드 | 백엔드가 `gemini.api.key`를 읽을 수 있어야 함(`GEMINI_API_KEY`). 선택: `APPLICATION_GUIDE_MODEL`, `APPLICATION_GUIDE_DAILY_CALL_BUDGET`. **키가 없으면 이 기능만 꺼지고 백엔드는 정상 기동** |
 | DB 스키마 | `ddl-auto: validate`; 배포 DB에 `local-init.sql` / `notice-init.sql` / `infra-init.sql` 같은 **DROP/CREATE 초기화 스크립트 실행 금지** |
+| **신규 테이블 (이번 배포)** | ⚠️ `notice_application_guide`. **백엔드 배포 전에** `guide-init.sql`을 운영 DB에 적용해야 합니다 → [4. AI 신청 준비 가이드 배포](#4-ai-신청-준비-가이드-배포-신규-테이블--gemini-키) |
 
 현재 로컬 개발용 외부 API 키는 `config/application-secret.yml` 파일로 관리하지만, 실제 배포 방식에 맞춰 **비밀 설정이 런타임에 안전하게 전달되는지** 확인해야 합니다.
 
@@ -108,16 +110,129 @@ SELECT n.source, n.status,
 
 상세 수집 정책·API·캐시 상태: [주변 인프라 기능](housing-infra.md).
 
-## 4. 배포 후 최소 점검
+## 4. AI 신청 준비 가이드 배포 (신규 테이블 + Gemini 키)
+
+이번 기능은 **신규 DB 테이블 `notice_application_guide`** 를 추가합니다.
+ZIPICK 의 CD 는 설계상 **운영 DB 에 DDL 을 실행하지 않으므로**(알림센터 DB 와 같은 상황)
+사람이 한 번 적용해야 합니다.
+
+### 왜 순서가 중요한가
+
+백엔드는 `ddl-auto: validate` 입니다. Hibernate 가 기동할 때 매핑된 모든 엔티티의 테이블이
+실제로 있는지 검사하고, 하나라도 없으면 `EntityManagerFactory` 생성이 실패해 **애플리케이션 전체가 뜨지 않습니다.**
+AI 기능만 꺼지는 것이 아닙니다.
+
+```
+잘못된 순서                              권장 순서
+  백엔드 먼저 배포                         운영 DB 에 guide-init.sql 적용
+      ↓                                        ↓
+  validate 실행                             테이블 생성 확인
+      ↓                                        ↓
+  notice_application_guide 없음              .env 에 GEMINI_API_KEY 추가
+      ↓                                        ↓
+  ❌ 백엔드 전체 기동 실패                   백엔드 배포 → 프론트 배포 → Smoke Test
+```
+
+> 영향 범위가 다른 두 가지를 구분하세요.
+> - **테이블이 없다** → 백엔드 **전체** 기동 실패 (`validate`)
+> - **`GEMINI_API_KEY` 가 없다** → 백엔드는 정상 기동. AI 가이드 화면만 "AI 기능이 아직 준비되지 않았어요"
+
+> 롤백 관점에서는 **테이블 추가만** 하므로 안전합니다. 구버전 이미지는 모르는 테이블을 무시합니다
+> (참고: [CD 파이프라인 — DB 스키마는 롤백되지 않습니다](cd-pipeline.md)).
+
+### DDL 적용 (운영 DB, 최초 한 번)
+
+기존 운영 PostgreSQL 볼륨에서는 compose 의 `/docker-entrypoint-initdb.d` 스크립트가
+**빈 볼륨으로 처음 뜰 때만** 실행됩니다. 이미 운영 중인 DB 에는 자동 적용되지 않습니다.
+
+```bash
+# EC2 에서. db 컨테이너 안의 POSTGRES_USER 를 쓰므로 .env 의 비밀값을 읽지 않는다
+cd ~/zipick
+docker compose -f docker-compose.prod.yml cp   /path/to/guide-init.sql db:/tmp/guide-init.sql
+docker compose -f docker-compose.prod.yml exec -T db   sh -c 'psql -U "$POSTGRES_USER" -d zipick -f /tmp/guide-init.sql'
+```
+
+파일을 서버로 옮기기 어려우면 저장소 내용을 그대로 파이프로 넣어도 됩니다.
+
+```bash
+# 로컬 저장소 루트에서
+cat zipick-backend/db/guide-init.sql   | ssh -i <키> ubuntu@<IP>       'cd ~/zipick && docker compose -f docker-compose.prod.yml exec -T db sh -c '"'"'psql -U "$POSTGRES_USER" -d zipick'"'"''
+```
+
+> `guide-init.sql` 은 `DROP` 없이 `CREATE TABLE IF NOT EXISTS` 만 씁니다.
+> **여러 번 실행해도 기존 AI 가이드 결과가 지워지지 않고**, 다른 테이블도 건드리지 않습니다.
+> `local-init.sql` 등 다른 초기화 SQL 을 운영 DB 에서 다시 실행하면 안 됩니다.
+
+### 적용 확인
+
+```sql
+-- 테이블이 생겼는지
+SELECT to_regclass('public.notice_application_guide');
+-- 기대: notice_application_guide  (없으면 NULL)
+
+-- 컬럼까지 확인하고 싶을 때
+\d notice_application_guide
+```
+
+```bash
+cd ~/zipick && docker compose -f docker-compose.prod.yml exec -T db   sh -c 'psql -U "$POSTGRES_USER" -d zipick -tAc "SELECT to_regclass('"'"'public.notice_application_guide'"'"')"'
+```
+
+### 환경 변수
+
+운영 비밀값은 **EC2 의 `/home/ubuntu/zipick/.env` 에만** 둡니다 (GitHub Secret 이 아닙니다).
+compose 가 `${...}` 로 읽어 백엔드 컨테이너에 전달합니다.
+
+```
+# ~/zipick/.env 에 추가
+GEMINI_API_KEY=                        # Google AI Studio 발급 키 (필수, 비우면 AI 가이드만 꺼짐)
+APPLICATION_GUIDE_MODEL=               # 선택. 비우면 gemini-3.5-flash-lite
+APPLICATION_GUIDE_DAILY_CALL_BUDGET=   # 선택. 비우면 200, 0 이면 제한 없음
+```
+
+| 변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `GEMINI_API_KEY` | ○ | 없음 | **공통** 인증 키. 비밀값이라 Git·이미지에 넣지 않습니다 |
+| `APPLICATION_GUIDE_MODEL` | ✕ | `gemini-3.5-flash-lite` | 이 기능이 쓸 모델 |
+| `APPLICATION_GUIDE_DAILY_CALL_BUDGET` | ✕ | `200` | 이 기능이 하루에 허용하는 생성 호출 수. `0` 이면 제한하지 않음 |
+
+모델과 호출 상한에 기능 이름이 붙어 있는 이유는, 같은 Gemini 를 쓰는 다른 기능
+(공고 수집 보조 PDF 파서)이 값을 바꿔도 이 기능이 따라 바뀌지 않게 하기 위해서입니다.
+`GEMINI_MODEL` 을 주면 팀 공통 기본 모델로 쓰이고, `APPLICATION_GUIDE_MODEL` 이 그보다 우선합니다.
+
+> ⚠️ **`APPLICATION_GUIDE_DAILY_CALL_BUDGET` 은 이 기능 자체의 보호장치입니다.**
+> Google 의 프로젝트·모델 quota 와는 별개이며, Gemini 사용량은 Google 프로젝트와 사용 모델 구성에 따라 다른 AI 기능과 공유될 수 있으므로, 운영 환경에 맞춰 조정해야 합니다.
+> 개발 중에는 더 높여 쓸 수 있지만 저장소 기본값은 200 입니다.
+>
+> (참고 — 개발 당시 Gemini 3.5 Flash Lite 개발용 프로젝트에서 RPM 15 / TPM 250,000 input / RPD 500 을 확인했습니다.
+> 운영 정책을 이 숫자에 고정하지는 않습니다.)
+
+### 배포 체크리스트
+
+- [ ] 운영 DB 접속 확인 (가능하면 백업 또는 스냅샷 확보)
+- [ ] `zipick-backend/db/guide-init.sql` 적용
+- [ ] `SELECT to_regclass('public.notice_application_guide');` 로 테이블 생성 확인
+- [ ] `~/zipick/.env` 에 `GEMINI_API_KEY` 추가
+- [ ] 필요 시 `APPLICATION_GUIDE_MODEL` 설정 (기본 `gemini-3.5-flash-lite`)
+- [ ] `APPLICATION_GUIDE_DAILY_CALL_BUDGET` 검토 (기본 200 — 공고 수집 AI 와 Google 프로젝트·모델을 공유하는지 확인)
+- [ ] 백엔드 배포
+- [ ] 백엔드 정상 기동 확인 (로그에 `Schema-validation` 오류가 없어야 함)
+- [ ] 프론트엔드 배포
+- [ ] Smoke Test: 로그인 → 관심 공고 저장 → **[AI 신청 준비]** → 가이드 생성 → 결과 4개 영역·출처·원문 링크 확인
+
+기능 상세: [AI 맞춤 신청 준비 가이드](ai-application-guide.md)
+
+## 5. 배포 후 최소 점검
 
 - 실제 배포 URL에서 프론트엔드 페이지가 로딩되는지 확인
 - 로그인 → 새로고침 → 토큰 재발급 → 로그아웃 동작 확인 (쿠키·CORS 오류 점검)
 - 지도 공급주택 조회 및 인프라 `FRESH` / `PENDING` 상태 확인
 - 추천 API에서 인프라 점수·근거가 정상 반영되는지 확인
 - 백엔드 로그에 API 타임아웃·429·DB 연결 오류 및 배치 실패가 없는지 확인
+- 관심 공고 → **[AI 신청 준비]** → 가이드 생성까지 한 번 확인 (Gemini 호출 1회)
 - 내부·외부 연동 API에 대한 접근 제어와 운영 DB 초기화 금지 확인
 
-## 5. 자동 배포 (CD)
+## 6. 자동 배포 (CD)
 
 GitHub Actions 로 `dev` 커밋을 ARM64 이미지로 만들어 EC2 에 배포하는 파이프라인이 있습니다.
 **수동 실행만 허용**하며, 기존 `deploy/deploy.sh` 수동 배포도 그대로 동작합니다.
@@ -129,3 +244,7 @@ GitHub Actions 로 `dev` 커밋을 ARM64 이미지로 만들어 EC2 에 배포�
 
 > `zipick_notification` 데이터베이스는 **수동으로** 한 번 만들어야 합니다 — 기존 DB 볼륨에서는
 > compose 의 초기화 SQL 이 실행되지 않습니다. CD 는 운영 DB 에 DDL 을 실행하지 않고, 있는지 확인만 합니다.
+
+> **AI 신청 준비 가이드도 같습니다.** 신규 테이블 `notice_application_guide` 는 CD 가 만들지 않습니다.
+> **백엔드 배포 전에** `guide-init.sql` 을 운영 DB 에 적용하세요. 적용하지 않으면 `validate` 가 실패해
+> 백엔드 전체가 기동하지 못합니다. 절차: [4. AI 신청 준비 가이드 배포](#4-ai-신청-준비-가이드-배포-신규-테이블--gemini-키)

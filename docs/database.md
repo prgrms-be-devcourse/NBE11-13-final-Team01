@@ -66,6 +66,7 @@ CREATE DATABASE zipick;
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/local-init.sql
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/notice-init.sql
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/infra-init.sql
+psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/guide-init.sql
 ```
 
 | 파일 | 관리 영역 |
@@ -73,9 +74,13 @@ psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/infra-init.sql
 | `local-init.sql` | 인증·사용자·추천·알림 관련 테이블 |
 | `notice-init.sql` | `agency`, `notice`, `housing`, `housing_supply` 등 공고·공급주택 |
 | `infra-init.sql` | `housing_infra_snapshot`, `housing_infra_place` |
+| `guide-init.sql` | `notice_application_guide` (AI 신청 준비 가이드 결과) |
 
 - `local-init.sql`만 실행하면 `agency` 등이 없어 기동 시 스키마 검증에 실패합니다.
 - `infra-init.sql`은 공고 테이블의 `housing`을 FK로 참조하므로 **반드시 `notice-init.sql` 다음에** 실행합니다.
+- `guide-init.sql`은 `users`(local-init)와 `notice`(notice-init)를 모두 FK로 참조하므로 **맨 마지막에** 실행합니다.
+  이 파일만 `DROP` 없이 `CREATE TABLE IF NOT EXISTS`를 쓰므로 **여러 번 실행해도 안전하고 기존 데이터를 지우지 않습니다.**
+  이미 쓰던 로컬 DB에 AI 가이드 테이블만 추가할 때는 **이 파일 하나만** 실행하면 됩니다.
 - 각 SQL은 관련 테이블을 DROP/CREATE할 수 있어 **기존 데이터가 삭제됩니다**. 운영 DB에서는 실행하면 안 됩니다.
 - 인프라 테이블이 이미 있으면 FK 때문에 `notice-init.sql`의 `housing` DROP이 실패할 수 있습니다. **로컬 DB를 초기화하기로 합의한 경우에만** 인프라 테이블을 먼저 삭제하거나 DB 전체를 다시 만들어야 합니다.
 
