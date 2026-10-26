@@ -83,6 +83,13 @@ export default function CalendarPage() {
                 <div><dt>당첨 발표</dt><dd>{s.notice.winnerAnnouncedAt ?? '—'}</dd></div>
               </dl>
               <div className="card__actions">
+                {/*
+                  AI 신청 준비의 주 진입점. 누른다고 바로 AI 를 부르지는 않고 가이드 화면으로만 옮긴다.
+                  생성은 그 화면에서 사용자가 한 번 더 눌러야 시작된다(무료 사용량 보호).
+                */}
+                <Link className="btn btn--small" to={`/interest-notices/${s.notice.noticeId}/guide`}>
+                  AI 신청 준비
+                </Link>
                 {s.notice.detailUrl && (
                   <a className="btn btn--ghost btn--small" href={s.notice.detailUrl} target="_blank" rel="noreferrer">
                     공고문 보기
