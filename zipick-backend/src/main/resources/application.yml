@@ -38,6 +38,17 @@ springdoc:
   api-docs:
     path: /v3/api-docs
 
+# Google Gemini 공통 연결 정보. 여기에는 "어디에 어떤 자격으로 접속하는가" 만 둔다.
+# 모델·타임아웃·호출 상한처럼 기능마다 달라야 하는 정책은 각 기능 설정 아래에 둔다
+# (AI 신청 준비 가이드 → zipick.application-guide).
+#
+# key 는 일부러 여기에 적지 않는다. ${GEMINI_API_KEY:} 로 적어 두면 환경변수가 없을 때
+# 빈 문자열로 확정돼 config/application-secret.yml 의 값을 덮어써 버린다.
+# 환경변수 GEMINI_API_KEY 는 relaxed binding 으로 gemini.api.key 에 자동으로 들어간다.
+gemini:
+  api:
+    base-url: https://generativelanguage.googleapis.com
+
 zipick:
   # 공급주택 주변 생활 인프라 (카카오 로컬 카테고리 검색)
   infra:
@@ -65,6 +76,46 @@ zipick:
       - { code: HOSPITAL,          kakao-code: HP8, label: 병원,     radius-m: 1500 }
       - { code: PHARMACY,          kakao-code: PM9, label: 약국,     radius-m: 1500 }
       - { code: SCHOOL,            kakao-code: SC4, label: 학교,     radius-m: 1500 }
+
+  # AI 맞춤 신청 준비 가이드. 관심 공고의 모집공고문을 읽어 제출서류·확인사항을 정리한다.
+  # 이 기능이 Gemini 를 어떻게 쓸지에 대한 정책을 여기에 모은다 (공통 gemini.api 에는 키·주소만 둔다).
+  application-guide:
+    # 이 기능이 쓸 모델. 우선순위: APPLICATION_GUIDE_MODEL > GEMINI_MODEL > 아래 기본값
+    #   APPLICATION_GUIDE_MODEL  이 기능만 다른 모델을 쓰고 싶을 때
+    #   GEMINI_MODEL             팀 공통 기본 모델을 한 번에 지정하고 싶을 때 (선택)
+    # 같은 Gemini 를 쓰는 다른 기능(공고 수집 보조 PDF 파서)이 모델을 바꿔도
+    # 이 기능이 따라 바뀌지 않도록 전용 이름을 먼저 본다.
+    model: ${APPLICATION_GUIDE_MODEL:${GEMINI_MODEL:gemini-3.5-flash-lite}}
+
+    connect-timeout: 5s
+    # 공고문 수십 쪽을 읽고 JSON 을 만들어 내는 호출이라 넉넉히 둔다.
+    # PDF 원본을 통째로 보내는 기능은 이보다 훨씬 길어야 해서 값을 공유하지 않는다
+    read-timeout: 90s
+
+    # Gemini 에 보낼 공고문 텍스트 상한(자). 모델 한계가 아니라 토큰 절약이 목적이다.
+    # 100쪽 공고문이 18만 자 정도 되는데, 신청 준비와 관련된 부분만 남기면 이 정도로 줄어든다
+    max-input-chars: 30000
+    # 공고문 후보를 몇 건까지 추릴지. 실제 분석은 그중 점수가 가장 높은 1건만 한다.
+    # 보통 공고문 한 파일에 자격·서류·절차가 모두 들어 있어, 여러 파일을 합치면 토큰만 늘고 내용이 겹친다
+    max-documents: 1
+    # 관련 페이지의 앞뒤 몇 쪽까지 함께 보낼지. 제출서류 표가 쪽을 넘어가는 경우가 많다
+    neighbor-pages: 1
+    # 추출된 글자가 이보다 적으면 스캔 이미지 문서로 보고 포기한다 (OCR 은 범위 밖)
+    min-extracted-chars: 1000
+
+    # 이 기능이 하루에 허용하는 생성 호출 수.
+    # 비워 두면 기본 200, 0 을 주면 제한하지 않는다.
+    #
+    # 기본값을 여기 placeholder 가 아니라 ApplicationGuideProperties 에 둔 이유:
+    # docker compose 는 .env 의 빈 값도 환경변수로 그대로 넘기는데, 빈 문자열은 null 로 바인딩돼
+    # `:200` 같은 placeholder 기본값을 건너뛴다. 그러면 .env 를 비워 둔 운영 환경만 조용히
+    # 무제한이 된다. 기본값을 코드에 두면 로컬·Docker·CD 가 같아진다.
+    #
+    # ⚠️ Google 의 프로젝트·모델 quota 와는 별개인 기능 자체의 보호장치다.
+    #    Gemini 사용량은 Google 프로젝트와 사용 모델 구성에 따라 다른 AI 기능과 공유될 수 있으므로,
+    #    운영에서는 함께 쓰는 기능의 호출량을 고려해 조정해야 한다.
+    #    (개발 중에는 APPLICATION_GUIDE_DAILY_CALL_BUDGET 로 더 높여 쓸 수 있다)
+    daily-call-budget: ${APPLICATION_GUIDE_DAILY_CALL_BUDGET:}
 
   # 기관별 공고 수집 설정
   sources:

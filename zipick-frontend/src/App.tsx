@@ -5,6 +5,7 @@ import OnboardingPage from './pages/OnboardingPage';
 import HouseDetailPage from './pages/HouseDetailPage';
 import MapPage from './pages/MapPage';
 import CalendarPage from './pages/CalendarPage';
+import ApplicationGuidePage from './pages/ApplicationGuidePage';
 import TunePage from './pages/TunePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
@@ -56,6 +57,19 @@ export default function App() {
           element={
             <AccessGate need="LOGIN">
               <CalendarPage />
+            </AccessGate>
+          }
+        />
+        {/*
+          AI 신청 준비 가이드. 관심 공고로 저장한 공고에서만 쓸 수 있어 관심 공고 경로 아래에 둔다.
+          결과가 길고 서류를 준비하는 동안 열어 두고 보는 화면이라 모달·패널이 아니라 별도 페이지다.
+          관심 저장 여부는 서버가 다시 확인한다(여기 게이트는 로그인까지만).
+        */}
+        <Route
+          path="/interest-notices/:noticeId/guide"
+          element={
+            <AccessGate need="LOGIN">
+              <ApplicationGuidePage />
             </AccessGate>
           }
         />

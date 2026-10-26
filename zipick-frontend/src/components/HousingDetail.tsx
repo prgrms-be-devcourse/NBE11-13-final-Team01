@@ -5,6 +5,7 @@ import type { HouseFilter } from '../types';
 import { hasSupplyConditions, matchesSupplyConditions, sortByMatch } from '../utils/supplyMatch';
 import { HousingInfraSection, RoadviewPanel } from '../features/map';
 import InterestButton from './InterestButton';
+import { useInterest } from '../hooks/useInterest';
 import { STATUS_LABEL, applySchedule, area } from '../utils/format';
 
 /**
@@ -77,6 +78,8 @@ export default function HousingDetail({ detail, score, showPageLink, filter }: P
 
         <h2 className="housing-detail__title">{detail.name || detail.noticeTitle}</h2>
         <p className="housing-detail__address">{detail.address}</p>
+
+        <ApplicationGuideLink noticeId={detail.noticeId} />
 
         {score}
 
@@ -154,6 +157,34 @@ export default function HousingDetail({ detail, score, showPageLink, filter }: P
         <p className="muted small">최종 자격은 공고문으로 확인하세요. 표시된 정보는 참고용입니다.</p>
       </div>
     </div>
+  );
+}
+
+/**
+ * AI 신청 준비 가이드로 가는 보조 진입점.
+ *
+ * 결과 자체는 여기에 그리지 않는다. 지도 우측 패널 안에 또 긴 내용을 접어 넣으면
+ * 패널 안에서 다시 스크롤하게 되고, 서류를 준비하며 열어 두기도 어렵다.
+ * 주 진입점은 관심 공고·일정 화면이고 여기서는 기능이 있다는 것만 알린다.
+ */
+function ApplicationGuideLink({ noticeId }: { noticeId: number }) {
+  const { enabled, isSaved } = useInterest();
+
+  if (!enabled) return null;   // 비회원에게는 ☆ 저장 안내(InterestButton)만 보여 준다
+
+  if (!isSaved(noticeId)) {
+    return (
+      <p className="guide-cta guide-cta--hint muted small">
+        관심 공고로 저장하면 AI 신청 준비 가이드를 이용할 수 있어요.
+      </p>
+    );
+  }
+  return (
+    <p className="guide-cta">
+      <Link className="btn btn--small" to={`/interest-notices/${noticeId}/guide`}>
+        AI 신청 준비 가이드 보기
+      </Link>
+    </p>
   );
 }
 

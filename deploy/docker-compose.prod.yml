@@ -81,6 +81,11 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       MYHOME_API_SERVICEKEY: ${MYHOME_API_KEY:-}
       KAKAO_LOCAL_RESTAPIKEY: ${KAKAO_REST_API_KEY:-}
+      # AI 맞춤 신청 준비 가이드 (Gemini). 키가 비어 있으면 이 기능만 꺼지고 나머지는 정상 동작한다.
+      # 키는 공통(gemini.api.key), 모델·호출 상한은 기능 전용 설정이라 이름이 다르다.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      APPLICATION_GUIDE_MODEL: ${APPLICATION_GUIDE_MODEL:-}
+      APPLICATION_GUIDE_DAILY_CALL_BUDGET: ${APPLICATION_GUIDE_DAILY_CALL_BUDGET:-}
 
   notification:
     image: ${NOTIFICATION_IMAGE:-zipick-notification:latest}

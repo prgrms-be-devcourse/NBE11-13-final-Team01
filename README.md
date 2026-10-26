@@ -26,12 +26,17 @@ CREATE DATABASE zipick;
 최초 스키마 생성 시 **다음 순서를 지켜** 실행합니다.
 
 ```bash
-psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/notice-init.sql
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/local-init.sql
+psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/notice-init.sql
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/infra-init.sql
+psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/guide-init.sql
 ```
 
-> **주의:** 이 SQL들은 기존 테이블을 삭제하고 재생성합니다. **새 로컬 DB 초기화 전용**으로 사용하며, 배포 DB에는 실행하지 마세요. `notice-init.sql`이 공고·주택을 참조하는 관심 공고와 인프라 테이블도 먼저 삭제하므로, 반드시 위 세 파일을 순서대로 모두 실행해야 합니다. 상세 내용: [데이터베이스 설정](docs/database.md).
+**이미 쓰던 로컬 DB에 AI 신청 준비 가이드만 추가하는 경우에는 마지막 한 줄만** 실행하면 됩니다.
+`guide-init.sql`은 `DROP` 없이 `CREATE TABLE IF NOT EXISTS`만 쓰므로 여러 번 실행해도 기존 데이터가 지워지지 않습니다.
+다른 세 파일을 다시 실행할 필요는 없습니다.
+
+> **주의:** 위 네 파일 중 `guide-init.sql`을 제외한 세 개는 기존 테이블을 삭제하고 재생성합니다. **새 로컬 DB 초기화 전용**으로 사용하며, 배포 DB에는 실행하지 마세요. `notice-init.sql`이 공고·주택을 참조하는 관심 공고와 인프라 테이블도 먼저 삭제하므로, 반드시 위 세 파일을 순서대로 모두 실행해야 합니다. 상세 내용: [데이터베이스 설정](docs/database.md).
 
 ### 3. 환경 변수 및 API 키
 
@@ -47,6 +52,10 @@ psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/infra-init.sql
 | `NOTIFICATION_QUEUE_ENABLED`, `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | 알림 요청을 RabbitMQ 로 던질 때 | `false` (HTTP 로 보냄), `localhost`, `5672`, `guest`/`guest` |
 | `APP_URL` | 알림 문구에 넣는 서비스 주소 (소식 메일의 수신 거부 안내) | `http://localhost:5173` |
 | `NOTIFICATION_OPS_SLACK_WEBHOOK_URL`, `NOTIFICATION_OPS_EMAIL` | 공고 수집 일일 보고를 받을 운영 슬랙·메일. 둘 다 비우면 보고를 보내지 않는다 | 없음 |
+| `GEMINI_API_KEY` | AI 신청 준비 가이드용 Google Gemini 키. **비우면 그 기능만 꺼지고 나머지는 정상 동작** | 없음 |
+| `APPLICATION_GUIDE_MODEL` | AI 가이드가 쓸 Gemini 모델 (선택). 비우면 `GEMINI_MODEL`, 그것도 없으면 기본값 | `gemini-3.5-flash-lite` |
+| `GEMINI_MODEL` | 팀 공통 기본 모델을 한 번에 지정하고 싶을 때 (선택) | 없음 |
+| `APPLICATION_GUIDE_DAILY_CALL_BUDGET` | AI 가이드가 하루에 허용하는 생성 호출 수 (선택). 비우면 기본값, `0`이면 제한 없음 | `200` |
 
 JWT 키 생성 예시 (macOS / Linux / WSL):
 
@@ -63,12 +72,17 @@ myhome:
 kakao:
   local:
     rest-api-key: "<YOUR_KAKAO_REST_API_KEY>"
+# AI 신청 준비 가이드. 환경 변수 GEMINI_API_KEY 를 쓰면 이 항목은 적지 않아도 됩니다 (환경 변수가 우선)
+gemini:
+  api:
+    key: "<YOUR_GEMINI_API_KEY>"
 ```
 
 프론트엔드는 `zipick-frontend/.env.example`을 `zipick-frontend/.env.local`로 복사하여 `VITE_KAKAO_MAP_KEY`를 설정합니다. 배포에서 `VITE_API_BASE_URL`을 사용할 경우 해당 값도 프론트엔드 **빌드 시점**에 지정해야 합니다.
 
 - `myhome.api.service-key`: LH 공공임대 공고·주택 수집
 - `kakao.local.rest-api-key`: 수집된 주소의 표준 주소·좌표 보완, **공급주택 주변 생활 인프라 수집**
+- `gemini.api.key`: **AI 맞춤 신청 준비 가이드**. 없으면 이 기능만 비활성화되고 지도·추천·관심 공고는 정상 동작한다
 - SH·GH·HUG 공고는 각 기관의 공개 페이지에서 수집하므로 별도 API 키가 필요하지 않다.
 
 > `application-secret.yml`, `.env.local`, 비밀번호 및 실제 키는 Git에 올리지 않습니다. IntelliJ 환경 변수 설정 및 기존 DB 유지 방법은 [데이터베이스·로컬 환경 안내](docs/database.md)를 참고하세요.
@@ -107,6 +121,8 @@ npm run dev
 | 프론트 API 주소 | 배포된 `/api` 라우팅 또는 빌드 시 `VITE_API_BASE_URL` 확인 |
 | 내부 API | `SecurityConfig`의 `/api/internal/**`, `/api/external/**` 공개 접근 허용 범위를 운영 전에 점검 |
 | DB 스키마 | 운영 DB에서 로컬 초기화 SQL 실행 금지; 스키마 검증(`ddl-auto: validate`)에 맞춰 별도 반영 |
+| **신규 테이블** | ⚠️ **백엔드 배포 전에** 운영 DB에 `zipick-backend/db/guide-init.sql`을 먼저 적용해야 합니다. 적용하지 않으면 `ddl-auto: validate`가 실패해 **백엔드 전체가 기동하지 못합니다** (AI 기능만 꺼지는 것이 아닙니다). 기존 DB 볼륨에서는 compose의 초기화 SQL이 자동 실행되지 않습니다 |
+| AI 가이드 키 | `GEMINI_API_KEY`는 **없어도 백엔드는 정상 기동**하며 AI 가이드 기능만 비활성화됩니다. 위 테이블 누락과 영향 범위가 다릅니다 |
 
 배포 방식과 환경 변수 전달, 쿠키·CORS 검증 항목: **[배포·운영 체크리스트](docs/deployment.md)**
 
@@ -136,6 +152,7 @@ ZIPICK_INFRA_COLLECTION_INTERVAL_MS=60000 ./gradlew bootRun
 | 알림센터(별도 앱, Go): 템플릿·수신 동의·아웃박스·예약 발송·채널 | [docs/notification-center.md](docs/notification-center.md), [zipick-notification/README.md](zipick-notification/README.md) |
 | 사용자 입력값·추천 필드 정의 | [docs/recommendation-fields.md](docs/recommendation-fields.md) |
 | 주변 생활 인프라 수집·캐싱·추천 연동 | [docs/housing-infra.md](docs/housing-infra.md) |
+| AI 맞춤 신청 준비 가이드 (Gemini) | [docs/ai-application-guide.md](docs/ai-application-guide.md) |
 | 배포 설정·인프라 배치 운영 | [docs/deployment.md](docs/deployment.md) |
 | CD 파이프라인 (GitHub Actions → EC2) | [docs/cd-pipeline.md](docs/cd-pipeline.md) |
 | DB 스키마 초기화·로컬 설정 | [docs/database.md](docs/database.md) |
