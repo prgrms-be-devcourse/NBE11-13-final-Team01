@@ -197,8 +197,14 @@ APPLICATION_GUIDE_DAILY_CALL_BUDGET=   # 선택. 비우면 200, 0 이면 제한 
 | `APPLICATION_GUIDE_DAILY_CALL_BUDGET` | ✕ | `200` | 이 기능이 하루에 허용하는 생성 호출 수. `0` 이면 제한하지 않음 |
 
 모델과 호출 상한에 기능 이름이 붙어 있는 이유는, 같은 Gemini 를 쓰는 다른 기능
-(공고 수집 보조 PDF 파서)이 값을 바꿔도 이 기능이 따라 바뀌지 않게 하기 위해서입니다.
-`GEMINI_MODEL` 을 주면 팀 공통 기본 모델로 쓰이고, `APPLICATION_GUIDE_MODEL` 이 그보다 우선합니다.
+(공고 PDF 파서·공고 정규화)이 값을 바꿔도 이 기능이 따라 바뀌지 않게 하기 위해서입니다.
+`APPLICATION_GUIDE_MODEL` 이 1순위이고, 없으면 `GEMINI_MODEL` 을 봅니다.
+
+> ⚠️ **`GEMINI_MODEL` 은 이 기능에만 적용됩니다.** 팀 전체 공통 모델이 아닙니다.
+> 공고 PDF 파서는 `GEMINI_PDF_PARSER_MODEL` 을, 정규화는 자체 설정값을 씁니다.
+>
+> ⚠️ **세 기능이 `GEMINI_API_KEY` 하나를 공유해 Google 프로젝트 quota(RPM/TPM/RPD)도 함께 씁니다.**
+> 호출 상한을 정할 때 다른 기능의 사용량을 함께 고려해야 합니다.
 
 > ⚠️ **`APPLICATION_GUIDE_DAILY_CALL_BUDGET` 은 이 기능 자체의 보호장치입니다.**
 > Google 의 프로젝트·모델 quota 와는 별개이며, Gemini 사용량은 Google 프로젝트와 사용 모델 구성에 따라 다른 AI 기능과 공유될 수 있으므로, 운영 환경에 맞춰 조정해야 합니다.

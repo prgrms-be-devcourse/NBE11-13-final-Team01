@@ -52,9 +52,9 @@ psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/guide-init.sql
 | `NOTIFICATION_QUEUE_ENABLED`, `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | 알림 요청을 RabbitMQ 로 던질 때 | `false` (HTTP 로 보냄), `localhost`, `5672`, `guest`/`guest` |
 | `APP_URL` | 알림 문구에 넣는 서비스 주소 (소식 메일의 수신 거부 안내) | `http://localhost:5173` |
 | `NOTIFICATION_OPS_SLACK_WEBHOOK_URL`, `NOTIFICATION_OPS_EMAIL` | 공고 수집 일일 보고를 받을 운영 슬랙·메일. 둘 다 비우면 보고를 보내지 않는다 | 없음 |
-| `GEMINI_API_KEY` | AI 신청 준비 가이드용 Google Gemini 키. **비우면 그 기능만 꺼지고 나머지는 정상 동작** | 없음 |
+| `GEMINI_API_KEY` | Gemini 공통 키. **AI 신청 준비 가이드·공고 PDF 파서·공고 정규화가 함께 쓰며 Google 프로젝트 quota 도 공유한다.** 비우면 AI 가이드만 꺼지고 나머지는 정상 동작 | 없음 |
 | `APPLICATION_GUIDE_MODEL` | AI 가이드가 쓸 Gemini 모델 (선택). 비우면 `GEMINI_MODEL`, 그것도 없으면 기본값 | `gemini-3.5-flash-lite` |
-| `GEMINI_MODEL` | 팀 공통 기본 모델을 한 번에 지정하고 싶을 때 (선택) | 없음 |
+| `GEMINI_MODEL` | **AI 가이드의 2순위 기본 모델** (선택). 다른 AI 기능에는 적용되지 않는다 | 없음 |
 | `APPLICATION_GUIDE_DAILY_CALL_BUDGET` | AI 가이드가 하루에 허용하는 생성 호출 수 (선택). 비우면 기본값, `0`이면 제한 없음 | `200` |
 
 JWT 키 생성 예시 (macOS / Linux / WSL):
@@ -153,6 +153,7 @@ ZIPICK_INFRA_COLLECTION_INTERVAL_MS=60000 ./gradlew bootRun
 | 사용자 입력값·추천 필드 정의 | [docs/recommendation-fields.md](docs/recommendation-fields.md) |
 | 주변 생활 인프라 수집·캐싱·추천 연동 | [docs/housing-infra.md](docs/housing-infra.md) |
 | AI 맞춤 신청 준비 가이드 (Gemini) | [docs/ai-application-guide.md](docs/ai-application-guide.md) |
+| └ 실제 공고 기반 개선과 검증 근거 | [docs/ai-application-guide-improvement.md](docs/ai-application-guide-improvement.md) |
 | 배포 설정·인프라 배치 운영 | [docs/deployment.md](docs/deployment.md) |
 | CD 파이프라인 (GitHub Actions → EC2) | [docs/cd-pipeline.md](docs/cd-pipeline.md) |
 | DB 스키마 초기화·로컬 설정 | [docs/database.md](docs/database.md) |

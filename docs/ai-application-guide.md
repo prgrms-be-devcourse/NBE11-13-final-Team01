@@ -1,5 +1,8 @@
 # AI 맞춤 신청 준비 가이드
 
+> 1차 구현 이후 실제 공고문으로 검증하며 고친 내용과 근거는
+> **[실제 공고 기반 개선과 검증](ai-application-guide-improvement.md)** 에 있습니다.
+
 관심 공고로 저장한 모집공고의 **원문(PDF/HWP)을 서버가 읽어**, 사용자가 입력한 최소 정보를 기준으로
 제출서류·확인사항·유의사항을 정리해 주는 기능이다. Gemini 를 쓰지만 **AI 가 자격을 판정하지는 않는다.**
 
@@ -395,23 +398,27 @@ zipick:
     model: ${APPLICATION_GUIDE_MODEL:${GEMINI_MODEL:gemini-3.5-flash-lite}}
     connect-timeout: 5s
     read-timeout: 90s
-    max-input-chars: 60000
+    emergency-max-input-chars: 150000   # 비상 상한. 평상시 걸리지 않는다
     max-documents: 1
     neighbor-pages: 1
     min-extracted-chars: 1000
     daily-call-budget: ${APPLICATION_GUIDE_DAILY_CALL_BUDGET:}   # 비우면 기본 200
 ```
 
-**왜 모델·타임아웃·상한을 공통에 두지 않았나** — 팀에서 Gemini 를 쓰는 기능이 둘이고 사용 방식이 다르다.
-공고 수집 보조 PDF 파서는 PDF 원본을 통째로 보내 긴 타임아웃과 큰 출력이 필요하고,
-이 기능은 축약한 텍스트를 보내 상대적으로 짧게 끝난다. 두 기능이 서로 다른 모델을 쓸 수도 있다.
+**왜 모델·타임아웃·상한을 공통에 두지 않았나** — 현재 Gemini 를 쓰는 기능이 셋이고 사용 방식이 다르다.
+공고 PDF 파서는 PDF 원본을 통째로 보내 긴 타임아웃과 큰 출력이 필요하고, 공고 정규화는 전용 모델을 쓰며,
+이 기능은 축약한 텍스트를 보내 상대적으로 짧게 끝난다.
 `gemini.api.model` 처럼 이름이 하나뿐이면 한쪽이 값을 바꾸는 순간 다른 쪽 동작까지 바뀐다.
+
+> ⚠️ **세 기능이 `GEMINI_API_KEY` 하나를 공유하므로 Google 프로젝트의 RPM / TPM / RPD 도 함께 쓴다.**
+> 설정은 기능별로 나뉘어 있지만 실제 사용량은 한 프로젝트에서 빠진다.
+> 다른 기능이 대량 호출 중이면 이 기능이 `QUOTA_EXCEEDED` 가 날 수 있다.
 
 | 환경변수 | 필수 | 기본값 | 용도 |
 | --- | --- | --- | --- |
 | `GEMINI_API_KEY` | ○ | 없음 | **공통** 인증 키. 없으면 이 기능만 꺼지고 다른 기능은 정상 |
 | `APPLICATION_GUIDE_MODEL` | ✕ | — | 이 기능만 다른 모델을 쓸 때 |
-| `GEMINI_MODEL` | ✕ | — | 팀 공통 기본 모델을 한 번에 지정할 때 |
+| `GEMINI_MODEL` | ✕ | — | **이 기능의 2순위 기본 모델.** 다른 AI 기능에는 적용되지 않는다 |
 | `APPLICATION_GUIDE_DAILY_CALL_BUDGET` | ✕ | `200` | 이 기능의 하루 생성 호출 상한. `0` 이면 제한 없음 |
 
 > 상한의 기본값 200 은 `application.yml` 이 아니라 `ApplicationGuideProperties` 에 있다.
@@ -421,6 +428,10 @@ zipick:
 
 모델 우선순위: `APPLICATION_GUIDE_MODEL` → `GEMINI_MODEL` → `gemini-3.5-flash-lite`.
 `ApplicationGuidePropertiesBindingTest` 가 실제 `application.yml` 을 읽어 이 순서를 고정한다.
+
+> ⚠️ **`GEMINI_MODEL` 은 팀 전체 공통 모델이 아니다.** 이 기능만 이 값을 읽는다.
+> 공고 PDF 파서는 `GEMINI_PDF_PARSER_MODEL` 을, 공고 정규화는 자체 설정값을 쓴다.
+> 모든 AI 기능의 모델을 한 번에 바꾸는 환경변수는 없다.
 
 ### 인증 키
 
