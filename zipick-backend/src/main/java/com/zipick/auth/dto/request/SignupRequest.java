@@ -21,7 +21,11 @@ public record SignupRequest(
                 regexp = "^(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9!@#$%^&*()_+=-]+$",
                 message = "비밀번호는 영문과 숫자를 모두 포함해야 합니다."
         )
-        String password
+        String password,
+
+        // 이메일 인증을 마치고 받은 토큰. 서버가 인증을 요구할 때(EMAIL_VERIFICATION_REQUIRED) 필수
+        @Size(max = 128)
+        String verificationToken
 ) {
     public User toUser(String encodedPassword) {
         return User.of(email, encodedPassword);

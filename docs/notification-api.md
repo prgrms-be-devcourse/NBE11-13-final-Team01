@@ -102,7 +102,7 @@ slack:
 | `MAIN_TEST` | 메인 (설정 화면 테스트 발송) | deadlineDays |
 | `NOTICE_DEADLINE_REMINDER` | 메인 스케줄러 | dDayLabel, whenText, applyEndAt, noticeTitle, regionsText, detailUrl |
 | `NOTICE_NEW_MATCH` | 메인 스케줄러 | noticeTitle, score, region, deadlineText, detailUrl |
-| `AUTH_EMAIL_VERIFY` | 인증 (한채희) | name, code, expiresInMinutes — 이메일만 |
+| `AUTH_EMAIL_VERIFY` | 메인 가입 화면 (`EmailVerificationService`) | code, expiresInMinutes — 이메일만. 결과가 바로 필요해 `delivery: now` 로 보낸다 |
 | `AUTH_PASSWORD_CHANGED` | 인증 (한채희) | changedAt, appUrl — 이메일만 |
 | `MARKETING_NEWSLETTER` | 메인 캠페인 | headline, message, unsubscribeUrl — 제목에 `(광고)`, 본문에 수신 거부 안내가 문구에 들어 있다 |
 | `COLLECTOR_DAILY_REPORT` | 공고 수집기 | date, collectedRows, createdNotices, updatedNotices, missingClosedNotices, synchronizedHousings, elapsedSeconds |
@@ -138,12 +138,18 @@ slack:
 
 ## 8. 다른 서비스에서 쓰는 예
 
-**인증(한채희) — 가입 인증 메일.** 계정이 아직 없으니 이메일을 직접 넣는다.
+**가입 인증 메일 (`auth/service/EmailVerificationService`).** 계정이 아직 없으니 이메일을 직접 넣고, 사용자가 결과를 바로 알아야 하므로 큐 대신 HTTP `delivery: now` 로 보낸다.
 
 ```java
-notificationClient.request(
-    NotificationRequest.toEmail("AUTH_EMAIL_VERIFY", email, Map.of("name", name, "code", code, "expiresInMinutes", 10)),
-    NotificationPriority.HIGH);
+NotificationEventResponse sent = notificationClient.enqueue(
+    NotificationRequest.toEmail("AUTH_EMAIL_VERIFY", email, Map.of("code", code, "expiresInMinutes", 10)).now());
+if (!"SENT".equals(sent.status())) { /* 사용자에게 "보내지 못했다"고 알림 */ }
+```
+
+**비밀번호 변경 안내처럼 결과를 기다릴 필요가 없는 메일**은 큐로 던진다.
+
+```java
+notificationClient.request(NotificationRequest.toEmail("AUTH_PASSWORD_CHANGED", email, Map.of("changedAt", now, "appUrl", appUrl)), NotificationPriority.HIGH);
 ```
 
 **공고 수집기 — 일일 보고.** `CollectorReportNotifier` 가 수집이 끝나면 운영 슬랙·메일(`NOTIFICATION_OPS_*`)로 `COLLECTOR_DAILY_REPORT` 를 요청한다. 다른 서비스가 스펙대로 요청하는 견본이다. 알림센터에 닿지 않아도 수집은 실패하지 않는다(로그만).

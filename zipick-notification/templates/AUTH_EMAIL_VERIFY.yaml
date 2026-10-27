@@ -1,9 +1,9 @@
-# 회원가입 이메일 인증. 요청: auth (한채희). 계정이 아직 없으니 to.email 을 직접 넣는다
+# 회원가입 이메일 인증. 요청: main (가입 화면의 "인증 코드 보내기"). 계정이 아직 없으니 to.email 을 직접 넣는다
 code: AUTH_EMAIL_VERIFY
-owner: 한채희 (인증)
-variables: [name, code, expiresInMinutes]
+owner: 안서호 (가입 이메일 인증) · 인증 파트 한채희
+variables: [code, expiresInMinutes]
 email:
   subject: "[ZIPICK] 이메일 인증 코드: {{code}}"
   body: |-
-    {{name}}님, ZIPICK 가입을 위한 인증 코드는 {{code}} 입니다. {{expiresInMinutes}}분 안에 입력해 주세요.
+    ZIPICK 가입을 위한 인증 코드는 {{code}} 입니다. {{expiresInMinutes}}분 안에 가입 화면에 입력해 주세요.
     본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.

@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -11,9 +12,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.zipick.auth.dto.request.LoginRequest;
 import com.zipick.auth.dto.request.SignupRequest;
+import com.zipick.auth.dto.response.EmailVerificationConfirmResponse;
+import com.zipick.auth.dto.response.EmailVerificationSendResponse;
 import com.zipick.auth.dto.response.SignupResponse;
 import com.zipick.auth.jwt.JwtProperties;
 import com.zipick.auth.service.AuthService;
+import com.zipick.auth.service.EmailVerificationService;
 import com.zipick.auth.service.TokenService;
 import com.zipick.global.config.CookieProperties;
 import com.zipick.global.error.BusinessException;
@@ -48,6 +52,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private AuthService authService;
+
+    @MockitoBean
+    private EmailVerificationService emailVerificationService;
 
     @MockitoBean
     private TokenService tokenService;
@@ -128,6 +135,84 @@ class AuthControllerTest {
         void blankPassword() throws Exception {
             perform("/api/auth/signup", "{\"email\": \"test@example.com\", \"password\": \"\"}")
                     .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Nested
+    @DisplayName("가입 이메일 인증")
+    class EmailVerification {
+
+        @Test
+        @DisplayName("코드 보내기: 유효 시간과 재전송 간격을 돌려준다")
+        void send() throws Exception {
+            given(emailVerificationService.send("test@example.com")).willReturn(new EmailVerificationSendResponse(true, 10, 60));
+
+            perform("/api/auth/email-verifications", "{\"email\": \"test@example.com\"}")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.required").value(true))
+                    .andExpect(jsonPath("$.data.expiresInMinutes").value(10))
+                    .andExpect(jsonPath("$.data.resendAfterSeconds").value(60));
+        }
+
+        @Test
+        @DisplayName("코드 보내기: 이메일 형식이 틀리면 400")
+        void sendInvalidEmail() throws Exception {
+            perform("/api/auth/email-verifications", "{\"email\": \"nope\"}")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.fields.email").exists());
+        }
+
+        @Test
+        @DisplayName("코드 보내기: 이미 가입한 이메일이면 409 DUPLICATE_EMAIL")
+        void sendDuplicate() throws Exception {
+            given(emailVerificationService.send("test@example.com")).willThrow(new BusinessException(ErrorCode.DUPLICATE_EMAIL));
+
+            perform("/api/auth/email-verifications", "{\"email\": \"test@example.com\"}")
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error.code").value("DUPLICATE_EMAIL"));
+        }
+
+        @Test
+        @DisplayName("코드 확인: 맞으면 인증 완료 토큰을 돌려준다")
+        void confirm() throws Exception {
+            given(emailVerificationService.confirm("test@example.com", "123456")).willReturn(new EmailVerificationConfirmResponse("tok-abc", 10));
+
+            perform("/api/auth/email-verifications/confirm", "{\"email\": \"test@example.com\", \"code\": \"123456\"}")
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.verificationToken").value("tok-abc"))
+                    .andExpect(jsonPath("$.data.expiresInMinutes").value(10));
+        }
+
+        @Test
+        @DisplayName("코드 확인: 6자리 숫자가 아니면 서비스를 부르지 않고 400")
+        void confirmBadCode() throws Exception {
+            perform("/api/auth/email-verifications/confirm", "{\"email\": \"test@example.com\", \"code\": \"12ab\"}")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.fields.code").exists());
+        }
+
+        @Test
+        @DisplayName("코드 확인: 틀리면 400 VERIFICATION_CODE_INVALID, 여러 번 틀리면 429")
+        void confirmWrong() throws Exception {
+            given(emailVerificationService.confirm("test@example.com", "000000")).willThrow(new BusinessException(ErrorCode.VERIFICATION_CODE_INVALID));
+            given(emailVerificationService.confirm("test@example.com", "111111")).willThrow(new BusinessException(ErrorCode.VERIFICATION_TOO_MANY_ATTEMPTS));
+
+            perform("/api/auth/email-verifications/confirm", "{\"email\": \"test@example.com\", \"code\": \"000000\"}")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VERIFICATION_CODE_INVALID"));
+            perform("/api/auth/email-verifications/confirm", "{\"email\": \"test@example.com\", \"code\": \"111111\"}")
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(jsonPath("$.error.code").value("VERIFICATION_TOO_MANY_ATTEMPTS"));
+        }
+
+        @Test
+        @DisplayName("가입: 인증 완료 토큰이 없거나 틀리면 400 EMAIL_NOT_VERIFIED")
+        void signupNotVerified() throws Exception {
+            given(authService.signup(any(SignupRequest.class))).willThrow(new BusinessException(ErrorCode.EMAIL_NOT_VERIFIED));
+
+            perform("/api/auth/signup", "{\"email\": \"test@example.com\", \"password\": \"password1234\", \"verificationToken\": \"wrong\"}")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("EMAIL_NOT_VERIFIED"));
         }
     }
 

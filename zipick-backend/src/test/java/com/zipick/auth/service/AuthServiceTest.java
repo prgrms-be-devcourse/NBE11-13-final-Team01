@@ -51,12 +51,27 @@ class AuthServiceTest {
     @Mock
     private TokenService tokenService;
 
+    @Mock
+    private EmailVerificationService emailVerification;
+
     @InjectMocks
     private AuthService authService;
 
     @Nested
     @DisplayName("회원가입")
     class Signup {
+
+        @Test
+        @DisplayName("이메일 인증을 마치지 않았으면 가입하지 않는다")
+        void notVerified() {
+            org.mockito.Mockito.doThrow(new com.zipick.global.error.BusinessException(com.zipick.global.error.ErrorCode.EMAIL_NOT_VERIFIED))
+                    .when(emailVerification).assertVerified(org.mockito.ArgumentMatchers.eq("test@example.com"), org.mockito.ArgumentMatchers.any());
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> authService.signup(new com.zipick.auth.dto.request.SignupRequest("test@example.com", "password1234", "bad-token")))
+                    .isInstanceOf(com.zipick.global.error.BusinessException.class)
+                    .extracting("errorCode").isEqualTo(com.zipick.global.error.ErrorCode.EMAIL_NOT_VERIFIED);
+            org.mockito.Mockito.verify(userRepository, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+        }
 
         private void givenNewUser() {
             given(userRepository.existsByEmail(EMAIL)).willReturn(false);
@@ -75,7 +90,7 @@ class AuthServiceTest {
         void signup() {
             givenNewUser();
 
-            SignupResponse response = authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD));
+            SignupResponse response = authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD, null));
 
             assertThat(response.userId()).isEqualTo(1L);
             assertThat(response.email()).isEqualTo(EMAIL);
@@ -86,7 +101,7 @@ class AuthServiceTest {
         void encodePassword() {
             givenNewUser();
 
-            authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD));
+            authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD, null));
 
             assertThat(savedUser().getPassword()).isEqualTo(ENCODED_PASSWORD);
             assertThat(savedUser().getPassword()).isNotEqualTo(RAW_PASSWORD);
@@ -97,7 +112,7 @@ class AuthServiceTest {
         void defaultRole() {
             givenNewUser();
 
-            authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD));
+            authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD, null));
 
             assertThat(savedUser().getRole()).isEqualTo(Role.ROLE_USER);
         }
@@ -107,7 +122,7 @@ class AuthServiceTest {
         void duplicateEmail() {
             given(userRepository.existsByEmail(EMAIL)).willReturn(true);
 
-            assertThatThrownBy(() -> authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD)))
+            assertThatThrownBy(() -> authService.signup(new SignupRequest(EMAIL, RAW_PASSWORD, null)))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.DUPLICATE_EMAIL);

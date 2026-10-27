@@ -1,12 +1,17 @@
 package com.zipick.auth.controller;
 
+import com.zipick.auth.dto.request.EmailVerificationConfirmRequest;
+import com.zipick.auth.dto.request.EmailVerificationSendRequest;
 import com.zipick.auth.dto.request.LoginRequest;
 import com.zipick.auth.dto.request.SignupRequest;
+import com.zipick.auth.dto.response.EmailVerificationConfirmResponse;
+import com.zipick.auth.dto.response.EmailVerificationSendResponse;
 import com.zipick.auth.dto.response.LoginResponse;
 import com.zipick.auth.dto.response.SignupResponse;
 import com.zipick.auth.dto.response.TokenResponse;
 import com.zipick.auth.jwt.JwtProperties;
 import com.zipick.auth.service.AuthService;
+import com.zipick.auth.service.EmailVerificationService;
 import com.zipick.auth.userdetails.CustomUserDetails;
 import com.zipick.auth.service.TokenService;
 import com.zipick.global.response.ApiResponse;
@@ -34,12 +39,34 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final EmailVerificationService emailVerificationService;
     private final TokenService tokenService;
     private final CookieUtil cookieUtil;
     private final JwtProperties jwtProperties;
 
+    @Operation(summary = "가입 인증 코드 보내기",
+            description = "가입할 이메일로 6자리 인증 코드를 보낸다 (알림센터 AUTH_EMAIL_VERIFY). "
+                    + "응답의 required 가 false 면 이 서버는 인증 없이 가입할 수 있다(로컬). "
+                    + "이미 가입한 이메일이면 409 DUPLICATE_EMAIL, 재전송 간격 안이면 429 VERIFICATION_RESEND_TOO_SOON, 하루 10회를 넘으면 429 VERIFICATION_DAILY_LIMIT, "
+                    + "메일을 못 보내면 503 NOTIFICATION_UNAVAILABLE.")
+    @SecurityRequirements   // 비로그인 호출
+    @PostMapping("/email-verifications")
+    public ApiResponse<EmailVerificationSendResponse> sendVerification(@Valid @RequestBody EmailVerificationSendRequest request) {
+        return ApiResponse.ok(emailVerificationService.send(request.email()));
+    }
+
+    @Operation(summary = "가입 인증 코드 확인",
+            description = "맞으면 인증 완료 토큰을 돌려준다(10분). 가입 요청의 verificationToken 에 넣어야 가입된다. "
+                    + "틀리거나 만료됐으면 400 VERIFICATION_CODE_INVALID, 5번 틀리면 429 VERIFICATION_TOO_MANY_ATTEMPTS(코드를 다시 받아야 한다).")
+    @SecurityRequirements   // 비로그인 호출
+    @PostMapping("/email-verifications/confirm")
+    public ApiResponse<EmailVerificationConfirmResponse> confirmVerification(@Valid @RequestBody EmailVerificationConfirmRequest request) {
+        return ApiResponse.ok(emailVerificationService.confirm(request.email(), request.code()));
+    }
+
     @Operation(summary = "회원가입",
-            description = "이메일과 비밀번호로 가입한다. 이미 쓰는 이메일이면 409 DUPLICATE_EMAIL.")
+            description = "이메일과 비밀번호로 가입한다. 이미 쓰는 이메일이면 409 DUPLICATE_EMAIL. "
+                    + "이메일 인증이 켜진 서버에서 verificationToken 이 없거나 틀리면 400 EMAIL_NOT_VERIFIED.")
     @SecurityRequirements   // 비로그인 호출
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.CREATED)

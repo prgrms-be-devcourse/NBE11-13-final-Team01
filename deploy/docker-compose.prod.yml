@@ -68,6 +68,8 @@ services:
       NOTIFICATION_BASE_URL: http://notification:8081
       NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?NOTIFICATION_INTERNAL_KEY 필요}
       NOTIFICATION_QUEUE_ENABLED: "true"
+      # 가입 이메일 인증. 알림센터 이메일 채널(NOTIFICATION_EMAIL_PROVIDER)이 켜진 뒤 true 로
+      EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-false}
       # 알림 문구에 넣는 서비스 주소 + 공고 수집 일일 보고를 받을 운영 슬랙·메일 (비우면 보고 안 보냄)
       APP_URL: ${APP_ORIGIN}
       NOTIFICATION_OPS_SLACK_WEBHOOK_URL: ${NOTIFICATION_OPS_SLACK_WEBHOOK_URL:-}

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../api/client';
@@ -38,7 +38,80 @@ export default function SignupPage() {
   const [fields, setFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
+  // 이메일 인증: idle → sent(코드 입력) → verified. 서버가 인증을 요구하지 않으면(required=false) 바로 verified.
+  const [verify, setVerify] = useState<'idle' | 'sent' | 'verified'>('idle');
+  const [verifiedEmail, setVerifiedEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const [resendIn, setResendIn] = useState(0);
+  const [codeLeft, setCodeLeft] = useState(0); // 코드 남은 시간(초)
+  const [verificationToken, setVerificationToken] = useState<string | null>(null);
+
+  // 1초마다: 재전송 대기와 코드 남은 시간을 같이 줄인다
+  useEffect(() => {
+    if (resendIn <= 0 && codeLeft <= 0) return;
+    const t = setTimeout(() => {
+      setResendIn((n) => (n > 0 ? n - 1 : 0));
+      setCodeLeft((n) => (n > 0 ? n - 1 : 0));
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [resendIn, codeLeft]);
+  const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+
+  // 인증한 뒤 이메일을 바꾸면 처음부터 다시
+  useEffect(() => {
+    if (verify !== 'idle' && email.trim().toLowerCase() !== verifiedEmail) {
+      setVerify('idle');
+      setCode('');
+      setVerifyError(null);
+    }
+  }, [email, verify, verifiedEmail]);
+
   if (user) return <Navigate to={target} replace />;
+
+  const sendCode = async () => {
+    setVerifyBusy(true);
+    setVerifyError(null);
+    setFields({});
+    try {
+      const r = await authApi.sendVerification(email.trim());
+      setVerifiedEmail(email.trim().toLowerCase());
+      setVerificationToken(null);
+      if (!r.required) {
+        setVerify('verified');
+      } else {
+        setVerify('sent');
+        setCode('');
+        setResendIn(r.resendAfterSeconds);
+        setCodeLeft(r.expiresInMinutes * 60);
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'DUPLICATE_EMAIL') setFields({ email: err.message });
+      else setVerifyError(err instanceof ApiError ? err.message : '인증 메일을 보내지 못했어요.');
+    } finally {
+      setVerifyBusy(false);
+    }
+  };
+
+  const confirmCode = async () => {
+    setVerifyBusy(true);
+    setVerifyError(null);
+    try {
+      const r = await authApi.confirmVerification(verifiedEmail, code.trim());
+      setVerificationToken(r.verificationToken);
+      setVerify('verified');
+    } catch (err) {
+      setVerifyError(err instanceof ApiError ? err.message : '인증에 실패했어요.');
+      // 여러 번 틀리면 코드를 다시 받아야 한다
+      if (err instanceof ApiError && err.code === 'VERIFICATION_TOO_MANY_ATTEMPTS') {
+        setVerify('idle');
+        setCode('');
+      }
+    } finally {
+      setVerifyBusy(false);
+    }
+  };
 
   const emailError = validateEmail(email);
   // 비밀번호 규칙은 빨간 글씨 대신 충족 여부를 그 자리에서 보여 준다.
@@ -47,7 +120,7 @@ export default function SignupPage() {
     { ok: password.length > 0 && ALLOWED.test(password), text: '사용 가능한 특수문자: ! @ # $ % ^ & * ( ) _ + = -' },
   ];
   const confirmError = password !== confirm ? '비밀번호가 일치하지 않아요.' : null;
-  const valid = !emailError && rules.every((r) => r.ok) && !confirmError;
+  const valid = !emailError && verify === 'verified' && rules.every((r) => r.ok) && !confirmError;
   // 입력을 시작했거나 한 번 제출한 뒤부터 오류를 보여 준다. 빈 폼에 빨간 글씨부터 띄우지 않는다.
   const show = (value: string) => submitted || value.length > 0;
 
@@ -55,7 +128,7 @@ export default function SignupPage() {
     e.preventDefault();
     setSubmitted(true);
     if (!valid) {
-      setError('입력한 내용을 다시 확인해 주세요.');
+      setError(verify !== 'verified' && !emailError ? '이메일 인증을 먼저 완료해 주세요.' : '입력한 내용을 다시 확인해 주세요.');
       return;
     }
 
@@ -64,12 +137,17 @@ export default function SignupPage() {
     setFields({});
 
     try {
-      await authApi.signup(email, password);
+      await authApi.signup(email, password, verificationToken);
     } catch (err) {
       if (err instanceof ApiError) {
         // 이메일 중복(409 DUPLICATE_EMAIL)은 이메일 입력란 옆에 붙여 준다.
         setFields(err.code === 'DUPLICATE_EMAIL' ? { email: err.message } : (err.fields ?? {}));
         setError(err.message);
+        // 인증이 오래돼 만료된 경우: 코드부터 다시 받게 한다
+        if (err.code === 'EMAIL_NOT_VERIFIED') {
+          setVerify('idle');
+          setVerificationToken(null);
+        }
       } else {
         setError('회원가입에 실패했습니다.');
       }
@@ -118,6 +196,42 @@ export default function SignupPage() {
             show(email) && emailError && <small className="auth-error">{emailError}</small>
           )}
         </label>
+
+        {/* 이메일 인증: 코드 보내기 → 코드 입력 → 인증 완료. 인증 메일은 알림센터가 보낸다 */}
+        {verify === 'verified' ? (
+          <p className="auth-verify__done">✓ 이메일 인증 완료</p>
+        ) : verify === 'sent' ? (
+          <div className="auth-verify">
+            <label>
+              인증 코드{' '}
+              <small className="muted">
+                {verifiedEmail} 로 보낸 6자리 · {codeLeft > 0 ? `남은 시간 ${mmss(codeLeft)}` : '만료됨 — 코드를 다시 받아 주세요'}
+              </small>
+              <span className="auth-verify__row">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="000000"
+                  autoComplete="one-time-code"
+                />
+                <button type="button" className="btn btn--small" onClick={confirmCode} disabled={verifyBusy || code.length !== 6 || codeLeft <= 0}>
+                  확인
+                </button>
+              </span>
+            </label>
+            <button type="button" className="linklike auth-verify__resend" onClick={sendCode} disabled={verifyBusy || resendIn > 0}>
+              {resendIn > 0 ? `다시 보내기 (${resendIn}초)` : '코드 다시 보내기'}
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="btn btn--small btn--ghost auth-verify__send" onClick={sendCode} disabled={verifyBusy || !!emailError}>
+            {verifyBusy ? '보내는 중…' : '이메일 인증 코드 보내기'}
+          </button>
+        )}
+        {verifyError && <small className="auth-error">{verifyError}</small>}
 
         <PasswordField
           label="비밀번호"
