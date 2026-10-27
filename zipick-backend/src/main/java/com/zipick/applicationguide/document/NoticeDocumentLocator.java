@@ -34,10 +34,26 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class NoticeDocumentLocator {
 
-    /** 공고문이 아닌 것이 확실한 첨부 유형 */
+    /**
+     * 공고문이 아닌 것이 확실한 첨부 유형.
+     *
+     * <b>수집기가 붙이는 값을 모두 적어 둬야 한다.</b> 여기 없는 유형은 파일명 규칙으로만 걸러지는데,
+     * 이름에 단서가 없으면 그대로 통과해 엉뚱한 첨부를 분석하게 된다.
+     * 유형 목록은 각 수집기의 attachmentType()/mediaType() 에 있다.
+     *   LH   FLOOR_PLAN / HOUSING_LIST / APPLICATION_FORM
+     *   SH   EXTERNAL_FLOOR_PLAN_OR_PHOTO / FLOOR_PLAN_OR_PHOTO_INDEX / HOUSING_LIST_*
+     *   GH   FLOOR_PLAN / SITE_PLAN / LOCATION_MAP / HOUSING_IMAGE
+     *   GBDC FLOOR_PLAN_OR_PHOTO / HOUSING_LIST
+     *
+     * APPLICATION_FORM(신청서·서식)을 넣은 이유가 특히 중요하다. LH 는 파일명에 '공고' 가 없고
+     * '신청'·'서식'·'양식' 이 있으면 이 유형을 붙이는데, PREFERRED_NAMES 에 "신청안내" 가 있어
+     * "신청안내.hwp" 같은 서식 파일이 공고문으로 뽑힐 수 있었다. 서식은 공고문이 아니다.
+     */
     private static final List<String> EXCLUDED_TYPES = List.of(
-            "FLOOR_PLAN", "FLOOR_PLAN_OR_PHOTO_INDEX", "SITE_PLAN", "BUILDING_PHOTO",
-            "HOUSING_LIST", "HOUSING_LIST_DETAIL", "HOUSING_LIST_SUMMARY", "EXTERNAL_FLOOR_PLAN_OR_PHOTO");
+            "FLOOR_PLAN", "FLOOR_PLAN_OR_PHOTO", "FLOOR_PLAN_OR_PHOTO_INDEX",
+            "EXTERNAL_FLOOR_PLAN_OR_PHOTO", "SITE_PLAN", "BUILDING_PHOTO",
+            "LOCATION_MAP", "HOUSING_IMAGE", "APPLICATION_FORM",
+            "HOUSING_LIST", "HOUSING_LIST_DETAIL", "HOUSING_LIST_SUMMARY");
 
     /** 파일명에 이 말이 있으면 공고문이 아니다. 주택목록·도면은 신청 준비 정보가 없고 길기만 하다 */
     private static final List<String> EXCLUDED_NAMES = List.of(

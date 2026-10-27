@@ -155,6 +155,44 @@ class NoticeDocumentLocatorTest {
         assertThat(found).isEmpty();
     }
 
+
+    /**
+     * LH 는 파일명에 '공고' 가 없고 '신청'·'서식'·'양식' 이 있으면 APPLICATION_FORM 을 붙인다.
+     * PREFERRED_NAMES 에 "신청안내" 가 있어, 유형을 거르지 않으면 서식 파일이 공고문으로 뽑혔다.
+     */
+    @Test
+    void 신청서_서식은_이름이_신청안내여도_공고문으로_쓰지_않는다() {
+        List<LocatedDocument> found = locator(5).select(List.of(
+                attachment("APPLICATION_FORM", "신청안내 및 서식.hwp")));
+
+        assertThat(found).isEmpty();
+    }
+
+    @Test
+    void 수집기가_붙이는_도면_사진_위치도_유형은_모두_제외한다() {
+        List<LocatedDocument> found = locator(10).select(List.of(
+                attachment("FLOOR_PLAN_OR_PHOTO", "붙임 공고 자료1.pdf"),
+                attachment("FLOOR_PLAN_OR_PHOTO_INDEX", "붙임 공고 자료2.pdf"),
+                attachment("EXTERNAL_FLOOR_PLAN_OR_PHOTO", "붙임 공고 자료3.pdf"),
+                attachment("LOCATION_MAP", "붙임 공고 자료4.pdf"),
+                attachment("HOUSING_IMAGE", "붙임 공고 자료5.pdf"),
+                attachment("SITE_PLAN", "붙임 공고 자료6.pdf"),
+                attachment("BUILDING_PHOTO", "붙임 공고 자료7.pdf")));
+
+        assertThat(found).isEmpty();
+    }
+
+    @Test
+    void 공고문이_함께_있으면_부속자료를_제치고_공고문을_고른다() {
+        List<LocatedDocument> found = locator(1).select(List.of(
+                attachment("APPLICATION_FORM", "신청안내.hwp"),
+                attachment("FLOOR_PLAN_OR_PHOTO", "공고 붙임.pdf"),
+                attachment("ANNOUNCEMENT", "입주자모집공고.pdf")));
+
+        assertThat(found).hasSize(1);
+        assertThat(found.getFirst().fileName()).isEqualTo("입주자모집공고.pdf");
+    }
+
     @Test
     void maxDocuments_만큼만_고른다() {
         List<LocatedDocument> found = locator(1).select(List.of(
