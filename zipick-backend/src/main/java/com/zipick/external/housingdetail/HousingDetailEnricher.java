@@ -53,6 +53,11 @@ public class HousingDetailEnricher {
             try {
                 HousingDetailResult result = source.extract(notice);
                 if (!result.housings().isEmpty() || !result.attachments().isEmpty()) {
+                    List<String> partialFields = HousingDetailCompleteness.partialCoreFields(result.housings());
+                    if (!partialFields.isEmpty()) {
+                        log.warn("상세 주택 핵심 필드가 일부 행에서 누락되었습니다: noticeId={}, source={}, fields={}",
+                                notice.noticeId(), source.getClass().getSimpleName(), partialFields);
+                    }
                     log.info("상세 주택 보완 성공: noticeId={}, units={}, attachments={}",
                             notice.noticeId(), result.housings().size(), result.attachments().size());
                     return result;

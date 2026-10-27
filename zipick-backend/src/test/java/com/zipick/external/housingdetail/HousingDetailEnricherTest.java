@@ -62,6 +62,8 @@ class HousingDetailEnricherTest {
         assertThat(housing.supplies().getFirst().supplyCount()).isEqualTo(2L);
         assertThat(housing.supplies().get(1).supplyCount()).isEqualTo(1L);
         assertThat(housing.supplies().getFirst().rentalConditions()).hasSize(1);
+        assertThat(housing.supplies().getFirst().rawPayload())
+                .contains("unitAdditionalAttributes", "베란다");
         assertThat(housing.media()).extracting(HousingMediaResponse::sourceKey)
                 .containsExactly("existing", "new");
     }
@@ -122,7 +124,9 @@ class HousingDetailEnricherTest {
                 key, "상세단지", "서울특별시", "강남구",
                 "서울특별시 강남구 테헤란로 10", "101동", unitNumber, floor,
                 new BigDecimal("39.50"), 2, "아파트", "국민임대",
-                10_000_000L, 300_000L, "{}", "서울특별시 강남구 역삼동 1-1",
+                10_000_000L, 300_000L,
+                "{\"unitAdditionalAttributes\":[{\"name\":\"베란다\",\"value\":\"있음\"}]}",
+                "서울특별시 강남구 역삼동 1-1",
                 "서울특별시 강남구 테헤란로 10", 1, "공급중", "강남역",
                 new BigDecimal("0.3"), true, true, 50, false, 0, supplyCount,
                 List.of(new DetailedRentalCondition("BASIC", "기본", 10_000_000L, 300_000L, "{}"))

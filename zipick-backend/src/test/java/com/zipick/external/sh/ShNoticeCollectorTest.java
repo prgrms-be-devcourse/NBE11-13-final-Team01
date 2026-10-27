@@ -28,6 +28,9 @@ class ShNoticeCollectorTest {
                   <tr><td>1724</td><td><a onclick="getDetailView('311724')">최종 경쟁률 안내</a></td><td>2026-09-29</td></tr>
                   <tr><td>1723</td><td><a onclick="getDetailView('311723')">입주자 모집공고 청약접수 결과안내</a></td><td>2026-09-28</td></tr>
                   <tr><td>1722</td><td><a onclick="getDetailView('311722')">입주자 모집공고 면접평가 대상자 발표</a></td><td>2026-09-27</td></tr>
+                  <tr><td>1721</td><td><a onclick="getDetailView('308394')">2026년 재개발임대주택 입주자 모집 일정 연기 안내</a></td><td>2026-09-26</td></tr>
+                  <tr><td>1720</td><td><a onclick="getDetailView('312066')">2026년 재개발임대주택 입주자 모집(2026.9.9.공고) 심사서류 제출 안내</a></td><td>2026-09-25</td></tr>
+                  <tr><td>1719</td><td><a onclick="getDetailView('306297')">창동 아우르네빌리지 입주자 모집공고 예비자 발표</a></td><td>2026-09-24</td></tr>
                 </tbody></table>
                 """;
 

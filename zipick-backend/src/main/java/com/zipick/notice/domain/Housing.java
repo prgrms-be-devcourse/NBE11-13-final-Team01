@@ -124,6 +124,23 @@ public class Housing extends BaseTimeEntity {
         this.longitude = longitude;
     }
 
+    /** AI 검수기가 확정한 주택 기본 정보만 덮어씁니다. */
+    public void applyAiNormalization(
+            String name,
+            String provinceName,
+            String districtName,
+            String address,
+            String lotAddress,
+            String roadAddress
+    ) {
+        this.name = keepExistingWhenBlank(name, this.name);
+        this.provinceName = keepExistingWhenBlank(provinceName, this.provinceName);
+        this.districtName = keepExistingWhenBlank(districtName, this.districtName);
+        this.address = keepExistingWhenBlank(address, this.address);
+        this.lotAddress = keepExistingWhenBlank(lotAddress, this.lotAddress);
+        this.roadAddress = keepExistingWhenBlank(roadAddress, this.roadAddress);
+    }
+
     public void enrichAddress(
             String normalizedAddress,
             String provinceName,

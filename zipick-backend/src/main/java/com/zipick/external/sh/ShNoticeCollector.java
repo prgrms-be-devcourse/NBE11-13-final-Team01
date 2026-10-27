@@ -34,8 +34,13 @@ public class ShNoticeCollector {
     private static final Pattern DETAIL_SEQUENCE = Pattern.compile("getDetailView\\('(?<seq>\\d+)'\\)");
     private static final Pattern INCLUDE = Pattern.compile("입주자\\s*모집|잔여세대\\s*모집|추가\\s*모집");
     private static final Pattern EXCLUDE = Pattern.compile(
-            "경쟁률|당첨자|예비\\s*\\d*차|동호배정|서류심사|입주대상자\\s*발표|"
+            "경쟁률|당첨자|예비\\s*\\d*차|예비(?:입주)?자\\s*발표|동호배정|서류\\s*심사|입주대상자\\s*발표|"
                     + "접수\\s*결과|결과\\s*안내|면접평가\\s*대상자\\s*발표|접수마감\\s*(?:안내|공지)|시스템.*안내"
+                    + "|일정\\s*(?:연기|변경|취소)\\s*(?:안내|공지)?"
+                    + "|심사\\s*서류\\s*(?:제출|접수)\\s*(?:안내|공지)?"
+                    + "|서류\\s*(?:제출|접수)\\s*(?:대상자\\s*)?(?:안내|공지|발표)"
+                    + "|모집\\s*(?:연기|취소)\\s*(?:안내|공지)?"
+                    + "|(?:청약|계약)\\s*안내"
     );
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
 

@@ -1,6 +1,7 @@
 package com.zipick.notice.service;
 
 import com.zipick.external.gh.GhNoticeCollector;
+import com.zipick.external.ai.GeminiNoticeNormalizationService;
 import com.zipick.external.housingdetail.HousingDetailEnricher;
 import com.zipick.external.hug.HugNoticeCollector;
 import com.zipick.external.myhome.client.MyHomeNoticeCollector;
@@ -21,6 +22,7 @@ import java.util.concurrent.Future;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -38,8 +40,9 @@ class MyHomeSyncServiceTest {
         HugNoticeCollector hug = mock(HugNoticeCollector.class);
         NoticeSyncPersistenceService persistence = mock(NoticeSyncPersistenceService.class);
         HousingGeocodingService geocoding = mock(HousingGeocodingService.class);
+        GeminiNoticeNormalizationService normalization = passThroughNormalization();
         MyHomeSyncService service = new MyHomeSyncService(
-                collector, aggregator, enricher, sh, gh, hug, persistence, geocoding
+                collector, aggregator, enricher, sh, gh, hug, persistence, geocoding, normalization
         );
         MyHomeNotice row = row("myhome-1");
         NoticeResponse active = notice("myhome-1", "2099/12/31");
@@ -79,8 +82,9 @@ class MyHomeSyncServiceTest {
         HugNoticeCollector hug = mock(HugNoticeCollector.class);
         NoticeSyncPersistenceService persistence = mock(NoticeSyncPersistenceService.class);
         HousingGeocodingService geocoding = mock(HousingGeocodingService.class);
+        GeminiNoticeNormalizationService normalization = passThroughNormalization();
         MyHomeSyncService service = new MyHomeSyncService(
-                collector, aggregator, enricher, sh, gh, hug, persistence, geocoding
+                collector, aggregator, enricher, sh, gh, hug, persistence, geocoding, normalization
         );
         CountDownLatch enteredCollector = new CountDownLatch(1);
         CountDownLatch releaseCollector = new CountDownLatch(1);
@@ -107,6 +111,10 @@ class MyHomeSyncServiceTest {
         when(gh.collect()).thenReturn(List.of());
         when(hug.collect()).thenReturn(List.of());
         assertThat(service.synchronize().collectedRows()).isZero();
+    }
+
+    private GeminiNoticeNormalizationService passThroughNormalization() {
+        return mock(GeminiNoticeNormalizationService.class);
     }
 
     private NoticeResponse notice(String id, String endDate) {
