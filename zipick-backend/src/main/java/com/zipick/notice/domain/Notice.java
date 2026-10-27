@@ -153,6 +153,13 @@ public class Notice extends BaseTimeEntity {
         this.statusReason = reason;
     }
 
+    /** 근거 검증을 통과한 AI 정규화 값만 선택적으로 반영합니다. */
+    public void applyAiNormalizedDates(LocalDate winnerAnnouncedAt, Instant applyStartAt, Instant applyEndAt) {
+        this.winnerAnnouncedAt = winnerAnnouncedAt == null ? this.winnerAnnouncedAt : winnerAnnouncedAt;
+        this.applyStartAt = applyStartAt == null ? this.applyStartAt : applyStartAt;
+        this.applyEndAt = applyEndAt == null ? this.applyEndAt : applyEndAt;
+    }
+
     public void synchronize(
             Agency agency,
             String previousExternalNoticeId,

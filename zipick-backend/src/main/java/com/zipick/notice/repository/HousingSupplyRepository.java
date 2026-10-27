@@ -13,4 +13,6 @@ public interface HousingSupplyRepository extends JpaRepository<HousingSupply, Lo
     List<HousingSupply> findAllByHousingId(Long housingId);
 
     List<HousingSupply> findAllByHousingIdAndActiveTrueOrderByIdAsc(Long housingId);
+
+    List<HousingSupply> findAllByHousingNoticeIdAndSourceSupplyKey(Long noticeId, String sourceSupplyKey);
 }

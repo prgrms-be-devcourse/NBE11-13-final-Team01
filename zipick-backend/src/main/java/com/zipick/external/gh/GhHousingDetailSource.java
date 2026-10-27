@@ -1,5 +1,6 @@
 package com.zipick.external.gh;
 
+import com.zipick.external.ai.GeminiPdfHousingDetailSupport;
 import com.zipick.external.housingdetail.DetailedHousingMedia;
 import com.zipick.external.housingdetail.DetailedHousingUnit;
 import com.zipick.external.housingdetail.ExternalDocumentClient;
@@ -11,6 +12,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.springframework.core.annotation.Order;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import tools.jackson.databind.json.JsonMapper;
@@ -34,11 +36,21 @@ public class GhHousingDetailSource implements HousingDetailSource {
     private static final Pattern DISTRICT = Pattern.compile(
             "^(?:경기도|서울특별시|인천광역시)\\s+((?:\\S+시\\s+\\S+구)|\\S+(?:시|군|구))"
     );
+    private static final Pattern HOUSING_PDF = Pattern.compile(
+            "주택.*(?:목록|내역|명세)|(?:목록|내역|명세).*주택|공급.*주택",
+            Pattern.CASE_INSENSITIVE
+    );
 
     private final ExternalDocumentClient documentClient;
+    private GeminiPdfHousingDetailSupport geminiSupport;
 
     public GhHousingDetailSource(ExternalDocumentClient documentClient) {
         this.documentClient = documentClient;
+    }
+
+    @Autowired(required = false)
+    void setGeminiSupport(GeminiPdfHousingDetailSupport geminiSupport) {
+        this.geminiSupport = geminiSupport;
     }
 
     @Override
@@ -106,7 +118,32 @@ public class GhHousingDetailSource implements HousingDetailSource {
                 }
             }
         }
-        return new HousingDetailResult(units, attachments, mediaByUnit);
+        List<DetailedHousingUnit> completed = supplementFromHousingPdf(notice, attachments, units);
+        return new HousingDetailResult(completed, attachments, mediaByUnit);
+    }
+
+    private List<DetailedHousingUnit> supplementFromHousingPdf(
+            NoticeResponse notice,
+            List<NoticeAttachmentResponse> attachments,
+            List<DetailedHousingUnit> fallback
+    ) {
+        if (geminiSupport == null || !geminiSupport.enabled()) return List.copyOf(fallback);
+        for (NoticeAttachmentResponse attachment : attachments) {
+            String fileName = attachment.fileName() == null ? "" : attachment.fileName();
+            if (!fileName.toLowerCase(Locale.ROOT).endsWith(".pdf")
+                    || !HOUSING_PDF.matcher(fileName.replaceAll("[\\s._-]", "")).find()) {
+                continue;
+            }
+            try {
+                byte[] bytes = documentClient.getBytes(URI.create(attachment.sourceUrl()));
+                return geminiSupport.supplement(
+                        bytes, attachment.sourceKey(), "GH", notice.title(), fileName, fallback
+                );
+            } catch (RuntimeException ignored) {
+                // 기존 HTML 파싱 결과를 유지한다.
+            }
+        }
+        return List.copyOf(fallback);
     }
 
     List<NoticeAttachmentResponse> attachments(Document document, String noticeId) {
