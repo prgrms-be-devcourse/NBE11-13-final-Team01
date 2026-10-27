@@ -29,7 +29,14 @@ public record ApplicationGuideProperties(
          * (PDF 원본을 통째로 보내는 기능은 이보다 훨씬 길어야 한다 — 그래서 공유하지 않는다)
          */
         Duration readTimeout,
-        /** Gemini 에 보낼 공고문 텍스트 최대 길이(자). 모델 한계가 아니라 토큰 절약이 목적이다 */
+        /**
+         * Gemini 에 보낼 공고문 텍스트 최대 길이(자). 모델 한계가 아니라 토큰 절약이 목적이다.
+         *
+         * 기본값을 30,000 에서 60,000 으로 올렸다. 실제 장문 공고(GH 경기행복주택 108쪽, 20만 자)로 재 보니
+         * 30,000 에서는 신청 준비 관련 47쪽 중 18쪽만 들어가고, 점수가 높은 자격 쪽이 "예산에 안 맞아"
+         * 건너뛰어진 뒤 더 작고 점수 낮은 쪽이 대신 들어갔다. 60,000 에서는 그 쪽들이 모두 들어간다.
+         * 전문(20만 자)을 보내자는 것이 아니라 선별 결과를 담을 여유를 준 값이다.
+         */
         int maxInputChars,
         /**
          * 한 공고에서 공고문 후보를 몇 건까지 추릴지. 실제 분석은 그중 점수가 가장 높은 1건만 한다.
@@ -67,7 +74,7 @@ public record ApplicationGuideProperties(
         model = hasText(model) ? model.trim() : DEFAULT_MODEL;
         connectTimeout = connectTimeout == null ? Duration.ofSeconds(5) : connectTimeout;
         readTimeout = readTimeout == null ? Duration.ofSeconds(90) : readTimeout;
-        maxInputChars = maxInputChars <= 0 ? 30_000 : maxInputChars;
+        maxInputChars = maxInputChars <= 0 ? 60_000 : maxInputChars;
         maxDocuments = maxDocuments <= 0 ? 1 : maxDocuments;
         neighborPages = neighborPages < 0 ? 1 : neighborPages;
         minExtractedChars = minExtractedChars <= 0 ? 1_000 : minExtractedChars;

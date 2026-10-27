@@ -179,4 +179,58 @@ class ApplicationSectionReducerTest {
         assertThat(reduced.sentChars()).isGreaterThan(reduced.bodyChars());
         assertThat(reduced.sourceHeaderChars()).isPositive();
     }
+
+    /**
+     * 덩어리 하나가 예산보다 큰 경우.
+     * 예전에는 "그거라도 잘라서 담는다" 고 해 놓고 실제로는 자르지 않아,
+     * max-input-chars 를 설정해 두어도 그보다 긴 입력이 그대로 나갔다.
+     */
+    @Test
+    void 덩어리_하나가_예산보다_커도_설정한_상한을_넘기지_않는다() {
+        String huge = "제출서류 안내입니다. ".repeat(600);   // 약 7,800자
+        ExtractedDocument doc = document(huge);
+
+        ReducedDocument reduced = reducer(1_000, 0).reduce(doc).orElseThrow();
+
+        assertThat(reduced.bodyChars()).isLessThanOrEqualTo(1_000);
+        // 출처 머리말은 우리가 붙이는 것이라 본문 예산과 별개다. 본문이 상한을 지키는지만 본다
+        assertThat(reduced.sources()).hasSize(1);
+    }
+
+    @Test
+    void 기본_예산은_60000자다() {
+        // application.yml 과 ApplicationGuideProperties 기본값이 어긋나지 않게 고정한다
+        var defaults = new ApplicationGuideProperties(null, null, null, 0, 0, 1, 0, null);
+
+        assertThat(defaults.maxInputChars()).isEqualTo(60_000);
+    }
+
+    @Test
+    void 예산이_60000이면_그보다_긴_덩어리도_잘라_담는다() {
+        String huge = "제출서류 안내입니다. ".repeat(6_000);   // 약 78,000자
+
+        ReducedDocument reduced = reducer(60_000, 0).reduce(document(huge)).orElseThrow();
+
+        assertThat(reduced.bodyChars()).isLessThanOrEqualTo(60_000);
+    }
+
+    @Test
+    void 여러_덩어리의_본문_합도_상한을_넘기지_않는다() {
+        ExtractedDocument doc = document(
+                DOCUMENTS_PAGE, ELIGIBILITY_PAGE, PROCESS_PAGE, CAUTIONS_PAGE);
+
+        ReducedDocument reduced = reducer(200, 1).reduce(doc).orElseThrow();
+
+        assertThat(reduced.bodyChars()).isLessThanOrEqualTo(200);
+    }
+
+    @Test
+    void 예산이_넉넉하면_본문을_자르지_않는다() {
+        ExtractedDocument doc = document(DOCUMENTS_PAGE, ELIGIBILITY_PAGE);
+
+        ReducedDocument reduced = reducer(30_000, 1).reduce(doc).orElseThrow();
+
+        assertThat(reduced.bodyChars()).isEqualTo(doc.totalChars());
+        assertThat(reduced.text()).contains(DOCUMENTS_PAGE.strip());
+    }
 }

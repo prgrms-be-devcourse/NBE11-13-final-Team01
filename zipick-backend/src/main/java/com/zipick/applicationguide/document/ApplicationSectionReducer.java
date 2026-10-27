@@ -68,18 +68,25 @@ public class ApplicationSectionReducer {
 
         Map<String, GuideSourceRef> sources = new LinkedHashMap<>();
         StringBuilder text = new StringBuilder();
+        // 고르는 단계에서 이미 예산을 지키지만, 여기서 한 번 더 자른다.
+        // selectWithinBudget 은 "하나도 못 담았는데 첫 덩어리가 예산보다 큰" 경우 그 덩어리를 통째로 담는다.
+        // 그대로 두면 maxInputChars 설정이 지켜지지 않으므로 본문 기준으로 실제로 잘라 낸다.
+        int bodyBudget = properties.maxInputChars();
+        int bodyChars = 0;
         for (int i = 0; i < blocks.size(); i++) {
             DocumentBlock block = blocks.get(i);
             String sourceId = "S" + (i + 1);
+            String body = clamp(block.text(), bodyBudget);
             sources.put(sourceId, block.toSourceRef(document.fileName()));
             text.append(header(sourceId, document.fileName(), block)).append('\n')
-                    .append(block.text()).append("\n\n");
+                    .append(body).append("\n\n");
+            bodyBudget -= body.length();
+            bodyChars += body.length();
         }
 
         Set<SectionCategory> found = EnumSet.noneOf(SectionCategory.class);
         matched.forEach(s -> found.addAll(s.categories()));
 
-        int bodyChars = blocks.stream().mapToInt(DocumentBlock::length).sum();
         ReducedDocument reduced = new ReducedDocument(text.toString().strip(), sources, found,
                 document.totalChars(), bodyChars,
                 blocks.stream().map(DocumentBlock::page).filter(p -> p != null).toList());
@@ -155,6 +162,14 @@ public class ApplicationSectionReducer {
         if (index >= 0 && index < scored.size()) {
             target.add(index);
         }
+    }
+
+    /** 남은 본문 예산만큼만 남긴다. 예산이 없으면 빈 문자열(출처 머리말은 남아 자리만 표시된다) */
+    private static String clamp(String text, int remaining) {
+        if (text == null || remaining <= 0) {
+            return "";
+        }
+        return text.length() <= remaining ? text : text.substring(0, remaining);
     }
 
     private static String header(String sourceId, String fileName, DocumentBlock block) {

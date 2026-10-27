@@ -395,7 +395,7 @@ zipick:
     model: ${APPLICATION_GUIDE_MODEL:${GEMINI_MODEL:gemini-3.5-flash-lite}}
     connect-timeout: 5s
     read-timeout: 90s
-    max-input-chars: 30000
+    max-input-chars: 60000
     max-documents: 1
     neighbor-pages: 1
     min-extracted-chars: 1000
