@@ -29,7 +29,7 @@ public class DocumentParseHistory extends BaseTimeEntity {
     @Column(name = "document_key", nullable = false, length = 700)
     private String documentKey;
 
-    @Column(name = "parser_version", nullable = false, length = 50)
+    @Column(name = "parser_version", nullable = false, length = 100)
     private String parserVersion;
 
     @Column(name = "parse_status", nullable = false, length = 30)

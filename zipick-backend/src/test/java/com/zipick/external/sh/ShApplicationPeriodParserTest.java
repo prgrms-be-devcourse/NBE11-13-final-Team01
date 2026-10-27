@@ -39,6 +39,20 @@ class ShApplicationPeriodParserTest {
     }
 
     @Test
+    void parsesShPeriodWhoseEndDateOmitsTheYear() {
+        String html = """
+                <p>■ 모집공고일 : 2026.10.23.(금)</p>
+                <p>■ 접수기간 : 2026.10.23.(금) ~ 11.09.(월)</p>
+                <p>■ 당첨자발표 : 2026.12.23.(수) 17시 예정</p>
+                """;
+
+        ShApplicationPeriod period = parser.parse(html).orElseThrow();
+
+        assertThat(period.startDate()).isEqualTo(LocalDate.of(2026, 10, 23));
+        assertThat(period.endDate()).isEqualTo(LocalDate.of(2026, 11, 9));
+    }
+
+    @Test
     void keepsAnnouncementBeforeItsApplicationStartWhenEndDateHasNotPassed() {
         String html = """
                 <p>■ 접수기간 : 2026.10.26.(월) ~ 2026.10.30.(금)</p>

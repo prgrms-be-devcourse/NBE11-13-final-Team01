@@ -38,9 +38,8 @@ springdoc:
   api-docs:
     path: /v3/api-docs
 
-# Google Gemini 공통 연결 정보. 여기에는 "어디에 어떤 자격으로 접속하는가" 만 둔다.
-# 모델·타임아웃·호출 상한처럼 기능마다 달라야 하는 정책은 각 기능 설정 아래에 둔다
-# (AI 신청 준비 가이드 → zipick.application-guide).
+# 신청 준비 가이드, 공고 PDF 추출기, 정규화기가 공유하는 Gemini 연결 정보.
+# API Key와 Base URL은 공유하고 모델·타임아웃·호출 상한은 각 기능 설정에서 따로 관리한다.
 #
 # key 는 일부러 여기에 적지 않는다. ${GEMINI_API_KEY:} 로 적어 두면 환경변수가 없을 때
 # 빈 문자열로 확정돼 config/application-secret.yml 의 값을 덮어써 버린다.
@@ -50,6 +49,43 @@ gemini:
     base-url: https://generativelanguage.googleapis.com
 
 zipick:
+  # 공고 첨부 PDF에서 전체 공급주택 행을 추출하는 3.5 Flash Lite 전용 정책.
+  # 신청 가이드와 API Key·Base URL을 공유하되 아래 실행 정책은 독립적으로 적용한다.
+  gemini-pdf-parser:
+    key: ${gemini.api.key:}
+    base-url: ${gemini.api.base-url:https://generativelanguage.googleapis.com}
+    enabled: ${GEMINI_PDF_PARSER_ENABLED:false}
+    model: ${GEMINI_PDF_PARSER_MODEL:gemini-3.5-flash-lite}
+    max-file-bytes: 20971520
+    # PDF 한 건씩 처리하므로 모델의 출력 한도를 사용한다.
+    max-output-tokens: 65536
+    thinking-level: medium
+    timeout: 5m
+    # 최초에는 공급표 관련 페이지만 호출하고, 누락된 경우에만 해당 행 주변 페이지를 40행 단위로 보정한다.
+    daily-call-limit: 500
+    # 신규 PDF가 일일 한도를 전부 소진하지 않도록 보정 호출 몫을 남긴다.
+    retry-call-reserve: 20
+    max-continuation-calls: 4
+    # 호출 횟수보다 문서별 완전성을 우선해 PDF 한 건만 한 요청에 전달한다.
+    max-documents-per-request: 1
+    max-pages-per-request: 120
+    # PDF SHA-256과 프롬프트 버전이 같으면 AI를 다시 호출하지 않는다.
+    cache-directory: .gemini-pdf-cache
+  # Lite 추출 JSON을 DB 구조로 검수하는 3.8 Flash 전용 정책.
+  gemini-normalization:
+    enabled: ${GEMINI_NORMALIZATION_ENABLED:false}
+    # Lite 추출이 모두 끝난 뒤 DB 저장 직전에 3.8 Flash로 JSON만 묶어서 검수한다.
+    model: gemini-3.8-flash
+    thinking-level: low
+    max-output-tokens: 16384
+    # 250K TPM을 넘지 않도록 입력은 220K 목표, 235K 절대 상한으로 묶는다.
+    target-input-tokens: 220000
+    max-input-tokens: 235000
+    # 무료 RPD 20 중 정상 배치 18회, 실패 재시도 2회를 예약한다.
+    daily-call-limit: 20
+    normal-call-limit: 18
+    timeout: 5m
+
   # 공급주택 주변 생활 인프라 (카카오 로컬 카테고리 검색)
   infra:
     # 인프라는 자주 바뀌지 않아 길게 잡는다. 만료되면 배치가 다시 수집한다.

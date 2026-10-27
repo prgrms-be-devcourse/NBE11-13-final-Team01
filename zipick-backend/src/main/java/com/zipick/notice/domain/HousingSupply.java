@@ -207,6 +207,48 @@ public class HousingSupply extends BaseTimeEntity {
         this.lastMissingCheckedOn = null;
     }
 
+    /** AI 검수기가 확정한 공급 정보만 선택적으로 반영합니다. */
+    public void applyAiNormalization(
+            String housingType,
+            String supplyType,
+            String buildingDong,
+            String unitNumber,
+            Integer floor,
+            Integer roomCount,
+            BigDecimal exclusiveArea,
+            Long rentDeposit,
+            Long monthlyRent,
+            Integer supplyCount,
+            String supplyStatus,
+            Boolean elevatorAvailable,
+            Boolean communityFacilityAvailable,
+            Integer totalParkingSpaces,
+            Boolean mechanicalParkingAvailable,
+            Integer mechanicalParkingSpaces,
+            String rawPayload
+    ) {
+        this.housingType = keepExistingWhenBlank(housingType, this.housingType);
+        this.supplyType = keepExistingWhenBlank(supplyType, this.supplyType);
+        this.buildingDong = keepExistingWhenBlank(buildingDong, this.buildingDong);
+        this.unitNumber = keepExistingWhenBlank(unitNumber, this.unitNumber);
+        this.floor = floor == null ? this.floor : floor;
+        this.roomCount = roomCount == null ? this.roomCount : roomCount;
+        this.exclusiveArea = exclusiveArea == null ? this.exclusiveArea : exclusiveArea;
+        this.rentDeposit = rentDeposit == null ? this.rentDeposit : rentDeposit;
+        this.monthlyRent = monthlyRent == null ? this.monthlyRent : monthlyRent;
+        this.supplyCount = supplyCount == null ? this.supplyCount : supplyCount;
+        this.supplyStatus = keepExistingWhenBlank(supplyStatus, this.supplyStatus);
+        this.elevatorAvailable = elevatorAvailable == null ? this.elevatorAvailable : elevatorAvailable;
+        this.communityFacilityAvailable = communityFacilityAvailable == null
+                ? this.communityFacilityAvailable : communityFacilityAvailable;
+        this.totalParkingSpaces = totalParkingSpaces == null ? this.totalParkingSpaces : totalParkingSpaces;
+        this.mechanicalParkingAvailable = mechanicalParkingAvailable == null
+                ? this.mechanicalParkingAvailable : mechanicalParkingAvailable;
+        this.mechanicalParkingSpaces = mechanicalParkingSpaces == null
+                ? this.mechanicalParkingSpaces : mechanicalParkingSpaces;
+        this.rawPayload = rawPayload == null ? this.rawPayload : rawPayload;
+    }
+
     public boolean markMissing(LocalDate checkedOn, int inactiveThreshold) {
         if (checkedOn.equals(lastMissingCheckedOn)) {
             return false;
@@ -295,6 +337,7 @@ public class HousingSupply extends BaseTimeEntity {
     public Integer getTotalParkingSpaces() { return totalParkingSpaces; }
     public Boolean getMechanicalParkingAvailable() { return mechanicalParkingAvailable; }
     public Integer getMechanicalParkingSpaces() { return mechanicalParkingSpaces; }
+    public String getRawPayload() { return rawPayload; }
 
     public boolean isActive() {
         return active;

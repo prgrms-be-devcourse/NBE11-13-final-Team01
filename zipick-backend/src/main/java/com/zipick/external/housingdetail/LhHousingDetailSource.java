@@ -1,5 +1,6 @@
 package com.zipick.external.housingdetail;
 
+import com.zipick.external.ai.GeminiPdfHousingDetailSupport;
 import com.zipick.external.sh.ShPdfHousingParser;
 import com.zipick.notice.dto.NoticeResponse;
 import com.zipick.notice.dto.NoticeAttachmentResponse;
@@ -7,6 +8,7 @@ import com.zipick.notice.support.AddressNormalizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import tools.jackson.core.type.TypeReference;
@@ -38,8 +40,9 @@ public class LhHousingDetailSource implements HousingDetailSource {
     );
     private static final Pattern NUMBER_PATTERN = Pattern.compile("-?\\d+");
     private static final Pattern ATTACHMENT_PATTERN = Pattern.compile(
-            "fileDownLoad\\('(?<id>\\d+)'\\);?\\\">(?<name>[^<]+)</a>",
-            Pattern.CASE_INSENSITIVE
+            "<a[^>]+(?:href|onclick)\\s*=\\s*[\\\"](?:javascript:)?fileDownLoad\\('(?<id>\\d+)'\\);?[\\\"][^>]*>"
+                    + "(?<name>.*?)</a>",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL
     );
     private static final Pattern PLAN_HINT = Pattern.compile(
             "도면|평면도|평면|floor\\s*plan|floorplan|drawing|blueprint",
@@ -56,6 +59,7 @@ public class LhHousingDetailSource implements HousingDetailSource {
     private final LhPdfHousingParser pdfParser;
     private final LhHwpHousingParser hwpParser;
     private final ShPdfHousingParser shPdfParser;
+    private GeminiPdfHousingDetailSupport geminiSupport;
 
     public LhHousingDetailSource(
             ExternalDocumentClient documentClient,
@@ -69,6 +73,11 @@ public class LhHousingDetailSource implements HousingDetailSource {
         this.pdfParser = pdfParser;
         this.hwpParser = hwpParser;
         this.shPdfParser = shPdfParser;
+    }
+
+    @Autowired(required = false)
+    void setGeminiSupport(GeminiPdfHousingDetailSupport geminiSupport) {
+        this.geminiSupport = geminiSupport;
     }
 
     @Override
@@ -86,8 +95,11 @@ public class LhHousingDetailSource implements HousingDetailSource {
         String html = documentClient.getText(detailUri);
         List<LhAttachment> attachments = findAttachments(html);
         List<DetailedHousingUnit> embeddedUnits = extractEmbeddedJson(html);
-        List<DetailedHousingUnit> attachmentUnits = extractAttachments(detailUri, attachments);
-        List<NoticeAttachmentResponse> planAssets = extractPlanAssets(detailUri, html, attachments);
+        List<DetailedHousingUnit> attachmentUnits = extractAttachments(notice, detailUri, attachments);
+        List<NoticeAttachmentResponse> planAssets = mergeAttachments(
+                extractAttachmentMetadata(detailUri, attachments),
+                extractPlanAssets(detailUri, html, attachments)
+        );
         Map<String, List<DetailedHousingMedia>> mediaByUnitKey = associateMedia(
                 embeddedUnits,
                 extractHousingMedia(detailUri, html)
@@ -394,7 +406,11 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 && !normalized.matches("(?:기존주택)?매입임대(?:주택)?");
     }
 
-    private List<DetailedHousingUnit> extractAttachments(URI detailUri, List<LhAttachment> attachments) {
+    private List<DetailedHousingUnit> extractAttachments(
+            NoticeResponse notice,
+            URI detailUri,
+            List<LhAttachment> attachments
+    ) {
         List<DetailedHousingUnit> extracted = new ArrayList<>();
         List<LhAttachment> supported = attachments.stream()
                 .filter(this::isSupportedDocument)
@@ -404,7 +420,7 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 try {
                     URI downloadUri = detailUri.resolve("/lhapply/lhFile.do?fileid=" + attachment.fileId());
                     byte[] bytes = documentClient.getBytes(downloadUri);
-                    List<DetailedHousingUnit> units = parseAttachment(attachment, bytes);
+                    List<DetailedHousingUnit> units = parseAttachment(notice, attachment, bytes);
                     if (!units.isEmpty()) {
                         extracted.addAll(units);
                         log.info("LH 첨부 주택목록 선택: fileId={}, fileName={}, units={}",
@@ -450,6 +466,38 @@ public class LhHousingDetailSource implements HousingDetailSource {
             }
         }
         return List.copyOf(assets.values());
+    }
+
+    private List<NoticeAttachmentResponse> extractAttachmentMetadata(
+            URI detailUri,
+            List<LhAttachment> attachments
+    ) {
+        return attachments.stream().map(attachment -> new NoticeAttachmentResponse(
+                "LH_FILE:" + attachment.fileId(),
+                attachmentType(attachment.fileName()),
+                attachment.fileName(),
+                detailUri.resolve("/lhapply/lhFile.do?fileid=" + attachment.fileId()).toString(),
+                null
+        )).toList();
+    }
+
+    private List<NoticeAttachmentResponse> mergeAttachments(
+            List<NoticeAttachmentResponse> primary,
+            List<NoticeAttachmentResponse> supplement
+    ) {
+        Map<String, NoticeAttachmentResponse> merged = new LinkedHashMap<>();
+        primary.forEach(item -> merged.put(item.sourceKey(), item));
+        supplement.forEach(item -> merged.putIfAbsent(item.sourceKey(), item));
+        return List.copyOf(merged.values());
+    }
+
+    private String attachmentType(String fileName) {
+        String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        if (PLAN_HINT.matcher(name).find()) return "FLOOR_PLAN";
+        if (isHousingListDocument(name)) return "HOUSING_LIST";
+        if (name.contains("공고")) return "ANNOUNCEMENT";
+        if (name.contains("신청") || name.contains("서식") || name.contains("양식")) return "APPLICATION_FORM";
+        return "OTHER";
     }
 
     private void collectJsonPlanAsset(
@@ -540,7 +588,8 @@ public class LhHousingDetailSource implements HousingDetailSource {
         List<LhAttachment> attachments = new ArrayList<>();
         Matcher matcher = ATTACHMENT_PATTERN.matcher(html);
         while (matcher.find()) {
-            attachments.add(new LhAttachment(matcher.group("id"), decodeHtml(matcher.group("name"))));
+            String name = org.jsoup.Jsoup.parseBodyFragment(matcher.group("name")).text();
+            attachments.add(new LhAttachment(matcher.group("id"), decodeHtml(name)));
         }
         return List.copyOf(attachments);
     }
@@ -566,7 +615,11 @@ public class LhHousingDetailSource implements HousingDetailSource {
         return score + 100;
     }
 
-    private List<DetailedHousingUnit> parseAttachment(LhAttachment attachment, byte[] bytes) {
+    private List<DetailedHousingUnit> parseAttachment(
+            NoticeResponse notice,
+            LhAttachment attachment,
+            byte[] bytes
+    ) {
         String name = attachment.fileName().toLowerCase(Locale.ROOT);
         if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
             return spreadsheetParser.parse(bytes, attachment);
@@ -576,10 +629,13 @@ public class LhHousingDetailSource implements HousingDetailSource {
             List<DetailedHousingUnit> structured = shPdfParser.parse(
                     bytes, attachment, housingList ? "LH_PDF_LIST" : "LH_PDF"
             );
-            if (!structured.isEmpty()) {
-                return structured;
-            }
-            return pdfParser.parse(bytes, attachment, housingList ? "LH_PDF_LIST" : "LH_PDF");
+            List<DetailedHousingUnit> fallback = !structured.isEmpty()
+                    ? structured
+                    : pdfParser.parse(bytes, attachment, housingList ? "LH_PDF_LIST" : "LH_PDF");
+            if (geminiSupport == null) return fallback;
+            return geminiSupport.supplement(
+                    bytes, "LH_FILE:" + attachment.fileId(), "LH", notice.title(), attachment.fileName(), fallback
+            );
         }
         if (name.endsWith(".hwp") || name.endsWith(".hwpx")) {
             return hwpParser.parse(bytes, attachment, housingList ? "LH_HWP_LIST" : "LH_HWP");

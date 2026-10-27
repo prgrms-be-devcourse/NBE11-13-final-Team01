@@ -42,6 +42,30 @@ class LhHousingDetailSourceTest {
     }
 
     @Test
+    void 실제_LH_href_첨부링크를_읽는다() throws Exception {
+        byte[] workbook = LhSpreadsheetTestFixture.oneHousingWorkbook();
+        String html = "<a class=\"file\" href=\"javascript:fileDownLoad('68932266');\">공급주택목록.xlsx</a>";
+        LhHousingDetailSource source = source(new StubDocumentClient(html, workbook));
+
+        List<DetailedHousingUnit> units = source.extract(notice("https://apply.lh.or.kr/detail")).housings();
+
+        assertThat(units).hasSize(1);
+    }
+
+    @Test
+    void 주택파싱결과가_없어도_공고문첨부를_저장한다() {
+        String html = "<a href=\"javascript:fileDownLoad('68932266');\">영구임대 모집공고문.pdf</a>";
+        LhHousingDetailSource source = source(new StubDocumentClient(html, new byte[0]));
+
+        HousingDetailResult result = source.extract(notice("https://apply.lh.or.kr/detail"));
+
+        assertThat(result.attachments()).hasSize(1);
+        assertThat(result.attachments().getFirst().attachmentType()).isEqualTo("ANNOUNCEMENT");
+        assertThat(result.attachments().getFirst().sourceUrl())
+                .isEqualTo("https://apply.lh.or.kr/lhapply/lhFile.do?fileid=68932266");
+    }
+
+    @Test
     void JSON에_없는_금액만_엑셀에서_보완한다() throws Exception {
         byte[] workbook = LhSpreadsheetTestFixture.oneHousingWorkbook();
         String html = """

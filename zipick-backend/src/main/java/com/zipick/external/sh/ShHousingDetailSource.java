@@ -1,5 +1,6 @@
 package com.zipick.external.sh;
 
+import com.zipick.external.ai.GeminiPdfHousingDetailSupport;
 import com.zipick.external.housingdetail.DetailedHousingUnit;
 import com.zipick.external.housingdetail.ExternalDocumentClient;
 import com.zipick.external.housingdetail.HousingDetailResult;
@@ -18,6 +19,7 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import tools.jackson.core.type.TypeReference;
@@ -53,6 +55,7 @@ public class ShHousingDetailSource implements HousingDetailSource {
     private final LhPdfHousingParser fallbackPdfParser;
     private final LhHwpHousingParser hwpParser;
     private final DocumentParseHistoryRepository historyRepository;
+    private GeminiPdfHousingDetailSupport geminiSupport;
 
     public ShHousingDetailSource(
             ExternalDocumentClient documentClient,
@@ -68,6 +71,11 @@ public class ShHousingDetailSource implements HousingDetailSource {
         this.fallbackPdfParser = fallbackPdfParser;
         this.hwpParser = hwpParser;
         this.historyRepository = historyRepository;
+    }
+
+    @Autowired(required = false)
+    void setGeminiSupport(GeminiPdfHousingDetailSupport geminiSupport) {
+        this.geminiSupport = geminiSupport;
     }
 
     @Override
@@ -92,7 +100,10 @@ public class ShHousingDetailSource implements HousingDetailSource {
 
         for (ShAttachment attachment : housingCandidates(attachments)) {
             String documentKey = documentKey(attachment);
-            if (historyRepository.findByDocumentKeyAndParserVersion(documentKey, PARSER_VERSION)
+            boolean aiEnabled = geminiSupport != null && geminiSupport.enabled();
+            String parserVersion = aiEnabled
+                    ? "SH_" + geminiSupport.parserVersion() : PARSER_VERSION;
+            if (historyRepository.findByDocumentKeyAndParserVersion(documentKey, parserVersion)
                     .filter(DocumentParseHistory::isSuccess)
                     .isPresent()) {
                 log.info("SH 첨부 재파싱 생략: seq={}, fileSeq={}, fileName={}",
@@ -101,13 +112,19 @@ public class ShHousingDetailSource implements HousingDetailSource {
             }
             try {
                 byte[] bytes = documentClient.getBytes(downloadUri(detailUri, attachment));
-                List<DetailedHousingUnit> units = parseAttachment(attachment, bytes);
+                ParsedAttachment parsed = parseAttachment(notice, attachment, bytes);
+                List<DetailedHousingUnit> units = parsed.units();
                 if (units.isEmpty()) {
                     continue;
                 }
+                if (aiEnabled && !parsed.aiComplete()) {
+                    log.warn("SH AI 불완전 결과는 성공 이력으로 기록하지 않습니다: seq={}, fileSeq={}, fallbackUnits={}",
+                            attachment.seq(), attachment.fileSeq(), units.size());
+                    return new HousingDetailResult(units, savedAttachments, Map.of());
+                }
                 DocumentParseHistory history = historyRepository
-                        .findByDocumentKeyAndParserVersion(documentKey, PARSER_VERSION)
-                        .orElseGet(() -> new DocumentParseHistory(documentKey, PARSER_VERSION));
+                        .findByDocumentKeyAndParserVersion(documentKey, parserVersion)
+                        .orElseGet(() -> new DocumentParseHistory(documentKey, parserVersion));
                 history.markSuccess(attachment.fileSize(), units.size());
                 historyRepository.save(history);
                 log.info("SH 공급주택 첨부 선택: seq={}, fileSeq={}, fileName={}, units={}",
@@ -151,21 +168,34 @@ public class ShHousingDetailSource implements HousingDetailSource {
                 .toList();
     }
 
-    private List<DetailedHousingUnit> parseAttachment(ShAttachment attachment, byte[] bytes) {
+    private ParsedAttachment parseAttachment(
+            NoticeResponse notice,
+            ShAttachment attachment,
+            byte[] bytes
+    ) {
         String name = normalizedName(attachment.oriFileNm());
         LhAttachment compatible = new LhAttachment(attachment.fileSeq(), attachment.oriFileNm());
         if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-            return spreadsheetParser.parse(bytes, compatible);
+            return new ParsedAttachment(spreadsheetParser.parse(bytes, compatible), true);
         }
         if (name.endsWith(".pdf")) {
             List<DetailedHousingUnit> structured = shPdfParser.parse(bytes, attachment);
-            return structured.isEmpty() ? fallbackPdfParser.parse(bytes, compatible) : structured;
+            List<DetailedHousingUnit> fallback = structured.isEmpty()
+                    ? fallbackPdfParser.parse(bytes, compatible) : structured;
+            if (geminiSupport == null || !geminiSupport.enabled()) {
+                return new ParsedAttachment(fallback, true);
+            }
+            GeminiPdfHousingDetailSupport.SupplementResult result = geminiSupport.supplementWithStatus(
+                    bytes, documentKey(attachment), "SH", notice.title(), attachment.oriFileNm(), fallback);
+            return new ParsedAttachment(result.units(), result.aiComplete());
         }
         if (name.endsWith(".hwp") || name.endsWith(".hwpx")) {
-            return hwpParser.parse(bytes, compatible);
+            return new ParsedAttachment(hwpParser.parse(bytes, compatible), true);
         }
-        return List.of();
+        return new ParsedAttachment(List.of(), true);
     }
+
+    private record ParsedAttachment(List<DetailedHousingUnit> units, boolean aiComplete) { }
 
     private List<NoticeAttachmentResponse> toAttachmentResponses(
             URI detailUri,

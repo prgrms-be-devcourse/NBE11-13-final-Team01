@@ -27,3 +27,7 @@ zipick-backend/src/main/resources/application-secret.yml
 
 # 로컬 도구
 .claude/
+
+# PDF 파서 평가 실행 중 내려받는 원문과 생성 결과
+.parser-evaluation/
+.gemini-pdf-cache/

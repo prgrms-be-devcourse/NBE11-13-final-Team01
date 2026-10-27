@@ -4,6 +4,7 @@ import com.zipick.external.myhome.client.MyHomeNoticeCollector;
 import com.zipick.external.myhome.dto.MyHomeNotice;
 import com.zipick.external.myhome.dto.MyHomeNoticeQuery;
 import com.zipick.external.housingdetail.HousingDetailEnricher;
+import com.zipick.external.ai.GeminiNoticeNormalizationService;
 import com.zipick.external.gh.GhNoticeCollector;
 import com.zipick.external.hug.HugNoticeCollector;
 import com.zipick.external.sh.ShNoticeCollector;
@@ -50,6 +51,7 @@ public class MyHomeSyncService {
     private final HugNoticeCollector hugNoticeCollector;
     private final NoticeSyncPersistenceService persistenceService;
     private final HousingGeocodingService geocodingService;
+    private final GeminiNoticeNormalizationService normalizationService;
 
     public MyHomeSyncService(
             MyHomeNoticeCollector collector,
@@ -59,7 +61,8 @@ public class MyHomeSyncService {
             GhNoticeCollector ghNoticeCollector,
             HugNoticeCollector hugNoticeCollector,
             NoticeSyncPersistenceService persistenceService,
-            HousingGeocodingService geocodingService
+            HousingGeocodingService geocodingService,
+            GeminiNoticeNormalizationService normalizationService
     ) {
         this.collector = collector;
         this.aggregator = aggregator;
@@ -69,6 +72,7 @@ public class MyHomeSyncService {
         this.hugNoticeCollector = hugNoticeCollector;
         this.persistenceService = persistenceService;
         this.geocodingService = geocodingService;
+        this.normalizationService = normalizationService;
     }
 
     public NoticeSyncResponse synchronize() {
@@ -93,6 +97,9 @@ public class MyHomeSyncService {
             if (ghCollection.completed()) completedSources.add("GH");
             if (hugCollection.completed()) completedSources.add("HUG");
             NoticeSyncResult result = persistenceService.synchronize(commands, startedAt, completedSources);
+            // 실제 저장된 공고만 대기열에 넣어 중복 제거된 공고가 영구 RETRY로 남지 않게 한다.
+            normalizationService.enqueue(commands);
+            normalizationService.normalizePending();
             geocodingService.enrichMissingCoordinates();
             int collectedRows = rows.size() + shCollection.commands().size()
                     + ghCollection.commands().size() + hugCollection.commands().size();
