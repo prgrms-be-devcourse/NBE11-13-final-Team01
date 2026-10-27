@@ -86,8 +86,11 @@ public class EmailVerificationService {
         return new EmailVerificationSendResponse(true, ttlMin, cooldownSec);
     }
 
-    /** 코드를 확인하고 인증 완료 토큰을 발급한다. 틀리면 횟수를 세고, 상한을 넘으면 다시 받아야 한다 */
-    @Transactional
+    /**
+     * 코드를 확인하고 인증 완료 토큰을 발급한다. 틀리면 횟수를 세고, 상한을 넘으면 다시 받아야 한다.
+     * 틀렸을 때 던지는 예외로 트랜잭션이 롤백되면 횟수 증가분까지 사라져 상한이 동작하지 않으므로, BusinessException 은 롤백하지 않는다.
+     */
+    @Transactional(noRollbackFor = BusinessException.class)
     public EmailVerificationConfirmResponse confirm(String rawEmail, String code) {
         String email = normalize(rawEmail);
         LocalDateTime now = LocalDateTime.now(clock);
