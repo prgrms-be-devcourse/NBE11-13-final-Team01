@@ -2,6 +2,7 @@ package com.zipick.applicationguide.document;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.zipick.applicationguide.config.ApplicationGuideProperties;
@@ -166,5 +167,20 @@ class NoticeDocumentTextExtractorTest {
 
         assertThat(document.blockCount()).isGreaterThan(1);
         assertThat(document.blocks()).allSatisfy(block -> assertThat(block.length()).isLessThanOrEqualTo(3_100));
+    }
+
+    @Test
+    void HWPX_는_내려받기_전에_지원하지_않는_형식으로_끝낸다() {
+        // Tika 4.1.0 의 한글 파서는 HwpV5Parser 뿐이라 HWPX(zip+xml)는 제대로 읽히지 않는다.
+        // 받아 봐야 버릴 바이트이므로 다운로드 전에 끊고, 사용자에게는 실제 원인을 알린다.
+        var document = new LocatedDocument(
+                "은빛주택 모집 공고문.hwpx", "https://example.test/a.hwpx", DocumentFormat.HWPX, 160);
+
+        assertThatThrownBy(() -> extractor(1).extract(document))
+                .isInstanceOf(GuideDocumentException.class)
+                .satisfies(e -> assertThat(((GuideDocumentException) e).getReason())
+                        .isEqualTo(GuideUnavailableReason.UNSUPPORTED_DOCUMENT_FORMAT));
+
+        verifyNoInteractions(documentClient);
     }
 }

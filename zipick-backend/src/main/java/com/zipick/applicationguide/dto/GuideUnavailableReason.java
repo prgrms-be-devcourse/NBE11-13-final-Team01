@@ -11,6 +11,12 @@ public enum GuideUnavailableReason {
     EXTRACT_FAILED("공고문 파일을 읽지 못했어요."),
     /** 글자가 거의 없다 = 스캔 이미지 문서. OCR 은 범위 밖이다 */
     SCANNED_DOCUMENT("공고문이 이미지로 되어 있어 내용을 읽지 못했어요."),
+    /**
+     * 파일은 찾았지만 읽을 수 있는 형식이 아니다 (현재는 HWPX).
+     * SCANNED_DOCUMENT 와 나눠 둔 이유는 원인이 달라서다. 스캔은 "글자가 없다",
+     * 이쪽은 "글자는 있는데 우리가 그 형식을 못 연다" 이고 사용자에게 할 안내도 다르다.
+     */
+    UNSUPPORTED_DOCUMENT_FORMAT("HWPX 형식의 모집공고문은 현재 AI 분석을 지원하지 않아요. 원문 공고문에서 내용을 확인해주세요."),
     /** 신청자격·제출서류 같은 신청 준비 영역을 찾지 못했다. 전체 문서를 통째로 보내지는 않는다 */
     NO_RELEVANT_SECTION("공고문에서 신청 준비 관련 내용을 찾지 못했어요."),
     /** GEMINI_API_KEY 가 설정되지 않았다 */

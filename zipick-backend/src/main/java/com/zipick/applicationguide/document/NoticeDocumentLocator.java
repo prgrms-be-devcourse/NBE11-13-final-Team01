@@ -5,12 +5,9 @@ import com.zipick.applicationguide.dto.GuideAttachment;
 import com.zipick.applicationguide.dto.GuideRequestContext;
 import com.zipick.external.housingdetail.ExternalDocumentClient;
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -37,13 +34,6 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class NoticeDocumentLocator {
 
-    private static final String LH_SOURCE = "LH";
-
-    /** LH 상세 페이지의 첨부 링크. 수집기(LhHousingDetailSource)가 보는 것과 같은 형태다 */
-    private static final Pattern LH_ATTACHMENT = Pattern.compile(
-            "fileDownLoad\\('(?<id>\\d+)'\\);?\"?>(?<name>[^<]+)</a>", Pattern.CASE_INSENSITIVE);
-    private static final String LH_DOWNLOAD_PATH = "/lhapply/lhFile.do?fileid=";
-
     /** 공고문이 아닌 것이 확실한 첨부 유형 */
     private static final List<String> EXCLUDED_TYPES = List.of(
             "FLOOR_PLAN", "FLOOR_PLAN_OR_PHOTO_INDEX", "SITE_PLAN", "BUILDING_PHOTO",
@@ -54,12 +44,21 @@ public class NoticeDocumentLocator {
             "도면", "평면", "사진", "위치도", "배치도", "투시도", "조감도",
             "주택목록", "공급내역", "주택내역", "공급대상주택", "단지별", "상세내역");
 
-    /** 파일명에 이 말이 있으면 공고문일 가능성이 높다. 앞에 있을수록 점수가 높다 */
+    /**
+     * 파일명에 이 말이 있으면 공고문일 가능성이 높다. 앞에 있을수록 점수가 높다.
+     *
+     * "입주자모집" 은 뒤에 "공고" 가 붙지 않는 작명을 받기 위한 것이다.
+     * LH 는 "20260922철원갈말영구임대예비입주자모집.pdf" 처럼 끝을 "모집" 으로 맺는 경우가 흔한데,
+     * 이 단어가 없으면 점수가 0 이 되어 명백한 모집공고문이 통째로 제외됐다(notice 34).
+     * 주택목록·도면 같은 파일은 EXCLUDED_NAMES 가 점수 계산 전에 거르므로 오탐이 늘지 않는다.
+     */
     private static final List<String> PREFERRED_NAMES = List.of(
-            "입주자모집공고", "모집공고", "공고문", "신청안내", "공고");
+            "입주자모집공고", "모집공고", "공고문", "신청안내", "공고", "입주자모집");
 
     private final ExternalDocumentClient documentClient;
     private final ApplicationGuideProperties properties;
+    /** 기관별 상세 페이지 폴백. 기관이 늘어도 이 클래스는 바뀌지 않는다 */
+    private final List<NoticeDocumentFallback> fallbacks;
 
     /** 분석할 공고문을 고른다. 하나도 못 찾으면 빈 목록 */
     public List<LocatedDocument> locate(GuideRequestContext context) {
@@ -69,10 +68,7 @@ public class NoticeDocumentLocator {
                     context.noticeId(), fromDb.stream().map(LocatedDocument::fileName).toList());
             return fromDb;
         }
-        if (!LH_SOURCE.equalsIgnoreCase(context.source())) {
-            return List.of();
-        }
-        return locateFromLhDetailPage(context);
+        return locateFromDetailPage(context);
     }
 
     /** DB 에 저장된 첨부 중에서 고른다 */
@@ -83,41 +79,45 @@ public class NoticeDocumentLocator {
     }
 
     /**
-     * LH 상세 페이지를 다시 읽어 첨부 목록에서 공고문을 찾는다.
+     * 상세 페이지를 그 자리에서 읽어 공고문을 찾는다. 기관별 해석은 NoticeDocumentFallback 이 맡는다.
      *
      * 실패해도 예외를 밖으로 던지지 않는다. 공고문을 못 찾은 것과 같게 처리하고
      * 사용자에게는 원문을 직접 확인하도록 안내한다. AI 기능의 실패가 다른 화면을 깨서는 안 된다.
      */
-    private List<LocatedDocument> locateFromLhDetailPage(GuideRequestContext context) {
+    private List<LocatedDocument> locateFromDetailPage(GuideRequestContext context) {
         String detailUrl = context.header().detailUrl();
         if (detailUrl == null || detailUrl.isBlank()) {
             return List.of();
         }
+        URI detailUri;
         try {
-            URI detailUri = URI.create(detailUrl);
-            String html = documentClient.getText(detailUri);
-            List<Candidate> candidates = parseLhAttachments(detailUri, html);
-            List<LocatedDocument> found = rank(candidates);
-            log.info("LH 상세 페이지에서 공고문을 찾았습니다. noticeId={}, 첨부={}건, 선택={}",
-                    context.noticeId(), candidates.size(), found.stream().map(LocatedDocument::fileName).toList());
-            return found;
-        } catch (RuntimeException exception) {
-            log.warn("LH 상세 페이지에서 공고문을 찾지 못했습니다. noticeId={}, reason={}",
-                    context.noticeId(), exception.getMessage());
+            detailUri = URI.create(detailUrl);
+        } catch (IllegalArgumentException exception) {
+            log.warn("상세 주소를 읽지 못했습니다. noticeId={}", context.noticeId());
             return List.of();
         }
-    }
-
-    /** HTML 에서 첨부 링크를 읽어 후보로 만든다 (테스트에서 HTML 만으로 검증할 수 있게 분리) */
-    List<Candidate> parseLhAttachments(URI detailUri, String html) {
-        List<Candidate> candidates = new ArrayList<>();
-        Matcher matcher = LH_ATTACHMENT.matcher(html);
-        while (matcher.find()) {
-            String fileName = decodeHtml(matcher.group("name"));
-            String url = detailUri.resolve(LH_DOWNLOAD_PATH + matcher.group("id")).toString();
-            candidates.add(toCandidate(fileName, url, null));
+        NoticeDocumentFallback fallback = fallbacks.stream()
+                .filter(f -> f.supports(context.source(), detailUri))
+                .findFirst()
+                .orElse(null);
+        if (fallback == null) {
+            log.info("상세 페이지를 읽을 수 있는 기관이 아닙니다. noticeId={}, source={}",
+                    context.noticeId(), context.source());
+            return List.of();
         }
-        return candidates;
+        try {
+            String html = documentClient.getText(detailUri);
+            List<Candidate> candidates = fallback.findCandidates(detailUri, html);
+            List<LocatedDocument> found = rank(candidates);
+            log.info("상세 페이지에서 공고문을 찾았습니다. noticeId={}, source={}, 첨부={}건, 선택={}",
+                    context.noticeId(), context.source(), candidates.size(),
+                    found.stream().map(LocatedDocument::fileName).toList());
+            return found;
+        } catch (RuntimeException exception) {
+            log.warn("상세 페이지에서 공고문을 찾지 못했습니다. noticeId={}, source={}, reason={}",
+                    context.noticeId(), context.source(), exception.getMessage());
+            return List.of();
+        }
     }
 
     /** 점수가 높은 순으로 maxDocuments 개까지 */
@@ -173,12 +173,22 @@ public class NoticeDocumentLocator {
         if (score == 0) {
             return -1;
         }
-        // 같은 내용이면 PDF 가 낫다. 쪽 경계가 있어 출처에 쪽수를 붙일 수 있다
-        return score + (format == DocumentFormat.PDF ? 10 : 0);
+        return score + formatBonus(format);
     }
 
-    private static String decodeHtml(String value) {
-        return value.replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").trim();
+    /**
+     * 같은 공고문이 여러 형식으로 올라와 있을 때의 우선순위.
+     *
+     * PDF 는 쪽 경계가 있어 출처에 실제 쪽수를 붙일 수 있고, HWP 는 소제목으로 대신할 수 있다.
+     * HWPX 는 읽지 못해 결국 UNSUPPORTED_DOCUMENT_FORMAT 이 되므로 가장 뒤에 둔다.
+     * (분석은 1건만 하므로, 읽을 수 있는 형식이 하나라도 있으면 그쪽이 뽑혀야 한다)
+     */
+    private static int formatBonus(DocumentFormat format) {
+        return switch (format) {
+            case PDF -> 10;
+            case HWP -> 5;
+            case HWPX -> 0;
+        };
     }
 
     record Candidate(String fileName, String sourceUrl, DocumentFormat format, int score) {

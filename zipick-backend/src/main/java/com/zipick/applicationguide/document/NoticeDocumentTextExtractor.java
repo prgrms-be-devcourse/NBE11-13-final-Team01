@@ -52,11 +52,17 @@ public class NoticeDocumentTextExtractor {
 
     /** 내려받아 텍스트를 뽑는다. 읽지 못하면 GuideDocumentException */
     public ExtractedDocument extract(LocatedDocument document) {
+        // 읽을 수 없는 형식은 내려받기 전에 끊는다. 받아 봐야 버릴 바이트다
+        if (document.format() == DocumentFormat.HWPX) {
+            throw new GuideDocumentException(GuideUnavailableReason.UNSUPPORTED_DOCUMENT_FORMAT,
+                    "HWPX 는 분석을 지원하지 않습니다: " + document.fileName());
+        }
         byte[] bytes = download(document);
         verifyFormat(bytes, document);
         ExtractedDocument extracted = switch (document.format()) {
             case PDF -> extractPdf(bytes, document.fileName());
             case HWP -> extractHwp(bytes, document.fileName());
+            case HWPX -> throw new IllegalStateException("위에서 걸러진다");
         };
 
         if (extracted.totalChars() < properties.minExtractedChars()) {

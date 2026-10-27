@@ -34,7 +34,8 @@ class NoticeDocumentLocatorTest {
 
     private NoticeDocumentLocator locator(int maxDocuments) {
         return new NoticeDocumentLocator(documentClient,
-                new ApplicationGuideProperties(null, null, null, 0, maxDocuments, 0, 0, null));
+                new ApplicationGuideProperties(null, null, null, 0, maxDocuments, 0, 0, null),
+                List.of(new LhDocumentFallback(), new GbdcDocumentFallback()));
     }
 
     private static GuideAttachment attachment(String type, String fileName) {
@@ -102,10 +103,56 @@ class NoticeDocumentLocatorTest {
 
     @Test
     void HWP_만_있으면_HWP_를_고른다() {
-        List<LocatedDocument> found = locator(1).select(List.of(attachment("OTHER", "입주자모집공고.hwpx")));
+        List<LocatedDocument> found = locator(1).select(List.of(attachment("OTHER", "입주자모집공고.hwp")));
 
         assertThat(found).hasSize(1);
         assertThat(found.getFirst().format()).isEqualTo(DocumentFormat.HWP);
+    }
+
+    /**
+     * HWPX 는 읽지 못해 결국 UNSUPPORTED_DOCUMENT_FORMAT 이 된다.
+     * 읽을 수 있는 HWP 가 같은 공고에 있으면 그쪽이 뽑혀야 한다 (분석은 1건만 한다).
+     */
+    @Test
+    void 같은_공고문이면_HWPX_보다_HWP_를_고른다() {
+        List<LocatedDocument> found = locator(1).select(List.of(
+                attachment("OTHER", "입주자모집공고.hwpx"),
+                attachment("OTHER", "입주자모집공고.hwp")));
+
+        assertThat(found.getFirst().format()).isEqualTo(DocumentFormat.HWP);
+    }
+
+    @Test
+    void HWPX_만_있으면_후보로는_남긴다() {
+        // 여기서 빼 버리면 파일이 있는데도 NO_DOCUMENT("찾지 못했다")가 되어 안내가 틀어진다.
+        // 형식 거부는 Extractor 가 UNSUPPORTED_DOCUMENT_FORMAT 으로 처리한다.
+        List<LocatedDocument> found = locator(1).select(List.of(attachment("ANNOUNCEMENT", "모집공고문.hwpx")));
+
+        assertThat(found).hasSize(1);
+        assertThat(found.getFirst().format()).isEqualTo(DocumentFormat.HWPX);
+    }
+
+    /**
+     * LH 는 "20260922철원갈말영구임대예비입주자모집.pdf" 처럼 끝을 '모집' 으로 맺는 작명이 흔하다.
+     * '모집공고' 만 보던 때는 이런 파일이 점수 0 으로 제외돼 NO_DOCUMENT 가 됐다 (notice 34).
+     */
+    @Test
+    void 공고라는_말이_없어도_입주자모집이면_공고문으로_본다() {
+        List<LocatedDocument> found = locator(1).select(List.of(
+                attachment("OTHER", "20260922철원갈말영구임대예비입주자모집.pdf")));
+
+        assertThat(found).hasSize(1);
+        assertThat(found.getFirst().fileName()).contains("예비입주자모집");
+    }
+
+    @Test
+    void 입주자모집을_받아도_주택목록과_도면은_그대로_제외된다() {
+        List<LocatedDocument> found = locator(5).select(List.of(
+                attachment("OTHER", "26년 입주자모집 공급주택목록.pdf"),
+                attachment("OTHER", "입주자모집 평면도.pdf"),
+                attachment("OTHER", "최종심사 대상자 명단_게시용.pdf")));
+
+        assertThat(found).isEmpty();
     }
 
     @Test
@@ -173,7 +220,7 @@ class NoticeDocumentLocatorTest {
     void 상세페이지_첨부명의_HTML_엔티티를_되돌린다() {
         String html = "<a onclick=\"fileDownLoad('9');\">2026 모집공고(청년&amp;신혼).pdf</a>";
         List<NoticeDocumentLocator.Candidate> candidates =
-                locator(1).parseLhAttachments(URI.create("https://apply.lh.or.kr/d"), html);
+                new LhDocumentFallback().findCandidates(URI.create("https://apply.lh.or.kr/d"), html);
 
         assertThat(candidates).hasSize(1);
         assertThat(candidates.getFirst().fileName()).isEqualTo("2026 모집공고(청년&신혼).pdf");

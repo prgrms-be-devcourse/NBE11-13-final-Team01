@@ -153,8 +153,10 @@ function GuideUnavailable({
 }) {
   const message =
     data.reasonMessage ?? (data.reason ? UNAVAILABLE_MESSAGE[data.reason] : '가이드를 만들지 못했어요.');
-  // 공고문 자체에 읽을 내용이 없는 경우는 다시 눌러도 결과가 같다
-  const retriable = data.reason !== 'SCANNED_DOCUMENT' && data.reason !== 'NO_DOCUMENT';
+  // 공고문 자체를 읽을 수 없는 경우는 다시 눌러도 결과가 같다
+  // (이미지 문서 / 분석할 파일 없음 / 지원하지 않는 형식)
+  const NOT_RETRIABLE = ['SCANNED_DOCUMENT', 'NO_DOCUMENT', 'UNSUPPORTED_DOCUMENT_FORMAT'];
+  const retriable = !data.reason || !NOT_RETRIABLE.includes(data.reason);
 
   return (
     <section className="empty">

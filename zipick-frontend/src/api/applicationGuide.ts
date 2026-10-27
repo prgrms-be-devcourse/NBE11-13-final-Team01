@@ -18,6 +18,7 @@ export type GuideUnavailableReason =
   | 'DOWNLOAD_FAILED'
   | 'EXTRACT_FAILED'
   | 'SCANNED_DOCUMENT'
+  | 'UNSUPPORTED_DOCUMENT_FORMAT'
   | 'NO_RELEVANT_SECTION'
   | 'AI_NOT_CONFIGURED'
   | 'QUOTA_EXCEEDED'
@@ -160,6 +161,8 @@ export const UNAVAILABLE_MESSAGE: Record<GuideUnavailableReason, string> = {
   DOWNLOAD_FAILED: '공고문 파일을 내려받지 못했어요. 잠시 뒤 다시 시도해 주세요.',
   EXTRACT_FAILED: '공고문 파일을 읽지 못했어요.',
   SCANNED_DOCUMENT: '공고문이 이미지 형태라 내용을 읽지 못했어요. 원문에서 직접 확인해 주세요.',
+  UNSUPPORTED_DOCUMENT_FORMAT:
+    'HWPX 형식의 모집공고문은 현재 AI 분석을 지원하지 않아요. 원문 공고문에서 내용을 확인해주세요.',
   NO_RELEVANT_SECTION: '신청 준비에 필요한 영역을 자동으로 찾지 못했어요.',
   AI_NOT_CONFIGURED: 'AI 기능이 아직 준비되지 않았어요.',
   QUOTA_EXCEEDED: '현재 AI 분석 요청이 많아 잠시 사용할 수 없어요. 내일 다시 시도해 주세요.',
