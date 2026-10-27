@@ -181,12 +181,12 @@ class ApplicationSectionReducerTest {
     }
 
     /**
-     * 덩어리 하나가 예산보다 큰 경우.
+     * 덩어리 하나가 상한보다 큰 경우.
      * 예전에는 "그거라도 잘라서 담는다" 고 해 놓고 실제로는 자르지 않아,
-     * max-input-chars 를 설정해 두어도 그보다 긴 입력이 그대로 나갔다.
+     * 상한을 설정해 두어도 그보다 긴 입력이 그대로 나갔다.
      */
     @Test
-    void 덩어리_하나가_예산보다_커도_설정한_상한을_넘기지_않는다() {
+    void 덩어리_하나가_상한보다_커도_설정값을_넘기지_않는다() {
         String huge = "제출서류 안내입니다. ".repeat(600);   // 약 7,800자
         ExtractedDocument doc = document(huge);
 
@@ -198,20 +198,77 @@ class ApplicationSectionReducerTest {
     }
 
     @Test
-    void 기본_예산은_60000자다() {
+    void 기본_비상_상한은_150000자다() {
         // application.yml 과 ApplicationGuideProperties 기본값이 어긋나지 않게 고정한다
         var defaults = new ApplicationGuideProperties(null, null, null, 0, 0, 1, 0, null);
 
-        assertThat(defaults.maxInputChars()).isEqualTo(60_000);
+        assertThat(defaults.emergencyMaxInputChars()).isEqualTo(150_000);
     }
 
+    /**
+     * 정상 장문 공고(GH 경기행복주택 108쪽 수준, 관련 본문 약 75,000자)는
+     * <b>상한 때문에 한 덩어리도 잘리면 안 된다.</b> 이것이 이번 구조 변경의 핵심이다.
+     */
     @Test
-    void 예산이_60000이면_그보다_긴_덩어리도_잘라_담는다() {
-        String huge = "제출서류 안내입니다. ".repeat(6_000);   // 약 78,000자
+    void 정상_장문_공고는_관련_덩어리를_하나도_버리지_않는다() {
+        // 관련 쪽 50개 × 약 1,500자 = 약 75,000자. 실측한 notice 109 와 비슷한 규모다
+        String[] pages = new String[50];
+        for (int i = 0; i < pages.length; i++) {
+            pages[i] = "제출서류 및 신청자격 안내 " + i + System.lineSeparator()
+                    + "본문 내용입니다. ".repeat(140);
+        }
+        ExtractedDocument doc = document(pages);
 
-        ReducedDocument reduced = reducer(60_000, 0).reduce(document(huge)).orElseThrow();
+        ReducedDocument reduced = reducer(150_000, 1).reduce(doc).orElseThrow();
 
-        assertThat(reduced.bodyChars()).isLessThanOrEqualTo(60_000);
+        assertThat(doc.totalChars()).isGreaterThan(70_000);
+        // 관련 덩어리가 전부 들어갔다 = 버려진 것이 없다
+        assertThat(reduced.sources()).hasSize(pages.length);
+        assertThat(reduced.bodyChars()).isEqualTo(doc.totalChars());
+        assertThat(reduced.reductionPercent()).isZero();
+    }
+
+    /**
+     * 비상 상한을 넘는 이상치. 통째로 버리지 않고 영역별 핵심 -> 점수 순으로 줄인다.
+     * (추출 오류로 같은 문장이 반복되거나 키워드 오탐으로 수백 쪽이 걸리는 경우)
+     */
+    @Test
+    void 비상_상한을_넘으면_영역별_핵심을_지키며_줄인다() {
+        // 네 영역 쪽 + 상한을 혼자 넘겨 버리는 거대한 저득점 쪽
+        String flood = "본문 내용입니다. ".repeat(3_000);   // 약 27,000자
+        ExtractedDocument doc = document(
+                ELIGIBILITY_PAGE, DOCUMENTS_PAGE, PROCESS_PAGE, CAUTIONS_PAGE,
+                flood, flood, flood, flood);
+
+        ReducedDocument reduced = reducer(20_000, 0).reduce(doc).orElseThrow();
+
+        assertThat(reduced.bodyChars()).isLessThanOrEqualTo(20_000);
+        // 네 영역이 모두 입력에 남아 있어야 한다
+        assertThat(reduced.categories()).containsExactlyInAnyOrder(
+                SectionCategory.ELIGIBILITY, SectionCategory.DOCUMENTS,
+                SectionCategory.PROCESS, SectionCategory.CAUTIONS);
+        assertThat(reduced.text()).contains(DOCUMENTS_PAGE.strip());
+        assertThat(reduced.text()).contains(ELIGIBILITY_PAGE.strip());
+    }
+
+    /**
+     * 상한에 걸리는 상황에서도 관련 덩어리가 문맥 덩어리에 밀려나면 안 된다.
+     * 우선순위는 반드시 "관련 덩어리 > 앞뒤 문맥" 이다.
+     */
+    @Test
+    void 상한에_걸려도_관련_덩어리가_문맥보다_먼저_담긴다() {
+        String filler = "안내문 본문입니다. ".repeat(80);   // 약 880자, 키워드 없음(문맥 후보)
+        ExtractedDocument doc = document(
+                filler, DOCUMENTS_PAGE, filler, ELIGIBILITY_PAGE, filler);
+
+        // 관련 2쪽은 들어가되 문맥까지는 못 담는 상한
+        ReducedDocument reduced = reducer(
+                DOCUMENTS_PAGE.strip().length() + ELIGIBILITY_PAGE.strip().length() + 100, 1)
+                .reduce(doc).orElseThrow();
+
+        assertThat(reduced.text()).contains(DOCUMENTS_PAGE.strip());
+        assertThat(reduced.text()).contains(ELIGIBILITY_PAGE.strip());
+        assertThat(reduced.sources()).hasSize(2);
     }
 
     @Test
@@ -225,7 +282,7 @@ class ApplicationSectionReducerTest {
     }
 
     @Test
-    void 예산이_넉넉하면_본문을_자르지_않는다() {
+    void 상한이_넉넉하면_본문을_자르지_않는다() {
         ExtractedDocument doc = document(DOCUMENTS_PAGE, ELIGIBILITY_PAGE);
 
         ReducedDocument reduced = reducer(30_000, 1).reduce(doc).orElseThrow();

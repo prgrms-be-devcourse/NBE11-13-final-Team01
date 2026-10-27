@@ -8,6 +8,7 @@ import java.net.URI;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -21,13 +22,15 @@ import org.springframework.stereotype.Component;
  *   <li>SH / GH / HUG: 모든 첨부를 저장한다. attachment_type 에 ANNOUNCEMENT 가 붙어 있다.</li>
  *   <li><b>LH: 도면·평면도만 저장한다.</b> 모집공고 PDF/HWP 는 수집 과정에서 주택목록을 뽑는 데만
  *       쓰고 버려서 DB 에 주소가 남아 있지 않다.</li>
+ *   <li><b>GBDC / MYHOME 계열: 아무것도 저장하지 않는다.</b> 마이홈 공공데이터 API 가
+ *       첨부 목록 자체를 주지 않고, 그 기관 전용 수집기도 없었다.</li>
  * </ul>
- * 그래서 DB 에 쓸 만한 첨부가 없고 LH 공고이면 상세 페이지를 그 자리에서 다시 읽어 첨부 목록을 찾는다.
+ * 그래서 DB 에 쓸 만한 첨부가 없으면 상세 페이지를 그 자리에서 다시 읽는다.
+ * 기관마다 다른 "HTML 에서 첨부를 읽어 내는 방법" 은 {@link NoticeDocumentFallback} 구현이 맡고,
+ * 이름 점수·형식 판정·정렬은 이 클래스가 기관과 무관하게 공용으로 처리한다.
  *
- * 공고 수집기(LhHousingDetailSource)가 공고문도 저장하게 고치는 편이 구조적으로는 맞다.
- * 그러면 공고를 전부 다시 수집해야 하고 수집 담당자 영역을 건드리게 되어 이번에는 하지 않았다.
- * 대신 DB 를 먼저 보게 해 두었으므로, 나중에 수집기가 공고문을 저장하기 시작하면
- * 1단계에서 걸려 이 폴백은 저절로 쓰이지 않게 된다.
+ * 공고 수집기가 공고문도 저장하게 고치는 편이 구조적으로는 맞다. 대신 DB 를 먼저 보게 해 두었으므로,
+ * 수집기가 공고문을 저장하기 시작하면 1단계에서 걸려 이 폴백은 저절로 쓰이지 않게 된다.
  */
 @Slf4j
 @Component
@@ -60,16 +63,36 @@ public class NoticeDocumentLocator {
             "도면", "평면", "사진", "위치도", "배치도", "투시도", "조감도",
             "주택목록", "공급내역", "주택내역", "공급대상주택", "단지별", "상세내역");
 
-    /**
-     * 파일명에 이 말이 있으면 공고문일 가능성이 높다. 앞에 있을수록 점수가 높다.
-     *
-     * "입주자모집" 은 뒤에 "공고" 가 붙지 않는 작명을 받기 위한 것이다.
-     * LH 는 "20260922철원갈말영구임대예비입주자모집.pdf" 처럼 끝을 "모집" 으로 맺는 경우가 흔한데,
-     * 이 단어가 없으면 점수가 0 이 되어 명백한 모집공고문이 통째로 제외됐다(notice 34).
-     * 주택목록·도면 같은 파일은 EXCLUDED_NAMES 가 점수 계산 전에 거르므로 오탐이 늘지 않는다.
-     */
+    /** 파일명에 이 말이 있으면 공고문일 가능성이 높다. 앞에 있을수록 점수가 높다 */
     private static final List<String> PREFERRED_NAMES = List.of(
-            "입주자모집공고", "모집공고", "공고문", "신청안내", "공고", "입주자모집");
+            "입주자모집공고", "모집공고", "공고문", "신청안내", "공고");
+
+    /**
+     * "입주자 ... 모집" 계열 작명. <b>'공고' 라는 말이 한 번도 나오지 않는 공고문을 받기 위한 것이다.</b>
+     *
+     * LH 는 파일명을 '모집' 으로 맺고 가운데에 수식어를 끼우는 작명을 자주 쓴다.
+     *   notice 34  "20260922철원갈말영구임대예비입주자모집.pdf"       -> 입주자모집
+     *   notice 40  "군산시국민임대입주자상시모집(경암부향등7개단지).pdf" -> 입주자상시모집
+     * 둘 다 명백한 모집공고문인데 PREFERRED_NAMES 에 걸리지 않아 점수 0 으로 제외됐다.
+     *
+     * <h3>왜 간격을 5자로 묶었나</h3>
+     * 수집된 공고 96건의 제목·파일명에서 실제로 쓰인 수식어를 세어 정했다.
+     * <pre>
+     *   (없음) 107건   추가 7   상시 4   수시 4   최초 2   정례 2
+     *   격완화상시 2   자격완화 1   격완화추가 1   선착순상시 1
+     * </pre>
+     * 가장 긴 것이 5자("격완화상시"·"선착순상시")라 {@code {0,5}} 면 관측된 변형을 모두 받는다.
+     * 수식어를 하나씩 열거하지 않은 이유는 새 변형이 나올 때마다 또 누락되기 때문이고,
+     * 반대로 {@code 입주자.*모집} 처럼 열어 두지 않은 이유는
+     * "입주자격완화 안내 및 모집일정"(간격 6자) 같은 부속자료까지 공고문으로 승격되기 때문이다.
+     *
+     * "모집" 한 단어를 PREFERRED_NAMES 에 넣는 방법도 쓰지 않았다.
+     * 신청서·안내문·결과 명단에 너무 쉽게 들어가는 말이라 오탐 범위가 지나치게 넓어진다.
+     */
+    private static final Pattern RESIDENT_RECRUITMENT = Pattern.compile("입주자[가-힣]{0,5}모집");
+
+    /** RESIDENT_RECRUITMENT 로 걸렸을 때의 점수. PREFERRED_NAMES 의 마지막 항목 다음 칸이다 */
+    private static final int RESIDENT_RECRUITMENT_SCORE = 60 - (PREFERRED_NAMES.size() * 5);
 
     private final ExternalDocumentClient documentClient;
     private final ApplicationGuideProperties properties;
@@ -178,12 +201,18 @@ public class NoticeDocumentLocator {
         if ("ANNOUNCEMENT".equals(attachmentType)) {
             score += 100;
         }
+        int nameBonus = 0;
         for (int i = 0; i < PREFERRED_NAMES.size(); i++) {
             if (normalized.contains(PREFERRED_NAMES.get(i))) {
-                score += 60 - (i * 5);
+                nameBonus = 60 - (i * 5);
                 break;
             }
         }
+        // '공고' 가 한 번도 안 나오는 작명은 여기서 받는다 (LH 의 "...예비입주자모집.pdf" 류)
+        if (nameBonus == 0 && RESIDENT_RECRUITMENT.matcher(normalized).find()) {
+            nameBonus = RESIDENT_RECRUITMENT_SCORE;
+        }
+        score += nameBonus;
         // 공고문이라는 단서가 전혀 없으면 쓰지 않는다.
         // 엉뚱한 첨부를 분석해 무료 사용량을 쓰는 것보다 "찾지 못했다" 고 알리는 편이 낫다.
         if (score == 0) {

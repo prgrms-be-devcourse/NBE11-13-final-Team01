@@ -68,7 +68,7 @@ class ApplicationGuidePropertiesBindingTest {
             assertThat(guide.connectTimeout()).isEqualTo(Duration.ofSeconds(5));
             assertThat(guide.readTimeout()).isEqualTo(Duration.ofSeconds(90));
             assertThat(guide.dailyCallBudget()).isEqualTo(200);
-            assertThat(guide.maxInputChars()).isEqualTo(60_000);
+            assertThat(guide.emergencyMaxInputChars()).isEqualTo(150_000);
             assertThat(guide.maxDocuments()).isEqualTo(1);
             assertThat(guide.neighborPages()).isEqualTo(1);
             assertThat(guide.minExtractedChars()).isEqualTo(1_000);

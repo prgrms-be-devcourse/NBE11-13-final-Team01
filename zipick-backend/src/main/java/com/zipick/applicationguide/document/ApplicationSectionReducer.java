@@ -30,8 +30,9 @@ import org.springframework.stereotype.Component;
  *   <li>덩어리(PDF 는 한 쪽)마다 네 영역 키워드가 몇 번 나오는지 센다. 소제목 줄은 3배로 친다.</li>
  *   <li>점수가 있는 덩어리를 고르고, 앞뒤 neighborPages 만큼을 문맥으로 더한다.
  *       제출서류 표가 쪽을 넘어가는 경우가 많기 때문이다.</li>
- *   <li>글자 예산(maxInputChars) 안에서 담는다. 이때 <b>영역별 최고 점수 덩어리를 먼저</b> 담아
- *       네 영역 중 하나가 통째로 빠지는 일이 없게 한다.</li>
+ *   <li>관련 있다고 본 덩어리는 <b>평상시 전부 담는다.</b> 비상 상한(emergencyMaxInputChars)은
+ *       추출 오류·키워드 오탐 같은 이상치에서만 걸린다. 걸렸을 때는 <b>영역별 최고 점수 덩어리를 먼저</b>
+ *       담아 네 영역 중 하나가 통째로 빠지는 일이 없게 한다.</li>
  *   <li>문서 순서대로 정렬해 S1, S2... 를 매긴다. 순서가 뒤섞이면 AI 가 앞뒤 문맥을 못 잇는다.</li>
  * </ol>
  *
@@ -68,10 +69,10 @@ public class ApplicationSectionReducer {
 
         Map<String, GuideSourceRef> sources = new LinkedHashMap<>();
         StringBuilder text = new StringBuilder();
-        // 고르는 단계에서 이미 예산을 지키지만, 여기서 한 번 더 자른다.
-        // selectWithinBudget 은 "하나도 못 담았는데 첫 덩어리가 예산보다 큰" 경우 그 덩어리를 통째로 담는다.
-        // 그대로 두면 maxInputChars 설정이 지켜지지 않으므로 본문 기준으로 실제로 잘라 낸다.
-        int bodyBudget = properties.maxInputChars();
+        // 고르는 단계에서 이미 상한을 지키지만, 여기서 한 번 더 자른다.
+        // selectWithinBudget 은 "하나도 못 담았는데 첫 덩어리가 상한보다 큰" 경우 그 덩어리를 통째로 담는다.
+        // 그대로 두면 상한 설정이 지켜지지 않으므로 본문 기준으로 실제로 잘라 낸다.
+        int bodyBudget = properties.emergencyMaxInputChars();
         int bodyChars = 0;
         for (int i = 0; i < blocks.size(); i++) {
             DocumentBlock block = blocks.get(i);
@@ -98,12 +99,16 @@ public class ApplicationSectionReducer {
     }
 
     /**
-     * 글자 예산 안에서 담을 덩어리를 고른다.
+     * 보낼 덩어리를 고른다.
      *
-     * 담는 순서가 곧 우선순위다.
+     * <b>평상시에는 관련 덩어리가 전부 들어간다.</b> 아래 순서는 비상 상한에 걸렸을 때의 우선순위이고,
+     * 정상 공고에서는 3)까지 모두 담기고 끝난다. (실측: 108쪽짜리 공고도 92,297자에서 멈춘다)
      *   1) 영역별 최고 점수 덩어리  — 네 영역이 모두 입력에 들어가도록 보장한다
      *   2) 나머지 관련 덩어리       — 점수 높은 순
-     *   3) 앞뒤 문맥 덩어리         — 표가 쪽을 넘어가는 경우 대비. 예산이 남을 때만
+     *   3) 앞뒤 문맥 덩어리         — 표가 쪽을 넘어가는 경우 대비
+     *
+     * 문맥을 마지막에 두는 것이 중요하다. 상한에 걸리는 상황에서도
+     * <b>관련 덩어리가 낮은 가치의 문맥 덩어리에 밀려나지 않는다.</b>
      */
     private Set<Integer> selectWithinBudget(List<Scored> scored, List<Scored> matched) {
         List<Integer> priority = new ArrayList<>();
@@ -121,11 +126,11 @@ public class ApplicationSectionReducer {
                 continue;
             }
             int length = scored.get(index).length();
-            if (used + length > properties.maxInputChars()) {
-                // 하나도 못 담았는데 첫 덩어리가 예산보다 크면, 그거라도 잘라서 담는다
+            if (used + length > properties.emergencyMaxInputChars()) {
+                // 하나도 못 담았는데 첫 덩어리가 상한보다 크면, 그거라도 잘라서 담는다
                 if (selected.isEmpty()) {
                     selected.add(index);
-                    used = properties.maxInputChars();
+                    used = properties.emergencyMaxInputChars();
                 }
                 continue;
             }

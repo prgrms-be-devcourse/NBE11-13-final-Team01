@@ -25,7 +25,11 @@ public final class GuideVersions {
     // v2: 입력 예산(max-input-chars)을 30,000 -> 60,000 으로 올리고, 덩어리가 예산을 넘을 때
     //     실제로 잘라 담도록 고쳤다. 같은 공고라도 Gemini 에 들어가는 내용이 달라지므로
     //     저장된 결과를 그대로 쓰면 안 된다.
-    public static final String REDUCER = "reducer-v2";
+    // v3: 상한의 역할을 바꿨다. 평상시 Reducer 가 관련 있다고 고른 덩어리를 전부 보내고,
+    //     상한(emergency-max-input-chars 150,000)은 이상치에서만 작동한다.
+    //     GH 경기행복주택(108쪽)이 60,000 에서 관련 쪽 47개 중 36개만 보내던 것이 47개 전부가 된다.
+    //     선별 결과가 달라지므로 저장된 결과를 다시 만들어야 한다.
+    public static final String REDUCER = "reducer-v3";
 
     private GuideVersions() {
     }
