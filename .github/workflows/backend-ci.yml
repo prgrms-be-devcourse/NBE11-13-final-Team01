@@ -114,5 +114,42 @@ jobs:
               print(f"| {labels[kind]} | {covered} | {total} | {ratio:.1f}% |")
           print()
           print("QueryDSL 이 생성한 Q 클래스는 측정에서 제외했습니다.")
+          print("빌드 성공·실패는 이 전체 합계로만 판정합니다. 기준은 `build.gradle` 에 있습니다.")
+
+          # 도메인별 합계. JaCoCo XML 은 하위 패키지까지 전부 따로 나오므로(80여 개)
+          # 그대로 쓰면 표가 너무 길다. com.zipick 바로 아래 1차 패키지로 묶는다.
+          # 측정 대상 클래스는 build.gradle 에서 Q 클래스를 이미 뺀 것이라 여기서 따로 거를 것이 없다.
+          groups = {}
+          for pkg in root.findall("package"):
+              parts = pkg.get("name").split("/")
+              if parts[:2] == ["com", "zipick"]:
+                  name = parts[2] if len(parts) > 2 else "(최상위)"
+              else:
+                  name = "/".join(parts)
+              group = groups.setdefault(name, {"LINE": [0, 0], "BRANCH": [0, 0]})
+              for counter in pkg.findall("counter"):
+                  kind = counter.get("type")
+                  if kind in group:
+                      covered = int(counter.get("covered"))
+                      group[kind][0] += covered
+                      group[kind][1] += covered + int(counter.get("missed"))
+
+          print()
+          print("### 도메인별 커버리지 (관찰용)")
+          print()
+          print("진단용 수치입니다. 도메인별로 기준을 걸어 빌드를 실패시키지는 않습니다.")
+          print("코드량이 많은 순으로 정렬했습니다.")
+          print()
+          print("| 도메인 | Line | Line % | Branch | Branch % |")
+          print("| --- | ---: | ---: | ---: | ---: |")
+          for name, group in sorted(groups.items(), key=lambda kv: (-kv[1]["LINE"][1], kv[0])):
+              line_covered, line_total = group["LINE"]
+              branch_covered, branch_total = group["BRANCH"]
+              line_ratio = f"{line_covered / line_total * 100:.1f}%" if line_total else "-"
+              branch_cell = f"{branch_covered} / {branch_total}" if branch_total else "없음"
+              branch_ratio = f"{branch_covered / branch_total * 100:.1f}%" if branch_total else "-"
+              print(f"| {name} | {line_covered} / {line_total} | {line_ratio} | {branch_cell} | {branch_ratio} |")
+          print()
+          print("Branch 열의 `없음` 은 if·switch 같은 분기가 하나도 없는 도메인이라는 뜻입니다. 커버리지 0% 가 아닙니다.")
           print("클래스별 상세 수치는 Artifacts 의 `backend-coverage-report` 에서 확인할 수 있습니다.")
           PY
