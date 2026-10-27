@@ -29,8 +29,25 @@ public record ApplicationGuideProperties(
          * (PDF 원본을 통째로 보내는 기능은 이보다 훨씬 길어야 한다 — 그래서 공유하지 않는다)
          */
         Duration readTimeout,
-        /** Gemini 에 보낼 공고문 텍스트 최대 길이(자). 모델 한계가 아니라 토큰 절약이 목적이다 */
-        int maxInputChars,
+        /**
+         * <b>비정상 입력을 막는 비상 상한</b>(자). 정상적인 공고를 줄이기 위한 값이 아니다.
+         *
+         * Reducer 가 이미 "신청 준비와 관련 있다" 고 판단해 고른 덩어리는 정상 범위에서는 전부 보낸다.
+         * 관련 있다고 본 내용을 토큰을 아끼려고 다시 버리면 제출서류·자격 조건이 누락되고,
+         * 그 피해가 토큰 절약보다 훨씬 크기 때문이다.
+         *
+         * 실측한 자연 포화 지점(= matched 덩어리 전부 + 앞뒤 1쪽 문맥)은 다음과 같다.
+         *   LH 26  17쪽   21,554자      SH 106 24쪽  25,272자
+         *   LH 34  32쪽   36,157자      GH 110 21쪽  24,452자
+         *   GH 109 108쪽  92,297자   <- 현재 확인된 최장 공고
+         * neighbor-pages 가 1 이라 문맥이 문서 전체로 번지지 않고, 109 는 상한을 아무리 올려도
+         * 92,297자에서 멈춘다. 즉 이 값은 평상시 한 번도 걸리지 않는다.
+         *
+         * 150,000 은 확인된 최대치(92,297)의 1.6배다. 추출 오류로 같은 문장이 반복되거나
+         * 키워드 오탐으로 수백 쪽이 통째로 걸리는 경우에만 작동한다.
+         * 걸렸을 때도 통째로 버리지 않고 영역별 핵심 -> 점수 순 -> 문맥 순서로 줄인다.
+         */
+        int emergencyMaxInputChars,
         /**
          * 한 공고에서 공고문 후보를 몇 건까지 추릴지. 실제 분석은 그중 점수가 가장 높은 1건만 한다.
          * 한국 모집공고는 보통 공고문 한 파일에 자격·서류·절차가 모두 들어 있어,
@@ -67,7 +84,7 @@ public record ApplicationGuideProperties(
         model = hasText(model) ? model.trim() : DEFAULT_MODEL;
         connectTimeout = connectTimeout == null ? Duration.ofSeconds(5) : connectTimeout;
         readTimeout = readTimeout == null ? Duration.ofSeconds(90) : readTimeout;
-        maxInputChars = maxInputChars <= 0 ? 30_000 : maxInputChars;
+        emergencyMaxInputChars = emergencyMaxInputChars <= 0 ? 150_000 : emergencyMaxInputChars;
         maxDocuments = maxDocuments <= 0 ? 1 : maxDocuments;
         neighborPages = neighborPages < 0 ? 1 : neighborPages;
         minExtractedChars = minExtractedChars <= 0 ? 1_000 : minExtractedChars;
