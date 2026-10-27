@@ -518,7 +518,8 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 .map-toolbar__links { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* AI 맞춤 신청 준비 가이드 */
-.guide-page { max-width: 760px; }
+/* .main 이 1280px 중앙 정렬이라, 760px 블록에 auto 마진이 없으면 왼쪽으로 치우친다 */
+.guide-page { max-width: 760px; margin: 0 auto; }
 .guide-page__head { margin-bottom: 14px; }
 .guide-page__head h1 { margin: 2px 0 4px; overflow-wrap: anywhere; }
 .guide-page__subtitle { color: var(--accent); font-size: 13px; font-weight: 600; margin: 0; }
