@@ -44,6 +44,8 @@ class GhHousingDetailSourceTest {
             @Override public String getText(URI uri) { return html; }
         };
         GhHousingDetailSource source = new GhHousingDetailSource(client);
+        var history = org.mockito.Mockito.mock(com.zipick.notice.repository.DocumentParseHistoryRepository.class);
+        source.setHistoryRepository(history);
         NoticeResponse notice = new NoticeResponse(
                 "GH", "839", "공고중", "공고", "경기주택도시공사", null,
                 "2026-10-16", null, "2026-10-26", "2026-10-28", null,
@@ -53,6 +55,12 @@ class GhHousingDetailSourceTest {
         var result = source.extract(notice);
 
         assertThat(result.housings()).hasSize(1);
+        var checkpoint = result.parseCheckpoints().getFirst();
+        var success = new com.zipick.notice.domain.DocumentParseHistory(checkpoint.documentKey(), checkpoint.parserVersion());
+        success.markSuccess(checkpoint.size(), checkpoint.unitCount());
+        org.mockito.Mockito.when(history.findByDocumentKeyAndParserVersion(checkpoint.documentKey(), checkpoint.parserVersion()))
+                .thenReturn(java.util.Optional.of(success));
+        assertThat(source.extract(notice).preservesExistingHousings()).isTrue();
         assertThat(result.housings().getFirst().complexName()).isEqualTo("판교2밸리");
         assertThat(result.housings().getFirst().rentDeposit()).isEqualTo(36_110_000L);
         assertThat(result.housings().getFirst().supplyCount()).isEqualTo(5L);

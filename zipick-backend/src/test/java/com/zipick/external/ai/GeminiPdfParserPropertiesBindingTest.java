@@ -42,15 +42,31 @@ class GeminiPdfParserPropertiesBindingTest {
             GeminiNormalizationProperties normalization = context.getBean(GeminiNormalizationProperties.class);
 
             assertThat(parser.key()).isEqualTo("shared-gemini-key");
+            assertThat(parser.isConfigured()).isTrue();
             assertThat(parser.baseUrl()).isEqualTo("https://generativelanguage.googleapis.com");
             assertThat(parser.enabled()).isTrue();
             assertThat(parser.model()).isEqualTo("pdf-only-model");
             assertThat(parser.timeout()).isEqualTo(Duration.ofMinutes(5));
             assertThat(parser.dailyCallLimit()).isEqualTo(500);
+            assertThat(parser.continuationMinExpectedUnits()).isEqualTo(50);
 
             assertThat(normalization.enabled()).isTrue();
             assertThat(normalization.model()).isEqualTo("gemini-3.8-flash");
             assertThat(normalization.dailyCallLimit()).isEqualTo(20);
+        });
+    }
+
+    @Test
+    void 기본값은_활성화하되_API_KEY가_없으면_외부호출은_비활성화한다() {
+        runner().run(context -> {
+            assertThat(context).hasNotFailed();
+
+            GeminiPdfParserProperties parser = context.getBean(GeminiPdfParserProperties.class);
+            GeminiNormalizationProperties normalization = context.getBean(GeminiNormalizationProperties.class);
+
+            assertThat(parser.enabled()).isTrue();
+            assertThat(parser.isConfigured()).isFalse();
+            assertThat(normalization.enabled()).isTrue();
         });
     }
 

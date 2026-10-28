@@ -1,0 +1,4 @@
+- targets: ['10.0.0.10:9100']
+  labels: {server: app, server_name: 앱 서버}
+- targets: ['10.0.0.20:9100']
+  labels: {server: monitoring, server_name: 모니터링 서버}

@@ -358,38 +358,34 @@ class GeminiPdfHousingExtractorTest {
     }
 
     @Test
-    void 같은_공급표의_일부_행에서만_열이_비면_행전체를_다시_요청한다() throws Exception {
+    void 같은_공급표의_선택열_일부가_비어도_일반문서는_재호출하지_않는다() throws Exception {
         Map<String, Object> incomplete = unit("u2", "102", 1, 2);
         incomplete.put("rentDeposit", null);
         incomplete.put("monthlyRent", null);
         incomplete.put("exclusiveArea", null);
-        Queue<String> responses = new ArrayDeque<>();
-        responses.add(envelope(payload(true, "", 2, List.of(
+        GeminiApiTransport transport = request -> envelope(payload(true, "", 2, List.of(
                 unit("u1", "101", 1, 1), incomplete
-        )), "STOP", 1000, 300));
-        responses.add(envelope(payload(true, "", 2, List.of(
-                unit("u2", "102", 1, 2)
-        )), "STOP", 1000, 200));
+        )), "STOP", 1000, 200);
         AtomicInteger calls = new AtomicInteger();
-        GeminiApiTransport transport = request -> {
-            if (calls.getAndIncrement() == 1) {
-                assertThat(request).contains("unit=doc-1/item-2", "rentDeposit", "monthlyRent", "exclusiveArea");
-            }
-            return responses.remove();
+        GeminiApiTransport counted = request -> {
+            calls.incrementAndGet();
+            return transport.generate(request);
         };
 
-        GeminiPdfExtractionResult result = extractor(transport, 1).extract(List.of(
+        GeminiPdfExtractionResult result = extractor(counted, 1).extract(List.of(
                 new GeminiPdfDocument("doc-1", "SH", "청년임대", "목록.pdf", onePagePdf(), 2)
         ));
 
         assertThat(result.complete()).isTrue();
         assertThat(result.units()).hasSize(2);
-        assertThat(result.units().get(1).rentDeposit()).isEqualTo(10_000_000L);
-        assertThat(result.apiCallCount()).isEqualTo(2);
+        assertThat(result.units().get(1).rentDeposit()).isNull();
+        assertThat(result.warnings()).anyMatch(value -> value.contains("선택 필드 일부 누락"));
+        assertThat(result.apiCallCount()).isEqualTo(1);
+        assertThat(calls).hasValue(1);
     }
 
     @Test
-    void 다중_임대조건이_일부_행에서_빠지면_보정하고_같은_조건은_중복_저장하지_않는다() throws Exception {
+    void 다중_임대조건_일부가_빠져도_선택정보로_경고만_남긴다() throws Exception {
         Map<String, Object> first = new java.util.LinkedHashMap<>(payload(true, "", 2, List.of(
                 unit("u1", "101", 1, 1), unit("u2", "102", 1, 2)
         )));
@@ -398,22 +394,10 @@ class GeminiPdfHousingExtractorTest {
                 condition("u1", "COND_2", "청년 2순위, 3순위", 2_000_000, 206_000),
                 condition("u1", "2", "청년 2·3순위", 2_000_000, 206_000)
         ));
-        Map<String, Object> repaired = new java.util.LinkedHashMap<>(payload(true, "", 2, List.of(
-                unit("u2", "102", 1, 2)
-        )));
-        repaired.put("rentalConditions", List.of(
-                condition("u2", "1", "청년 1순위", 1_000_000, 180_000),
-                condition("u2", "2", "청년 2순위, 3순위", 2_000_000, 216_000)
-        ));
-        Queue<String> responses = new ArrayDeque<>();
-        responses.add(envelope(first, "STOP", 1000, 500));
-        responses.add(envelope(repaired, "STOP", 1000, 400));
         AtomicInteger calls = new AtomicInteger();
         GeminiApiTransport transport = request -> {
-            if (calls.getAndIncrement() == 1) {
-                assertThat(request).contains("unit=doc-1/item-2", "rentalConditions(원문 다중 조건 전체)");
-            }
-            return responses.remove();
+            calls.incrementAndGet();
+            return envelope(first, "STOP", 1000, 500);
         };
 
         GeminiPdfExtractionResult result = extractor(transport, 1).extract(List.of(
@@ -421,9 +405,12 @@ class GeminiPdfHousingExtractorTest {
         ));
 
         assertThat(result.complete()).isTrue();
-        assertThat(result.apiCallCount()).isEqualTo(2);
-        assertThat(result.units()).hasSize(2).allSatisfy(unit ->
-                assertThat(unit.rentalConditions()).hasSize(2));
+        assertThat(result.apiCallCount()).isEqualTo(1);
+        assertThat(result.units()).hasSize(2);
+        assertThat(result.units().getFirst().rentalConditions()).hasSize(2);
+        assertThat(result.units().get(1).rentalConditions()).isEmpty();
+        assertThat(result.warnings()).anyMatch(value -> value.contains("선택 필드 일부 누락"));
+        assertThat(calls).hasValue(1);
     }
 
     @Test
@@ -454,24 +441,17 @@ class GeminiPdfHousingExtractorTest {
     }
 
     @Test
-    void 필드명과_공란표시가_함께_없는_verifiedNull은_누락으로_판정해_보정한다() throws Exception {
+    void 근거없는_verifiedNull은_인정하지_않되_선택필드라면_재호출하지_않는다() throws Exception {
         Map<String, Object> falseNull = unit("u2", "102", 1, 2);
         falseNull.put("unitNumber", null);
         falseNull.put("evidence", "서울특별시 강동구 공급주택");
         falseNull.put("verifiedNullFields", List.of("unitNumber"));
-        Queue<String> responses = new ArrayDeque<>();
-        responses.add(envelope(payload(true, "", 2, List.of(
-                unit("u1", "101", 1, 1), falseNull
-        )), "STOP", 500, 100));
-        responses.add(envelope(payload(true, "", 2, List.of(
-                unit("u2", "102", 1, 2)
-        )), "STOP", 500, 100));
         AtomicInteger calls = new AtomicInteger();
         GeminiApiTransport transport = request -> {
-            if (calls.getAndIncrement() == 1) {
-                assertThat(request).contains("unit=doc-1/item-2", "unitNumber");
-            }
-            return responses.remove();
+            calls.incrementAndGet();
+            return envelope(payload(true, "", 2, List.of(
+                unit("u1", "101", 1, 1), falseNull
+            )), "STOP", 500, 100);
         };
 
         GeminiPdfExtractionResult result = extractor(transport, 1).extract(List.of(
@@ -479,8 +459,10 @@ class GeminiPdfHousingExtractorTest {
         ));
 
         assertThat(result.complete()).isTrue();
-        assertThat(result.apiCallCount()).isEqualTo(2);
-        assertThat(result.units().get(1).unitNumber()).isEqualTo("102");
+        assertThat(result.apiCallCount()).isEqualTo(1);
+        assertThat(result.units().get(1).unitNumber()).isNull();
+        assertThat(result.warnings()).anyMatch(value -> value.contains("선택 필드 일부 누락"));
+        assertThat(calls).hasValue(1);
     }
 
     @Test
@@ -542,6 +524,28 @@ class GeminiPdfHousingExtractorTest {
     }
 
     @Test
+    void 추출_일시_오류_후_성공은_최종_호출_실패를_남기지_않는다() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            if (calls.getAndIncrement() == 0) throw new IllegalStateException("status=503");
+            return envelope(payload(true, "", 1, List.of(unit("u1", "101", 1, 1))), "STOP", 500, 100);
+        };
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(GeminiFinalFailureLogger.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            extractor(transport, 1).extract(List.of(
+                    new GeminiPdfDocument("doc-retry", "GH", "매입임대", "목록.pdf", onePagePdf(), 1)));
+            assertThat(calls.get()).isGreaterThanOrEqualTo(2);
+            assertThat(appender.list).isEmpty();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    @Test
     void 일시장애가_발생하면_성공한_부분행을_저장하고_다음실행에서_이어간다() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         GeminiApiTransport transport = request -> switch (calls.getAndIncrement()) {
@@ -562,9 +566,19 @@ class GeminiPdfHousingExtractorTest {
         GeminiPdfHousingExtractor extractor = extractor(transport, 3);
         GeminiPdfDocument document = new GeminiPdfDocument(
                 "doc-1", "GH", "매입임대", "목록.pdf", onePagePdf(), 3);
-
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> extractor.extract(List.of(document)))
-                .hasMessageContaining("status=503");
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(GeminiFinalFailureLogger.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> extractor.extract(List.of(document)))
+                    .hasMessageContaining("status=503");
+            assertThat(appender.list).singleElement().satisfies(event ->
+                    assertThat(event.getFormattedMessage()).contains("stage=extraction", "status=503"));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
         GeminiPdfExtractionResult resumed = extractor.extract(List.of(document));
 
         assertThat(resumed.complete()).isTrue();
@@ -710,6 +724,44 @@ class GeminiPdfHousingExtractorTest {
         assertThat(calls).hasValue(5);
     }
 
+    @Test
+    void 일반문서는_행이_일부_누락돼도_같은실행에서_재호출하지_않는다() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            calls.incrementAndGet();
+            return envelope(payload(true, "", 4, List.of(
+                    unit("u1", "101", 1, 1)
+            )), "STOP", 500, 100);
+        };
+
+        GeminiPdfExtractionResult result = extractor(transport, 4, 20 * 1024 * 1024L, 50)
+                .extract(List.of(new GeminiPdfDocument(
+                        "doc-1", "SH", "소형 공고", "목록.pdf", onePagePdf(), 4)));
+
+        assertThat(result.complete()).isFalse();
+        assertThat(result.apiCallCount()).isEqualTo(1);
+        assertThat(calls).hasValue(1);
+    }
+
+    @Test
+    void 대형문서_보정결과가_개선되지_않으면_즉시_중단한다() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            calls.incrementAndGet();
+            return envelope(payload(true, "", 60, List.of(
+                    unit("u1", "101", 1, 1)
+            )), "STOP", 500, 100);
+        };
+
+        GeminiPdfExtractionResult result = extractor(transport, 4, 20 * 1024 * 1024L, 50)
+                .extract(List.of(new GeminiPdfDocument(
+                        "doc-1", "GH", "대형 공고", "목록.pdf", onePagePdf(), 60)));
+
+        assertThat(result.complete()).isFalse();
+        assertThat(result.apiCallCount()).isEqualTo(2);
+        assertThat(calls).hasValue(2);
+    }
+
     private GeminiPdfHousingExtractor extractor(GeminiApiTransport transport, int continuations) {
         return extractor(transport, continuations, 20 * 1024 * 1024L);
     }
@@ -719,11 +771,20 @@ class GeminiPdfHousingExtractorTest {
             int continuations,
             long maxFileBytes
     ) {
+        return extractor(transport, continuations, maxFileBytes, 1);
+    }
+
+    private GeminiPdfHousingExtractor extractor(
+            GeminiApiTransport transport,
+            int continuations,
+            long maxFileBytes,
+            int continuationMinExpectedUnits
+    ) {
         GeminiPdfParserProperties properties = new GeminiPdfParserProperties(
                 "key", "https://generativelanguage.googleapis.com", "gemini-3-flash-preview",
                 true, maxFileBytes,
                 49_152, "low", Duration.ofSeconds(10), 20, 4, continuations,
-                temporary.resolve("cache").toString(), 1, 120
+                continuationMinExpectedUnits, temporary.resolve("cache").toString(), 1, 120
         );
         return new GeminiPdfHousingExtractor(
                 properties, transport, new GeminiPdfExtractionCache(properties.cachePath()),

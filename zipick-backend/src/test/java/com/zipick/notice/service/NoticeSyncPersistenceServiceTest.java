@@ -145,6 +145,67 @@ class NoticeSyncPersistenceServiceTest {
     }
 
     @Test
+    void successfulSaveReplacesPriorFingerprintForSameDocument() {
+        var history = mock(com.zipick.notice.repository.DocumentParseHistoryRepository.class);
+        service.setDocumentHistory(history);
+        NoticeResponse original = notice("LH", "n1", "LH", "2026.10.01", null,
+                List.of(housing("h1", "서울 강남구 테헤란로 10", supply("s1", "1200"))), List.of());
+        var source = new NoticeResponse(original.source(), original.noticeId(), original.statusName(), original.title(),
+                original.supplyInstitutionName(), original.previousNoticeId(), original.announcementDate(),
+                original.winnerAnnouncementDate(), original.applicationStartDate(), original.applicationEndDate(),
+                original.reference(), original.url(), original.pcUrl(), original.mobileUrl(), original.houses(),
+                original.attachments(), false,
+                List.of(new com.zipick.notice.dto.ParseCheckpoint("LH:document:newhash", "V2", 10, 1)));
+        service.synchronize(List.of(new NoticeSyncCommand(source, "{}")), Instant.parse("2026-10-10T00:00:00Z"));
+        verify(history).deleteAllByDocumentKeyStartingWithAndParserVersion("LH:document:", "V2");
+        verify(history).save(any(com.zipick.notice.domain.DocumentParseHistory.class));
+    }
+
+    @Test
+    void parseHistoryIsNotRecordedWhenHousingSaveFails() {
+        var history = mock(com.zipick.notice.repository.DocumentParseHistoryRepository.class);
+        service.setDocumentHistory(history);
+        NoticeResponse original = notice("LH", "n1", "LH", "2026.10.01", null,
+                List.of(housing("h1", "서울 강남구 테헤란로 10", supply("s1", "1200"))), List.of());
+        var checkpoint = new com.zipick.notice.dto.ParseCheckpoint("LH:test", "V2", 10, 1);
+        var source = new NoticeResponse(original.source(), original.noticeId(), original.statusName(), original.title(),
+                original.supplyInstitutionName(), original.previousNoticeId(), original.announcementDate(),
+                original.winnerAnnouncementDate(), original.applicationStartDate(), original.applicationEndDate(),
+                original.reference(), original.url(), original.pcUrl(), original.mobileUrl(), original.houses(),
+                original.attachments(), false, List.of(checkpoint));
+        org.mockito.Mockito.doThrow(new IllegalStateException("save failed")).when(housings).save(any());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.synchronize(
+                List.of(new NoticeSyncCommand(source, "{}")), Instant.parse("2026-10-10T00:00:00Z")))
+                .isInstanceOf(IllegalStateException.class);
+        org.mockito.Mockito.verify(history, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void skippedDocumentPreservesPreviouslySavedHousingAndSupply() {
+        Notice existing = withId(new Notice("SH", "n1", "공고", NoticeStatus.OPEN), 1L);
+        Housing retained = withId(new Housing(existing, "retained", "기존 주택", "서울 강남구 선릉로 20"), 20L);
+        HousingSupply retainedSupply = withId(new HousingSupply(retained, "retained-s", 2L), 30L);
+        retained.markMissing(LocalDate.of(2026, 10, 9), 2);
+        retainedSupply.markMissing(LocalDate.of(2026, 10, 9), 2);
+        when(notices.findAllBySource("SH")).thenReturn(List.of(existing));
+        when(housings.findAllByNoticeId(1L)).thenReturn(List.of(retained));
+        when(supplies.findAllByHousingId(20L)).thenReturn(List.of(retainedSupply));
+        NoticeResponse original = notice("SH", "n1", "SH", "2026.10.01", null,
+                List.of(housing("new", "서울 강남구 테헤란로 10", supply("s1", "1200"))), List.of());
+        NoticeResponse source = new NoticeResponse(original.source(), original.noticeId(), original.statusName(),
+                original.title(), original.supplyInstitutionName(), original.previousNoticeId(),
+                original.announcementDate(), original.winnerAnnouncementDate(), original.applicationStartDate(),
+                original.applicationEndDate(), original.reference(), original.url(), original.pcUrl(),
+                original.mobileUrl(), original.houses(), original.attachments(), true);
+
+        NoticeSyncResult result = service.synchronize(List.of(new NoticeSyncCommand(source, "{}")),
+                Instant.parse("2026-10-10T00:00:00Z"));
+
+        assertThat(result.inactiveHousings()).isZero();
+        assertThat(result.inactiveSupplies()).isZero();
+    }
+
+    @Test
     void completedShSourceClosesMissingNoticeImmediately() {
         LocalDate previousDay = LocalDate.of(2026, 10, 9);
         Notice missing = withId(new Notice("SH", "missing", "사라진 공고", NoticeStatus.OPEN), 10L);
@@ -164,6 +225,48 @@ class NoticeSyncPersistenceServiceTest {
         assertThat(result.inactiveHousings()).isEqualTo(1);
         assertThat(result.inactiveSupplies()).isEqualTo(1);
         assertThat(missing.getStatus()).isEqualTo(NoticeStatus.CLOSED);
+    }
+
+    @Test
+    void updatesExistingExpiredShDatesButDoesNotCreateNewExpiredNotice() {
+        Notice existing = withId(new Notice("SH", "existing", "공고", NoticeStatus.OPEN), 10L);
+        when(notices.findAllBySource("SH")).thenReturn(List.of(existing));
+        NoticeSyncCommand update = new NoticeSyncCommand(notice(
+                "SH", "existing", "SH", "2026-08-03", "2026-08-06", List.of(), List.of()), "{}");
+        NoticeSyncCommand old = new NoticeSyncCommand(notice(
+                "SH", "new-old", "SH", "2026-08-03", "2026-08-06", List.of(), List.of()), "{}");
+
+        NoticeSyncResult result = service.synchronize(List.of(update, old), Instant.parse("2026-10-27T00:00:00Z"));
+
+        assertThat(result.updatedNotices()).isEqualTo(1);
+        assertThat(result.createdNotices()).isZero();
+        assertThat(existing.getStatus()).isEqualTo(NoticeStatus.CLOSED);
+        assertThat(existing.getApplyEndAt()).isEqualTo(Instant.parse("2026-08-06T14:59:59.999999999Z"));
+    }
+
+    @Test
+    void aiDetailMergeDoesNotDeactivateExistingRowsMissingFromPartialResult() {
+        Notice existing = withId(new Notice("SH", "n1", "공고", NoticeStatus.OPEN), 1L);
+        Housing previousHousing = withId(
+                new Housing(existing, "previous", "기존단지", "서울시 강남구 선릉로 20"), 20L);
+        HousingSupply previousSupply = withId(new HousingSupply(previousHousing, "previous-s", 2L), 30L);
+        LocalDate previousDay = LocalDate.of(2026, 10, 9);
+        previousHousing.markMissing(previousDay, 2);
+        previousSupply.markMissing(previousDay, 2);
+        when(notices.findById(1L)).thenReturn(Optional.of(existing));
+        when(housings.findAllByNoticeId(1L)).thenReturn(List.of(previousHousing));
+        when(supplies.findAllByHousingId(20L)).thenReturn(List.of(previousSupply));
+
+        NoticeResponse partialAiResult = notice(
+                "SH", "n1", "SH", null, null,
+                List.of(housing("new", "서울특별시 강남구 테헤란로 10", supply("new-s", "1"))),
+                List.of()
+        );
+
+        service.synchronizeDetails(1L, partialAiResult, Instant.parse("2026-10-10T00:00:00Z"));
+
+        assertThat(previousHousing.isActive()).isTrue();
+        assertThat(previousSupply.isActive()).isTrue();
     }
 
     private NoticeResponse notice(

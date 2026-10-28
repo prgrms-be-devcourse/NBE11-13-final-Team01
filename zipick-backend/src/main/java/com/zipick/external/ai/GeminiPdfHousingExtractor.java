@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
 @Component
 public class GeminiPdfHousingExtractor {
 
-    public static final String PROMPT_VERSION = "DIRECT_HOUSING_V18_PAGED_COMPLETE_COLUMNS";
+    public static final String PROMPT_VERSION = "DIRECT_HOUSING_V19_BOUNDED_REPAIR";
     private static final int MAX_MISSING_INDEXES_PER_REPAIR = 40;
     private static final int MAX_TRANSIENT_RETRIES = 2;
     private static final Pattern LEADING_ROW_NUMBER = Pattern.compile("(?m)^\\s*(\\d{1,4})(?:\\s+|[.)]\\s+)");
@@ -182,10 +182,12 @@ public class GeminiPdfHousingExtractor {
         }
 
         int repairRounds = 0;
+        int repairLimit = continuationLimit(inspected, accumulator);
+        long previousProgress = accumulator.progressScore();
         String continuationDirective = accumulator.continuationDirective(MAX_MISSING_INDEXES_PER_REPAIR);
         while (!accumulator.serverVerifiedComplete()
                 && !continuationDirective.isBlank()
-                && repairRounds < properties.maxContinuationCalls()) {
+                && repairRounds < repairLimit) {
             List<PageSlice> repairs = pageSlices(inspected, accumulator, true);
             for (PageSlice repair : repairs) {
                 ParsedApiResponse parsed = executeSlice(
@@ -197,6 +199,13 @@ public class GeminiPdfHousingExtractor {
                 cache.writeProgress(cacheKey, JSON.writeValueAsString(accumulator.toJson()));
             }
             repairRounds++;
+            long currentProgress = accumulator.progressScore();
+            if (currentProgress <= previousProgress) {
+                log.info("Gemini PDF 보정 결과가 개선되지 않아 추가 호출을 중단합니다: documents={}, rounds={}",
+                        documents.stream().map(GeminiPdfDocument::documentId).toList(), repairRounds);
+                break;
+            }
+            previousProgress = currentProgress;
             continuationDirective = accumulator.continuationDirective(MAX_MISSING_INDEXES_PER_REPAIR);
         }
 
@@ -208,6 +217,17 @@ public class GeminiPdfHousingExtractor {
             cache.deleteProgress(cacheKey);
         }
         return result;
+    }
+
+    /** 일반 PDF는 실행당 한 번만 호출하고, 행이 많은 대형 문서만 같은 실행에서 누락행을 이어 받는다. */
+    private int continuationLimit(List<InspectedDocument> documents, PayloadAccumulator accumulator) {
+        boolean largeDocument = documents.stream()
+                .map(InspectedDocument::expectedUnitCount)
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(count -> count >= properties.continuationMinExpectedUnits())
+                || accumulator.maximumExpectedCount() >= properties.continuationMinExpectedUnits();
+        if (largeDocument) return properties.maxContinuationCalls();
+        return 0;
     }
 
     private ParsedApiResponse executeSlice(
@@ -281,12 +301,20 @@ public class GeminiPdfHousingExtractor {
     private String generateWithRetry(String requestBody, boolean continuation) {
         RuntimeException last = null;
         for (int attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
-            budget.acquire(continuation || attempt > 0);
+            try {
+                budget.acquire(continuation || attempt > 0);
+            } catch (RuntimeException budgetFailure) {
+                if (last != null) GeminiFinalFailureLogger.logFailure("extraction", last);
+                throw budgetFailure;
+            }
             try {
                 return transport.generate(requestBody);
             } catch (RuntimeException exception) {
                 last = exception;
-                if (!isTransientApiFailure(exception) || attempt == MAX_TRANSIENT_RETRIES) throw exception;
+                if (!isTransientApiFailure(exception) || attempt == MAX_TRANSIENT_RETRIES) {
+                    GeminiFinalFailureLogger.logFailure("extraction", exception);
+                    throw exception;
+                }
                 long delayMillis = 1_000L << attempt;
                 log.warn("Gemini 일시 장애로 재시도합니다: attempt={}/{}, delayMs={}, reason={}",
                         attempt + 1, MAX_TRANSIENT_RETRIES, delayMillis, exception.getMessage());
@@ -294,6 +322,7 @@ public class GeminiPdfHousingExtractor {
                     Thread.sleep(delayMillis);
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
+                    GeminiFinalFailureLogger.logFailure("extraction", exception);
                     throw new IllegalStateException("Gemini 재시도 대기가 중단되었습니다.", interrupted);
                 }
             }
@@ -311,7 +340,7 @@ public class GeminiPdfHousingExtractor {
 
     private void validateConfiguration() {
         if (!properties.enabled()) throw new IllegalStateException("Gemini PDF 직접 추출이 비활성화되어 있습니다.");
-        if (properties.key() == null || properties.key().isBlank()) {
+        if (!properties.isConfigured()) {
             throw new IllegalStateException("Gemini API 키가 설정되지 않았습니다.");
         }
     }
@@ -480,10 +509,32 @@ public class GeminiPdfHousingExtractor {
         markers.forEach((field, aliases) -> {
             if (aliases.stream().anyMatch(text::contains)) result.add(field);
         });
-        boolean multipleRentalConditions = (text.contains("1순위") && text.contains("2순위"))
-                || (text.contains("50%이하") && text.contains("50%초과"));
+        boolean multipleRentalConditions = containsMultipleRentalConditionColumns(pageTexts);
         if (multipleRentalConditions) result.add("multipleRentalConditions");
         return Set.copyOf(result);
+    }
+
+    /** 자격 설명의 순위를 임대조건 열로 오인하지 않고, 금액 표제 주변에서만 다중 조건을 감지한다. */
+    private boolean containsMultipleRentalConditionColumns(Map<Integer, String> pageTexts) {
+        for (String pageText : pageTexts.values()) {
+            if (pageText == null || pageText.isBlank()) continue;
+            String[] lines = pageText.split("\\R");
+            for (int index = 0; index < lines.length; index++) {
+                String header = lines[index].replaceAll("\\s+", "");
+                if (!header.contains("임대조건") && !header.contains("임대보증금")
+                        && !header.contains("월임대료") && !header.contains("월세")) continue;
+                StringBuilder nearby = new StringBuilder();
+                int from = Math.max(0, index - 2);
+                int to = Math.min(lines.length - 1, index + 6);
+                for (int line = from; line <= to; line++) {
+                    nearby.append(lines[line].replaceAll("\\s+", ""));
+                }
+                String window = nearby.toString();
+                if ((window.contains("1순위") && window.contains("2순위"))
+                        || (window.contains("50%이하") && window.contains("50%초과"))) return true;
+            }
+        }
+        return false;
     }
 
     private String requestBody(
@@ -727,7 +778,7 @@ public class GeminiPdfHousingExtractor {
         // 기존 파서/PDFBox가 확인한 수는 최소 보장치다. 복잡한 표에서는 한 행만 읽고도
         // 힌트가 1이 될 수 있으므로, AI가 더 많은 연속 행을 확인했다면 큰 값을 기준으로 검증한다.
         int expected = trustedExpected == null ? modelExpected : Math.max(trustedExpected, modelExpected);
-        if (trustedExpected != null && modelExpected != trustedExpected) {
+        if (trustedExpected != null && modelExpected < trustedExpected) {
             warnings.add("모델 예상 행 수 불일치: server=" + trustedExpected + ", model=" + modelExpected);
         }
         boolean countMatches = trustedExpected == null
@@ -737,7 +788,11 @@ public class GeminiPdfHousingExtractor {
         boolean sequenceComplete = validateSequences(accumulator.documents, documents, indexesByDocument, warnings);
         Map<String, List<String>> inconsistentFields = accumulator.inconsistentFieldRows();
         if (!inconsistentFields.isEmpty()) {
-            warnings.add("같은 공급표의 일부 행에서만 열 누락: " + inconsistentFields);
+            warnings.add("선택 필드 일부 누락(결과는 사용): " + inconsistentFields);
+        }
+        Map<String, List<String>> missingAttributes = accumulator.missingRequiredAttributes();
+        if (!missingAttributes.isEmpty()) {
+            warnings.add("추가정보 일부 누락(결과는 사용): " + missingAttributes);
         }
         boolean tokenCut = "MAX_TOKENS".equalsIgnoreCase(finishReason);
         if (tokenCut) warnings.add("출력 토큰 한도에 도달했습니다.");
@@ -1279,7 +1334,12 @@ public class GeminiPdfHousingExtractor {
                         ? (documents.size() == 1 ? documents.keySet().iterator().next() : value.path("documentId").asText("UNKNOWN"))
                         : building.path("documentId").asText();
                 Integer sourceIndex = sourceRowIndex(normalized.path("sourceRowLabel").asText(""));
-                if (sourceIndex != null) {
+                int expectedCount = Math.max(
+                        trustedExpectedCounts.getOrDefault(documentId, 0),
+                        documents.getOrDefault(documentId, normalized).path("expectedUnitCount").asInt(0));
+                // 202호 같은 호수를 202번째 공급행으로 오인하지 않는다. 서버나 모델이 확인한
+                // 전체 행 수 안에 들어오는 실제 연번일 때만 extractionIndex를 교정한다.
+                if (sourceIndex != null && expectedCount > 0 && sourceIndex <= expectedCount) {
                     normalized.put("extractionIndex", sourceIndex);
                     normalized.put("unitId", documentId + "/item-" + sourceIndex);
                 }
@@ -1433,8 +1493,9 @@ public class GeminiPdfHousingExtractor {
                 }
             }
             boolean rowsComplete = hasPositiveExpectedCount || complete;
-            return rowsComplete && missingSourcePages().isEmpty()
-                    && inconsistentFieldRows().isEmpty() && missingRequiredAttributes().isEmpty();
+            // DB 반영을 막는 기준은 공급행 누락과 공급표 페이지 누락으로 한정한다.
+            // 추가정보나 선택 열의 일부 누락은 경고로 남기되 정상 행 전체를 폐기하지 않는다.
+            return rowsComplete && missingSourcePages().isEmpty();
         }
 
         String continuationDirective(int limit) {
@@ -1464,26 +1525,25 @@ public class GeminiPdfHousingExtractor {
                         .map(entry -> "documentId=" + entry.getKey() + ", missingSourcePages=" + entry.getValue())
                         .collect(java.util.stream.Collectors.joining("\n"));
             }
-            List<String> fieldRequests = inconsistentFieldRows().entrySet().stream()
-                    .limit(limit)
-                    .map(entry -> "unit=" + entry.getKey() + ", missingFields=" + entry.getValue())
-                    .toList();
-            if (!fieldRequests.isEmpty()) {
-                return "아래 행은 같은 건물·공급표의 다른 행에는 있는 열이 누락됐습니다. 각 행 전체를 다시 반환하세요.\n"
-                        + String.join("\n", fieldRequests);
-            }
-            Map<String, List<String>> missingAttributes = missingRequiredAttributes();
-            if (!missingAttributes.isEmpty()) {
-                return "PDFBox가 원문에서 아래 주택 추가정보 표제를 확인했지만 응답에 없습니다. 원문 값을 찾아 "
-                        + "고정 필드와 additionalAttributes에 보완하세요.\n"
-                        + missingAttributes.entrySet().stream()
-                        .map(entry -> "documentId=" + entry.getKey() + ", missingAdditionalAttributes=" + entry.getValue())
-                        .collect(java.util.stream.Collectors.joining("\n"));
-            }
             if (!complete && !nextCursor.isBlank()) {
                 return "AI nextCursor=" + nextCursor + " 바로 다음 원문 행부터 반환하세요.";
             }
             return "";
+        }
+
+        long progressScore() {
+            long populatedFields = units.values().stream()
+                    .mapToLong(unit -> CONSISTENT_UNIT_FIELDS.stream()
+                            .filter(field -> hasFieldValue(unit, field)).count())
+                    .sum();
+            return units.size() * 10_000L
+                    + rentalConditions.size() * 100L
+                    + additionalAttributes.size() * 10L
+                    + populatedFields;
+        }
+
+        int maximumExpectedCount() {
+            return expectedCounts().values().stream().mapToInt(Integer::intValue).max().orElse(0);
         }
 
         private Map<String, Integer> expectedCounts() {

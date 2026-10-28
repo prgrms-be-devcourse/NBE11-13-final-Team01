@@ -25,7 +25,7 @@ public class GeminiPdfHousingDetailSupport {
     }
 
     public boolean enabled() {
-        return properties.enabled();
+        return properties.isConfigured();
     }
 
     public String parserVersion() {
@@ -60,11 +60,13 @@ public class GeminiPdfHousingDetailSupport {
                     safeFallback.isEmpty() ? null : safeFallback.size()
             )));
             if (!result.complete()) {
+                log.warn("COLLECTOR_METRIC event=ai_document_error stage=extraction reason=incomplete documentKey={}", documentKey);
                 log.warn("Gemini PDF 결과 미사용: documentKey={}, units={}/{}, warnings={}",
                         documentKey, result.units().size(), result.expectedUnitCount(), result.warnings());
                 return new SupplementResult(safeFallback, false, false);
             }
             if (result.units().isEmpty() && !safeFallback.isEmpty()) {
+                log.warn("COLLECTOR_METRIC event=ai_document_error stage=extraction reason=empty documentKey={}", documentKey);
                 log.warn("Gemini PDF 빈 결과 미사용: documentKey={}, fallbackUnits={}",
                         documentKey, safeFallback.size());
                 return new SupplementResult(safeFallback, false, false);
@@ -73,6 +75,7 @@ public class GeminiPdfHousingDetailSupport {
                     documentKey, result.units().size(), result.apiCallCount());
             return new SupplementResult(result.units(), true, true);
         } catch (RuntimeException exception) {
+            log.warn("COLLECTOR_METRIC event=ai_document_error stage=extraction reason=exception documentKey={}", documentKey);
             log.warn("Gemini PDF 보완 실패로 기존 파서 유지: documentKey={}, reason={}",
                     documentKey, exception.getMessage());
             return new SupplementResult(safeFallback, false, false);

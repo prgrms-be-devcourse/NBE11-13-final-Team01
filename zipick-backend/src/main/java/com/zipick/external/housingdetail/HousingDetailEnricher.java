@@ -42,7 +42,7 @@ public class HousingDetailEnricher {
                 addressed,
                 toHousings(detail.housings(), detail.mediaByUnitKey())
         );
-        return copyWithDetails(notice, enriched, detail.attachments());
+        return copyWithDetails(notice, enriched, detail.attachments(), detail.preservesExistingHousings(), detail.parseCheckpoints());
     }
 
     private HousingDetailResult extract(NoticeResponse notice) {
@@ -52,17 +52,18 @@ public class HousingDetailEnricher {
             }
             try {
                 HousingDetailResult result = source.extract(notice);
-                if (!result.housings().isEmpty() || !result.attachments().isEmpty()) {
+                if (!result.housings().isEmpty() || !result.attachments().isEmpty() || result.preservesExistingHousings()) {
                     List<String> partialFields = HousingDetailCompleteness.partialCoreFields(result.housings());
                     if (!partialFields.isEmpty()) {
                         log.warn("상세 주택 핵심 필드가 일부 행에서 누락되었습니다: noticeId={}, source={}, fields={}",
                                 notice.noticeId(), source.getClass().getSimpleName(), partialFields);
                     }
-                    log.info("상세 주택 보완 성공: noticeId={}, units={}, attachments={}",
+                    log.info("상세 주택 자료 처리 완료: noticeId={}, units={}, attachments={}",
                             notice.noticeId(), result.housings().size(), result.attachments().size());
                     return result;
                 }
             } catch (RuntimeException exception) {
+                log.warn("COLLECTOR_METRIC event=detail_error noticeId={} source={}", notice.noticeId(), source.getClass().getSimpleName());
                 log.warn("상세 주택 보완 실패: noticeId={}, source={}, reason={}",
                         notice.noticeId(), source.getClass().getSimpleName(), exception.getMessage());
             }
@@ -224,7 +225,9 @@ public class HousingDetailEnricher {
     private NoticeResponse copyWithDetails(
             NoticeResponse notice,
             List<NoticeHousingResponse> houses,
-            List<NoticeAttachmentResponse> attachments
+            List<NoticeAttachmentResponse> attachments,
+            boolean preservesExistingHousings,
+            List<com.zipick.notice.dto.ParseCheckpoint> checkpoints
     ) {
         return new NoticeResponse(
                 notice.source(),
@@ -242,7 +245,9 @@ public class HousingDetailEnricher {
                 notice.pcUrl(),
                 notice.mobileUrl(),
                 houses,
-                attachments
+                attachments,
+                preservesExistingHousings,
+                checkpoints
         );
     }
 

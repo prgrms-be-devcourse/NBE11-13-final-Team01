@@ -108,6 +108,7 @@ public class GeminiNoticeNormalizationService {
                     .map(entry -> entry.getValue().getId())
                     .toList();
             if (!deferredIds.isEmpty()) {
+                log.warn("COLLECTOR_METRIC event=normalization_deferred count={}", deferredIds.size());
                 jobService.markRetry(deferredIds, String.join(" | ", result.warnings()));
             }
 
@@ -132,6 +133,7 @@ public class GeminiNoticeNormalizationService {
                         jobService.markSuccess(List.of(job.getId()));
                         successCount++;
                     } catch (RuntimeException exception) {
+                        log.warn("COLLECTOR_METRIC event=normalization_error reason=db documentId={}", entry.getKey());
                         jobService.markRetry(List.of(job.getId()),
                                 "정규화 DB 반영 실패: " + exception.getMessage());
                         patchRetryCount++;
@@ -145,6 +147,7 @@ public class GeminiNoticeNormalizationService {
                     result.executedCalls(), result.cacheHits());
             result.warnings().forEach(warning -> log.warn("AI 2단계 정규화: {}", warning));
         } catch (RuntimeException exception) {
+            log.warn("COLLECTOR_METRIC event=normalization_error reason=batch count={}", jobsByDocumentId.size());
             jobService.markRetry(jobsByDocumentId.values().stream().map(AiNormalizationJob::getId).toList(),
                     "정규화 처리 실패: " + exception.getMessage());
             log.warn("AI 정규화 대기열 전체를 다음 실행으로 연기합니다: {}", exception.getMessage());

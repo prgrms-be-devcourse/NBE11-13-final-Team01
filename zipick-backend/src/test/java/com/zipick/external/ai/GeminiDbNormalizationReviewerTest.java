@@ -9,6 +9,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -18,6 +22,56 @@ class GeminiDbNormalizationReviewerTest {
 
     @TempDir
     Path temporary;
+
+    @Test
+    void 일시_오류_후_재시도_성공은_최종_호출_실패로_기록하지_않는다() {
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            if (calls.getAndIncrement() == 0) throw new IllegalStateException("status=503");
+            return envelope(Map.of("valid", true, "corrections", List.of(), "warnings", List.of()));
+        };
+        Path cachePath = temporary.resolve("retry-success");
+        var reviewer = new GeminiDbNormalizationReviewer(pdfProperties(), properties(true, 100_000, 200_000, 16),
+                transport, new GeminiPdfExtractionCache(cachePath), new GeminiDailyCallBudget(cachePath, 20, 4));
+        Logger logger = (Logger) LoggerFactory.getLogger(GeminiFinalFailureLogger.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThat(reviewer.review(List.of(document("doc-1", "남여공용"))).deferredDocumentIds()).isEmpty();
+            assertThat(calls).hasValue(2);
+            assertThat(appender.list).isEmpty();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    @Test
+    void 재시도까지_실패하면_최종_호출_실패를_기록한다() {
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            calls.incrementAndGet();
+            throw new IllegalStateException("status=503");
+        };
+        Path cachePath = temporary.resolve("retry-failure");
+        var reviewer = new GeminiDbNormalizationReviewer(pdfProperties(), properties(true, 100_000, 200_000, 16),
+                transport, new GeminiPdfExtractionCache(cachePath), new GeminiDailyCallBudget(cachePath, 20, 4));
+        Logger logger = (Logger) LoggerFactory.getLogger(GeminiFinalFailureLogger.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThat(reviewer.review(List.of(document("doc-1", "남여공용"))).deferredDocumentIds())
+                    .containsExactly("doc-1");
+            assertThat(calls).hasValue(2);
+            assertThat(appender.list).singleElement().satisfies(event ->
+                    assertThat(event.getFormattedMessage()).contains("stage=normalization", "status=503"));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
 
     @Test
     void 여러문서를_토큰크기로_묶고_16회가_넘는_문서는_연기한다() {
@@ -181,7 +235,7 @@ class GeminiDbNormalizationReviewerTest {
         return new GeminiPdfParserProperties("key", "https://generativelanguage.googleapis.com",
                 "gemini-3.5-flash-lite", true,
                 20 * 1024 * 1024L, 65_536, "medium", Duration.ofSeconds(10),
-                500, 20, 4, temporary.resolve("pdf").toString(), 1, 120);
+                500, 20, 4, 50, temporary.resolve("pdf").toString(), 1, 120);
     }
 
     private String envelope(Map<String, Object> payload) {

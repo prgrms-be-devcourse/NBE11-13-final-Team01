@@ -14,7 +14,7 @@
 --   테이블을 정말 비우고 싶으면 이 파일을 고치지 말고 직접 실행한다.
 --     DROP TABLE IF EXISTS notice_application_guide;
 --
--- [실행 순서] local-init.sql → notice-init.sql → infra-init.sql → guide-init.sql
+-- [실행 순서] notice-init.sql → local-init.sql → infra-init.sql → guide-init.sql
 --   users(local-init) 와 notice(notice-init) 를 모두 참조하므로 두 파일 뒤에 실행한다.
 --
 --   psql -U {사용자명} -d zipick -f zipick-backend/db/guide-init.sql

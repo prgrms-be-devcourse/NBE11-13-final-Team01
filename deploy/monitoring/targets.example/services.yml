@@ -1,0 +1,6 @@
+- targets: ['10.0.0.10:9115']
+  labels: {service: frontend, probe_target: 'http://web:80/'}
+- targets: ['10.0.0.10:9115']
+  labels: {service: notification, probe_target: 'http://notification:8081/health'}
+- targets: ['10.0.0.10:9115']
+  labels: {service: backend_health, probe_target: 'http://backend:19090/actuator/health'}
