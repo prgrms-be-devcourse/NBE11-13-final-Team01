@@ -71,6 +71,20 @@ export default function OnboardingPage() {
 
   const err = (m: { isError: boolean; error: unknown }) => (m.isError ? (m.error as ApiError) : null);
 
+  // 필수 항목. 서버 검증(UserProfileRequest·UserPreferenceRequest)과 추천 순위 필수 항목(cost·region)에 맞춘다.
+  // 여기 없는 항목은 비워도 다음으로 넘어갈 수 있다.
+  const missingProfile = [
+    !profile.birthDate && '생년월일',
+    !marriedPicked && '혼인 여부',
+    !homelessPicked && '무주택 여부',
+    !(profile.householdSize >= 1 && profile.householdSize <= 10) && '세대원 수',
+  ].filter(Boolean) as string[];
+  // 예산이 하나도 없으면 비용 점수를 못 매겨 모든 집이 '정보 부족' 묶음으로 빠진다 (ScoreCalculator.scoreCost)
+  const hasBudget = [pref.depositMax, pref.rentMax, pref.monthlyBudget].some((v) => v != null && v > 0);
+  const missingPref = [pref.regions.length === 0 && '관심 지역', !hasBudget && '예산(보증금·월 임대료 상한, 월 예산 중 하나)'].filter(
+    Boolean,
+  ) as string[];
+
   return (
     <div className="onboarding">
       <ol className="steps">
@@ -98,13 +112,17 @@ export default function OnboardingPage() {
             공고 지원조건(연령·혼인·무주택·소득·자산·자동차)을 판정하는 데 쓰여요. 소득·자산·자동차는 비워도 되지만, 비우면 그
             조건은 "확인 필요"로 표시돼요.
           </p>
+          <RequiredNote />
 
           <label>
-            생년월일
+            <span>
+              생년월일 <Req />
+            </span>
             <input type="date" required value={profile.birthDate} onChange={(e) => setProfile({ ...profile, birthDate: e.target.value })} />
           </label>
 
           <YesNo
+            required
             label="혼인 중이에요"
             hint="청년 계층(행복주택·청년 매입임대)은 미혼만, 신혼부부 계층은 기혼만 신청할 수 있어요."
             value={marriedPicked ? profile.married : null}
@@ -114,6 +132,7 @@ export default function OnboardingPage() {
             }}
           />
           <YesNo
+            required
             label="무주택 세대구성원이에요"
             hint="거의 모든 공공임대의 필수 조건이에요."
             value={homelessPicked ? profile.homeless : null}
@@ -124,7 +143,9 @@ export default function OnboardingPage() {
           />
 
           <label>
-            세대원 수 (본인 포함)
+            <span>
+              세대원 수 (본인 포함) <Req />
+            </span>
             <input type="number" min={1} max={10} required value={profile.householdSize} onChange={(e) => setProfile({ ...profile, householdSize: Number(e.target.value) })} />
             <small className="hint">소득 기준은 가구원 수마다 달라요. 면적도 가구원 수별 최저주거기준과 비교해요.</small>
           </label>
@@ -158,8 +179,9 @@ export default function OnboardingPage() {
           </label>
 
           {err(saveProfile) && <FormError e={err(saveProfile)!} />}
+          <MissingRequired items={missingProfile} />
           <div className="form__actions">
-            <button className="btn" type="submit" disabled={saveProfile.isPending || !profile.birthDate || !marriedPicked || !homelessPicked}>
+            <button className="btn" type="submit" disabled={saveProfile.isPending || missingProfile.length > 0}>
               저장하고 다음 →
             </button>
           </div>
@@ -176,9 +198,13 @@ export default function OnboardingPage() {
         >
           <h1>희망 주거조건</h1>
           <p className="muted">추천 점수를 매기는 기준이에요. 금액은 만 원, 면적은 ㎡.</p>
+          <RequiredNote />
 
           <RegionEditor regions={pref.regions} onChange={(regions) => setPref({ ...pref, regions })} />
 
+          <p className="field-group">
+            예산 <Req /> <small className="hint">보증금 상한·월 임대료 상한·월 예산 중 하나 이상. 없으면 비용 점수를 매길 수 없어요.</small>
+          </p>
           <div className="grid2">
             <label>
               보증금 상한 (만 원)
@@ -245,11 +271,12 @@ export default function OnboardingPage() {
           </fieldset>
 
           {err(savePref) && <FormError e={err(savePref)!} />}
+          <MissingRequired items={missingPref} />
           <div className="form__actions">
             <button className="btn btn--ghost" type="button" onClick={() => setStep(1)}>
               ← 기본 정보
             </button>
-            <button className="btn" type="submit" disabled={savePref.isPending || pref.regions.length === 0}>
+            <button className="btn" type="submit" disabled={savePref.isPending || missingPref.length > 0}>
               저장하고 다음 →
             </button>
           </div>
@@ -288,7 +315,9 @@ function RegionEditor({ regions, onChange }: { regions: Region[]; onChange: (r: 
   };
   return (
     <fieldset className="field">
-      <legend>관심 지역 (최대 3곳, 고른 순서가 우선순위)</legend>
+      <legend>
+        관심 지역 (최대 3곳, 고른 순서가 우선순위) <Req />
+      </legend>
       <div className="chips">
         {regions.map((r) => (
           <button type="button" key={r.code} className="chip chip--on" onClick={() => toggle(r)}>
@@ -325,16 +354,57 @@ function RegionEditor({ regions, onChange }: { regions: Region[]; onChange: (r: 
 }
 
 /** 예/아니오를 명시적으로 고르게 하는 입력. 고르기 전에는 둘 다 꺼져 있다 */
-function YesNo({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean | null; onChange: (v: boolean) => void }) {
+function YesNo({
+  label,
+  hint,
+  required,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  required?: boolean;
+  value: boolean | null;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <fieldset className="field">
-      <legend>{label}</legend>
+      <legend>
+        {label} {required && <Req />}
+      </legend>
       <div className="chips">
         <button type="button" className={`chip ${value === true ? 'chip--on' : ''}`} onClick={() => onChange(true)}>예</button>
         <button type="button" className={`chip ${value === false ? 'chip--on' : ''}`} onClick={() => onChange(false)}>아니오</button>
       </div>
       {hint && <small className="hint">{hint}</small>}
     </fieldset>
+  );
+}
+
+/** 필수 항목 표시 */
+function Req() {
+  return (
+    <span className="req" aria-label="필수" title="필수">
+      *
+    </span>
+  );
+}
+
+function RequiredNote() {
+  return (
+    <p className="required-note">
+      <Req /> 표시만 채우면 다음으로 넘어갈 수 있어요. 나머지는 비워 둬도 되고, 나중에 고칠 수 있어요.
+    </p>
+  );
+}
+
+/** 저장 버튼이 왜 꺼져 있는지 알려 준다 */
+function MissingRequired({ items }: { items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <p className="missing-required" role="status">
+      아직 입력하지 않은 필수 항목: {items.join(', ')}
+    </p>
   );
 }
 
