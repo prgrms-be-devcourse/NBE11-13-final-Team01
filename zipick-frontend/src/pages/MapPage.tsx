@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { profileApi } from '../api/profile';
@@ -8,6 +8,7 @@ import HousingDetail from '../components/HousingDetail';
 import ReasonList from '../components/ReasonList';
 import RecommendationSidebar from '../components/map/RecommendationSidebar';
 import { MapPanel, toMapPins, type MapPin } from '../features/map';
+import { STATUS_LABEL } from '../utils/format';
 import { useAuth } from '../hooks/useAuth';
 import { openGate } from '../hooks/useAuthGate';
 import { useHouseFilter } from '../hooks/useHouseFilter';
@@ -36,6 +37,18 @@ function recommendationPins(houses: RecommendedHouse[]): MapPin[] {
       address: h.address,
       lat: h.lat!,
       lng: h.lng!,
+      // 추천 응답에는 이미 지역이 들어 있다. 전체 모드와 같은 군집 로직을 타려면 핀에도 실어야 한다.
+      province: h.province,
+      district: h.district,
+      // 같은 좌표 처리(locationGroup)도 전체 모드와 같은 기준을 쓰게 식별 정보를 함께 넘긴다.
+      // ⚠️ announcementId 가 공고 id 다 (houseId 는 주택 id).
+      noticeId: h.announcementId,
+      rentalType: h.rentalType,
+      status: h.status,
+      noticeTitle: h.title,
+      agencyName: h.agencyName,
+      applyEndAt: h.closeDate,          // 추천 응답의 마감일
+      // 추천 응답에는 공고일이 없다. 없으면 카드에서 그 줄만 빠진다.
     }));
 }
 
@@ -47,6 +60,10 @@ export default function MapPage() {
   const mode: MapMode = params.get('mode') === 'recommended' ? 'recommended' : 'all';
   const parsed = Number(params.get('housing'));
   const selectedId = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+
+  // 같은 좌표에 주택이 여러 곳일 때 고른 위치. URL 에는 넣지 않는다 —
+  // housing 식별자·링크 의미(?housing=)를 바꾸지 않기 위해서다. 표시 방식일 뿐이다.
+  const [locationIds, setLocationIds] = useState<number[] | null>(null);
 
   const { status: onboarding } = useOnboardingStatus(mode === 'recommended');
   const canRecommend = mode === 'recommended' && !!user && onboarding === 'COMPLETE';
@@ -90,6 +107,10 @@ export default function MapPage() {
   // 추천 결과에는 좌표 없는 주택이 섞인다. 목록 수와 핀 수가 달라지므로 그 차이를 알려 준다.
   // 전체 공고 모드는 서버가 좌표 없는 주택을 조회 단계에서 빼므로 그 수를 알 수 없다 → 안내하지 않는다.
   const unmappedRecommendations = mode === 'recommended' ? board.ranked.length - pins.length : 0;
+
+  // 모드를 바꾸면 위치 목록은 닫는다. 상세를 열 때는 **지우지 않는다** —
+  // 목록에서 들어간 경우 '뒤로'가 그 목록으로 돌아가야 하기 때문이다.
+  useEffect(() => setLocationIds(null), [mode]);
 
   const detailQuery = useQuery({
     queryKey: ['map-housing', selectedId],
@@ -170,13 +191,41 @@ export default function MapPage() {
       )}
 
       <div className="map-workspace">
-        <MapPanel pins={pins} selectedId={selectedId} onSelect={(id) => patch({ housing: String(id) })} className="map-panel" />
+        <MapPanel
+          pins={pins}
+          selectedId={selectedId}
+          /* 목록이 열려 있는 동안 그 위치 마커를 선택 상태로 둔다 (상세로 들어가도 유지) */
+          selectedLocationIds={locationIds}
+          /* 모드가 바뀌면 지도에 펼쳐 둔 지역 상태도 푼다 */
+          viewResetKey={mode}
+          /*
+            행정구역 군집 클릭·'전국 보기' — 새 탐색을 시작했으니 이전 선택을 닫는다.
+            다른 지역을 보고 있는데 우측에 이전 위치 목록이 남아 있으면 맥락이 어긋난다.
+            ⚠️ 위치 목록 안의 상세 ↔ 목록 이동은 여기로 오지 않는다(그 흐름은 그대로 유지).
+          */
+          onExploreStart={() => {
+            setLocationIds(null);
+            if (selectedId != null) patch({ housing: null });
+          }}
+          /* 단독 핀을 직접 누른 경우. 이전 위치 목록 맥락은 버린다 → '뒤로'가 지도로 간다 */
+          onSelect={(id) => {
+            setLocationIds(null);
+            patch({ housing: String(id) });
+          }}
+          /* 위치 마커를 누르면 그 자리의 목록을 연다. 상세가 열려 있었다면 선택을 푼다 */
+          onSelectLocation={(ids) => {
+            setLocationIds(ids);
+            if (selectedId != null) patch({ housing: null });
+          }}
+          className="map-panel"
+        />
 
         <aside className="map-aside" aria-live="polite">
           {selectedId != null ? (
             <>
+              {/* 위치 목록에서 들어왔으면 그 목록으로, 아니면 기존처럼 지도/추천 목록으로 */}
               <button type="button" className="map-aside__back" onClick={() => patch({ housing: null })}>
-                ← {mode === 'recommended' ? '추천 목록' : '지도'}으로
+                ← {locationIds != null ? '이 위치 목록으로' : mode === 'recommended' ? '추천 목록으로' : '지도로'}
               </button>
               {detailQuery.isLoading && <p className="map-side__notice">상세정보를 불러오는 중…</p>}
               {detailQuery.isError && <p className="map-side__notice">상세정보를 불러오지 못했습니다.</p>}
@@ -189,6 +238,12 @@ export default function MapPage() {
                 />
               )}
             </>
+          ) : locationIds != null ? (
+            <LocationList
+              pins={pins.filter((pin) => locationIds.includes(pin.housingId))}
+              onBack={() => setLocationIds(null)}
+              onSelect={(id) => patch({ housing: String(id) })}
+            />
           ) : mode === 'recommended' ? (
             <RecommendationSidebar
               signedIn={!!user}
@@ -203,6 +258,59 @@ export default function MapPage() {
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 같은 좌표에 주택이 여러 곳일 때 보여 주는 목록. 카드를 누르면 기존 상세 흐름으로 넘어간다.
+ * 상세 조회·상세 패널은 그대로 재사용하므로 여기서는 고를 수 있게만 해 준다.
+ */
+/** 공고를 구분해 주는 한 줄. 값이 없는 항목은 빼고, 구분자가 앞뒤로 남지 않게 한다 */
+function noticeLine(pin: MapPin): string {
+  const parts: string[] = [];
+  if (pin.announcedAt) parts.push(`공고일 ${pin.announcedAt}`);
+  if (pin.applyEndAt) parts.push(`접수 마감 ${pin.applyEndAt}`);
+  if (pin.noticeId != null) parts.push(`공고 ${pin.noticeId}번`);
+  return parts.join(' · ');
+}
+
+function LocationList({ pins, onBack, onSelect }: { pins: MapPin[]; onBack: () => void; onSelect: (id: number) => void }) {
+  return (
+    <div className="map-side">
+      <button type="button" className="map-aside__back" onClick={onBack}>
+        ← 지도로
+      </button>
+      <p className="map-side__summary">
+        이 위치의 주택 <strong>{pins.length}개</strong>
+      </p>
+      <p className="muted small">
+        같은 자리에 여러 공고가 있어요. <strong>공고마다 별도 신청 기회</strong>이니 아래에서 구분해 확인하세요.
+      </p>
+      {pins.map((pin) => (
+        <article key={pin.housingId} className="rec-item">
+          <button type="button" className="rec-item__main" onClick={() => onSelect(pin.housingId)}>
+            <span className="rec-item__body">
+              <span className="rec-item__badges">
+                {pin.agencyName && <span className="badge">{pin.agencyName}</span>}
+                {pin.rentalType && <span className="badge">{pin.rentalType}</span>}
+                {pin.status && <span className="badge">{STATUS_LABEL[pin.status as keyof typeof STATUS_LABEL] ?? pin.status}</span>}
+              </span>
+              <strong>{pin.title}</strong>
+              <span className="muted small">{pin.address}</span>
+              {/*
+                같은 건물에 몇 주 간격으로 올라온 공고는 제목·기관·유형이 모두 같을 수 있다.
+                그때 사용자가 서로 다른 신청 기회임을 알아볼 수 있는 값이 공고일·공고번호뿐이다.
+              */}
+              {pin.noticeTitle && pin.noticeTitle !== pin.title && (
+                <span className="muted small">{pin.noticeTitle}</span>
+              )}
+              <span className="muted small location-list__notice">{noticeLine(pin)}</span>
+            </span>
+            <span className="rec-item__score" aria-hidden="true">›</span>
+          </button>
+        </article>
+      ))}
     </div>
   );
 }

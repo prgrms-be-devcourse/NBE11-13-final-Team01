@@ -184,6 +184,65 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12); color: var(--muted); text-align: center;
 }
 .map-message--error { color: var(--bad); }
+
+/*
+  행정구역 군집 오버레이 (features/map/clustering.ts).
+  지역명 + 고유 주택 수를 두 줄로 쓴다. 숫자만 뜨던 기존 클러스터러와 달리 지역을 읽을 수 있어야 한다.
+  CustomOverlay 는 기준점에 중앙 정렬되므로 따로 transform 을 주지 않는다.
+*/
+.map-cluster {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  padding: 6px 10px; border: 2px solid #ffffff; border-radius: 999px;
+  background: rgba(37, 99, 235, 0.9); color: #ffffff;
+  font-family: inherit; line-height: 1.15; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.28);
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.map-cluster:hover { background: rgba(29, 78, 216, 0.95); transform: scale(1.05); }
+.map-cluster:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+.map-cluster__label { font-size: 11px; font-weight: 600; opacity: 0.92; }
+.map-cluster__count { font-size: 14px; font-weight: 800; }
+
+/* 주택 수가 많을수록 크게. 축소 상태에서 어느 지역이 두꺼운지 한눈에 보이게 한다 */
+.map-cluster--s1 { padding: 7px 12px; background: rgba(29, 78, 216, 0.9); }
+.map-cluster--s1 .map-cluster__count { font-size: 15px; }
+.map-cluster--s2 { padding: 9px 14px; background: rgba(29, 78, 216, 0.94); }
+.map-cluster--s2 .map-cluster__count { font-size: 17px; }
+.map-cluster--s3 { padding: 11px 16px; background: rgba(30, 64, 175, 0.96); }
+.map-cluster--s3 .map-cluster__count { font-size: 19px; }
+
+/* 시·도 단위는 더 넓은 지역을 뜻하므로 라벨을 조금 키운다 */
+.map-cluster--province .map-cluster__label { font-size: 12px; }
+
+/* 시·군·구 라벨은 "경기 · 부천시 오정구" 처럼 길어질 수 있다 */
+.map-cluster--district .map-cluster__label { font-size: 10px; letter-spacing: -0.2px; }
+
+/*
+  같은 좌표에 주택이 둘 이상인 위치는 **일반 핀 + 숫자 배지** 마커로 그린다
+  (features/map/clustering.ts 의 BADGE_PIN). SVG 마커라 여기 CSS 가 필요 없다.
+*/
+
+/* 같은 위치 목록: 공고 구분 줄 */
+.location-list__notice { font-variant-numeric: tabular-nums; }
+
+/* 지도 조작 버튼: 확대 · 축소 · 전국 보기 */
+.map-controls {
+  position: absolute; left: 12px; bottom: 12px; z-index: 3;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background: var(--card); box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+.map-controls button {
+  width: 32px; height: 32px; border: 0; border-bottom: 1px solid var(--line);
+  background: none; color: var(--ink); font-size: 15px; line-height: 1; cursor: pointer;
+}
+.map-controls button:last-child { border-bottom: 0; font-size: 14px; }
+.map-controls button:hover { background: var(--bg); }
+.map-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* 선택한 집이 이 군집 안에 있다. 지도는 움직이지 않고 표시만 바꾼다 */
+.map-cluster--has-selected { background: rgba(220, 38, 38, 0.92); box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.28), 0 2px 8px rgba(17, 24, 39, 0.28); }
+.map-cluster--has-selected:hover { background: rgba(185, 28, 28, 0.95); }
 .map-message code { color: var(--ink); font-size: 11px; }
 .map-count {
   position: absolute; top: 12px; left: 12px; z-index: 2; padding: 6px 10px; border-radius: 999px;
@@ -436,8 +495,6 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 }
 .score-teaser p { margin: 2px 0 0; }
 
-}
-
 /* 지도 탐색: 툴바 · 모드 전환 · 필터 */
 .map-page { max-width: 1280px; }
 .map-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -543,6 +600,8 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 @keyframes guide-dot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .guide-loading__dots i { animation: none; opacity: 0.6; }
+  .map-cluster { transition: none; }
+  .map-cluster:hover { transform: none; }
 }
 
 /* 내 정보 기준 확인사항 — 추천 근거(.reason--*)와 같은 색 규칙을 쓴다 */
