@@ -10,6 +10,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.context.ConfigurableApplicationContext;
 
+import java.time.Duration;
+
 /**
  * IntelliJ에서 공고 수집만 한 번 실행하기 위한 별도 진입점이다.
  * 웹 서버는 시작하지 않으며, 수집이 끝나면 애플리케이션도 종료한다.
@@ -30,8 +32,10 @@ public final class NoticeCollectionApplication {
         try (ConfigurableApplicationContext context = application.run(args)) {
             MyHomeSyncService syncService = context.getBean(MyHomeSyncService.class);
             NoticeSyncResponse result = syncService.synchronize();
+            // elapsedSeconds 는 synchronize() 전체(수집 → 저장 → 정규화 → 좌표 보완) 시간이다.
+            // 인프라 수집의 catch-up-window 를 이 수치에 맞춰 잡으므로, 스케줄을 조정할 때마다 다시 본다.
             log.info(
-                    "공고 수집 완료: 원본 행={}, 신규 공고={}, 갱신 공고={}, 주택={}, 공급정보={}, 목록 소실 마감 공고={}, 비활성 주택={}, 비활성 공급정보={}",
+                    "공고 수집 완료: 원본 행={}, 신규 공고={}, 갱신 공고={}, 주택={}, 공급정보={}, 목록 소실 마감 공고={}, 비활성 주택={}, 비활성 공급정보={}, elapsedSeconds={}",
                     result.collectedRows(),
                     result.createdNotices(),
                     result.updatedNotices(),
@@ -39,7 +43,8 @@ public final class NoticeCollectionApplication {
                     result.synchronizedSupplies(),
                     result.missingClosedNotices(),
                     result.inactiveHousings(),
-                    result.inactiveSupplies()
+                    result.inactiveSupplies(),
+                    Duration.between(result.startedAt(), result.finishedAt()).toSeconds()
             );
             // 운영 슬랙·메일로 일일 보고 (알림센터 스펙 견본). 받을 곳이 설정돼 있지 않으면 건너뛴다.
             // 보고가 실패해도 수집은 이미 끝났으므로 수집 결과를 실패로 만들지 않는다
