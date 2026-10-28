@@ -1,8 +1,10 @@
-# 운영 배포: EC2 한 대에 db(PostgreSQL) + rabbitmq + backend(메인) + notification(알림센터) + web(Caddy: 프론트 정적 파일 + /api 프록시)
+# 운영 배포: 앱 EC2 에 rabbitmq + backend(메인) + notification(알림센터) + web(Caddy: 프론트 정적 파일 + /api 프록시)
+# DB 는 프라이빗 서브넷의 별도 EC2(zipick-db, deploy/db-server/)에 있고, .env 의 DB_HOST 로 가리킨다.
+# DB_HOST 를 비우면 예전처럼 이 파일의 db 컨테이너를 쓴다 (첫 설치·롤백용으로 서비스 정의는 남겨 둔다).
 # 알림센터·RabbitMQ 는 바깥에 열지 않는다. backend 는 알림 요청을 rabbitmq 에 던지고, 테스트 발송·내역·묶음은 http://notification:8081 로 부른다.
 # 알림센터는 판단 없이 보내기만 한다(스펙: docs/notification-api.md). 알림 설정은 메인 DB 에 있다.
 # 비밀 값은 같은 폴더의 .env 에서 읽는다 (.env.prod.example 참고, git 에 올리지 않음).
-# 외부에는 web 의 80/443 만 열린다. db 와 backend 는 컨테이너 네트워크 안에서만 접근할 수 있다.
+# 외부에는 web 의 80/443 만 열린다. backend 는 컨테이너 네트워크 안에서만, DB 서버는 앱 서버 보안 그룹에서만 접근할 수 있다.
 # 프로젝트 이름을 고정한다. 서버 기존 배포(~/zipick 에서 실행 → 디렉터리명 기반 'zipick')와 같은 볼륨(zipick_db-data 등)에 붙기 위해서다.
 # 이름이 달라지면 빈 볼륨이 새로 생겨 DB 가 비어 보인다.
 name: zipick
@@ -52,14 +54,13 @@ services:
     image: ${BACKEND_IMAGE:-zipick-backend:latest}
     build: ../zipick-backend
     restart: unless-stopped
+    # db 는 외부 서버일 수 있어 의존성에 넣지 않는다. 로컬 db 를 쓸 때는 배포 스크립트가 db 를 먼저 띄운다.
     depends_on:
-      db:
-        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      DB_HOST: db
+      DB_HOST: ${DB_HOST:-db}
       DB_PORT: 5432
       DB_NAME: zipick
       DB_USERNAME: ${DB_USERNAME}
@@ -93,13 +94,12 @@ services:
     image: ${NOTIFICATION_IMAGE:-zipick-notification:latest}
     build: ../zipick-notification
     restart: unless-stopped
+    # db 는 외부 서버일 수 있어 의존성에 넣지 않는다. 로컬 db 를 쓸 때는 배포 스크립트가 db 를 먼저 띄운다.
     depends_on:
-      db:
-        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
-      DB_HOST: db
+      DB_HOST: ${DB_HOST:-db}
       DB_PORT: 5432
       DB_NAME: zipick_notification
       DB_USERNAME: ${DB_USERNAME}
