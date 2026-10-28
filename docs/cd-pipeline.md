@@ -497,6 +497,7 @@ sha-a1b2c3d → 커밋 a1b2c3d... → raw.githubusercontent.com/<repo>/a1b2c3d..
 | `EC2 가 SSM 에 연결돼 있지 않습니다 (PingStatus=...)` | EC2 가 꺼져 있거나 SSM Agent·인스턴스 역할이 없음 |
 | `서버에 AWS CLI 가 없습니다` | `sudo snap install aws-cli --classic` |
 | `GHCR 로그인 실패` | 인스턴스 역할 권한·리전 확인. `AccessDenied (kms:Decrypt)` 가 보이면 인스턴스 역할에 `alias/aws/ssm` 복호화 권한 추가 |
+| `DB 서버 ...:5432 에 연결할 수 없습니다` | `.env` 의 `DB_HOST` 가 별도 DB 서버를 가리키는데 닿지 않음. zipick-db 인스턴스가 켜져 있는지, `zipick-db-sg` 가 앱 서버 보안 그룹의 5432 를 허용하는지 확인 (DB 서버 구성: `deploy/db-server/`) |
 | `운영 DB 볼륨 'zipick_db-data' 이 없습니다` | 첫 설치거나 프로젝트명이 다름. `deploy.sh` 로 수동 설치하거나 `DB_VOLUME` 지정 |
 | `받은 compose 파일이 현재 .env 로 해석되지 않습니다` | `.env` 에 빠진 값이 있음. **기존 파일은 그대로 두고 중단**됨 |
 | `compose 서비스 목록이 기대와 다릅니다` | compose 가 다른 구성을 가리킴 (기대: 서비스 5개) |
