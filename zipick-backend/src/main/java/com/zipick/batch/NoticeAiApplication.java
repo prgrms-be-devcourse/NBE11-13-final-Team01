@@ -32,6 +32,8 @@ public final class NoticeAiApplication {
             log.info("AI 보조 수집 완료: 대상={}, 처리={}, 상세주택 반영={}, 실패={}, 정규화 후보={}",
                     result.candidates(), result.processed(), result.detailed(), result.failed(),
                     result.normalizationCandidates());
+            // AI 보완으로 상세 주택이 새로 생길 수 있어 주변 인프라를 한 번 더 채운다 (대상이 없으면 SELECT 한 번)
+            InfraCollectionStep.run(context, "AI 보완 후");
             if (observation != null) observation.success();
         }
     }

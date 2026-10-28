@@ -73,6 +73,9 @@ gemini:
     base-url: https://generativelanguage.googleapis.com
 
 zipick:
+  collector:
+    # POST /api/internal/notices/sync 등록 여부. permitAll 경로라 운영 웹 서버는 false 로 끈다 (수집은 collector 프로세스)
+    api-enabled: ${COLLECTOR_API_ENABLED:true}
   auth:
     # 회원가입 이메일 인증 (안서호). 알림센터의 이메일 채널(SES/SMTP)이 켜져 있어야 하므로 로컬 기본값은 끔.
     # 운영은 EMAIL_VERIFICATION_REQUIRED=true. 켜면 가입 전 /api/auth/email-verification/send → confirm 을 거쳐야 한다
@@ -127,7 +130,8 @@ zipick:
     # 인프라는 자주 바뀌지 않아 길게 잡는다. 만료되면 배치가 다시 수집한다.
     cache-ttl: 30d
     collection:
-      enabled: true
+      # 운영 웹 서버는 false (수집은 collector 프로세스가 공고 수집 직후 실행). 로컬·collector 는 true
+      enabled: ${INFRA_COLLECTION_ENABLED:true}
       # 기동 후 최초 수집까지의 지연. 애플리케이션이 완전히 뜬 뒤 시작하도록 짧게 둔다.
       startup-delay: PT10S
       # 최초 수집 이후 보정 실행 간격. 공고 수집이 늦게 끝나 뒤늦게 좌표가 채워진 주택을 줍는다.
@@ -342,7 +346,8 @@ zipick:
     # 큐에 못 넣으면(브로커 장애) HTTP 로 한 번 더 시도한다.
     queue-enabled: ${NOTIFICATION_QUEUE_ENABLED:false}
     poll-interval: PT5M
-    scheduler-enabled: true
+    # 마감·새 공고 알림 스케줄러. collector 프로세스는 false 로 띄워 웹 서버와 중복 발송하지 않는다
+    scheduler-enabled: ${NOTIFICATION_SCHEDULER_ENABLED:true}
     # 알림 문구에 넣는 서비스 주소 (소식 메일의 수신 거부 안내)
     app-url: ${APP_URL:http://localhost:5173}
     # 공고 수집 일일 보고를 받을 곳. 둘 다 비우면 보고를 보내지 않는다
