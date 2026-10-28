@@ -78,22 +78,23 @@ if [ -n "${COMPOSE_URL:-}" ]; then
   # 문법과 변수 치환을 먼저 검증한다. 깨진 파일로 기존 파일을 덮어쓰지 않기 위해서다.
   docker compose -f "$COMPOSE_FILE.new" config -q \
     || fail "받은 compose 파일이 현재 .env 로 해석되지 않습니다. 기존 파일을 그대로 두고 중단합니다."
-  [ -f "$COMPOSE_FILE" ] && cp "$COMPOSE_FILE" "$COMPOSE_FILE.bak"
-  mv "$COMPOSE_FILE.new" "$COMPOSE_FILE"
-  echo "검증 통과. 이전 파일은 $COMPOSE_FILE.bak 로 남겨 두었습니다."
   if [ "$METRICS" = true ]; then
     # overlay 와 blackbox 설정도 같은 커밋에서 받는다. compose 와 버전이 어긋나지 않게 하기 위해서다.
+    # 새 compose 와 함께 해석되는지 먼저 확인하고, 둘 다 통과해야 기존 파일을 바꾼다.
     base_url="${COMPOSE_URL%/docker-compose.prod.yml}"
     mkdir -p monitoring
     curl -fsSL "$base_url/$OVERLAY_FILE" -o "$OVERLAY_FILE.new" \
       && curl -fsSL "$base_url/monitoring/blackbox.yml" -o monitoring/blackbox.yml.new \
       || fail "모니터링 overlay 를 받지 못했습니다: $base_url/$OVERLAY_FILE"
-    docker compose -f "$COMPOSE_FILE" -f "$OVERLAY_FILE.new" config -q \
+    docker compose -f "$COMPOSE_FILE.new" -f "$OVERLAY_FILE.new" config -q \
       || fail "받은 모니터링 overlay 가 현재 .env 로 해석되지 않습니다. 기존 파일을 그대로 두고 중단합니다."
     mv "$OVERLAY_FILE.new" "$OVERLAY_FILE"
     mv monitoring/blackbox.yml.new monitoring/blackbox.yml
     echo "모니터링 overlay 갱신."
   fi
+  [ -f "$COMPOSE_FILE" ] && cp "$COMPOSE_FILE" "$COMPOSE_FILE.bak"
+  mv "$COMPOSE_FILE.new" "$COMPOSE_FILE"
+  echo "검증 통과. 이전 파일은 $COMPOSE_FILE.bak 로 남겨 두었습니다."
 else
   step "2/7 compose 파일 갱신 건너뜀 (COMPOSE_URL 미지정, 서버의 기존 파일 사용)"
   [ -f "$COMPOSE_FILE" ] || fail "$APP_DIR/$COMPOSE_FILE 이 없습니다."
