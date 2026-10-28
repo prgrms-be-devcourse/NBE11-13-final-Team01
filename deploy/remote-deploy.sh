@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # EC2 에서 실행되는 배포 스크립트 (전체 구성: db · rabbitmq · backend · notification · web).
 # .env 에 DB_HOST 가 있으면 DB 는 별도 서버(zipick-db)에 있는 것으로 보고 로컬 db 컨테이너는 다루지 않는다.
+# .env 에 APP_PRIVATE_IP 가 있으면 모니터링 overlay(monitoring/docker-compose.app-exporters.yml)를 함께 적용한다.
 # GitHub Actions 가 이 파일 내용을 그대로 서버로 보내 실행하며, 사람이 서버에서 직접 실행해도 똑같이 동작한다.
 #
 #   cd ~/zipick && BACKEND_IMAGE=... NOTIFICATION_IMAGE=... WEB_IMAGE=... COMPOSE_URL=... bash remote-deploy.sh
@@ -10,7 +11,7 @@
 #   - db · rabbitmq 는 --no-recreate 로만 다룬다. 떠 있으면 건드리지 않는다 (데이터와 큐에 남은 메시지를 지킨다).
 #   - 운영 DB 볼륨이 없으면 새로 만들지 않고 중단한다. 빈 DB 가 생기는 사고를 막는다.
 #   - 운영 DB 에 DDL·초기화 SQL 을 실행하지 않는다. 알림센터 DB(zipick_notification)가 없으면 앱을 바꾸기 전에 멈춘다.
-#   - 서버의 .env 는 쓰지 않는다. 읽는 값은 헬스 체크용 HTTP_PORT 와 DB 위치(DB_HOST)뿐이다.
+#   - 서버의 .env 는 쓰지 않는다. 읽는 값은 헬스 체크용 HTTP_PORT, DB 위치(DB_HOST), 지표 노출 주소(APP_PRIVATE_IP)뿐이다.
 #   - GHCR 토큰은 SSM Parameter Store(SecureString)에서 꺼내 임시 docker 설정 폴더에만 로그인하고, pull 직후 지운다.
 #     토큰은 화면·파일·명령 기록에 남기지 않는다.
 set -euo pipefail
@@ -38,6 +39,11 @@ cd "$APP_DIR" || fail "배포 디렉터리가 없습니다: $APP_DIR"
 # DB 위치. 비어 있거나 db 면 이 서버의 db 컨테이너, 아니면 별도 DB 서버다.
 DB_HOST="$(grep -E '^DB_HOST=' .env | cut -d= -f2- | tr -d '[:space:]' || true)"
 if [ -n "$DB_HOST" ] && [ "$DB_HOST" != db ]; then EXTERNAL_DB=true; else EXTERNAL_DB=false; fi
+
+# 모니터링 서버가 읽을 지표(Actuator 19090 · RabbitMQ 15692 · exporter)를 여는지. overlay 를 빼고 배포하면 이 설정이 되돌아간다.
+OVERLAY_FILE="monitoring/docker-compose.app-exporters.yml"
+APP_PRIVATE_IP="$(grep -E '^APP_PRIVATE_IP=' .env | cut -d= -f2- | tr -d '[:space:]' || true)"
+if [ -n "$APP_PRIVATE_IP" ]; then METRICS=true; else METRICS=false; fi
 
 # ---------------------------------------------------------------------------
 # 1. 운영 DB 볼륨 확인 — 없으면 아무것도 하지 않고 멈춘다
@@ -72,6 +78,20 @@ if [ -n "${COMPOSE_URL:-}" ]; then
   # 문법과 변수 치환을 먼저 검증한다. 깨진 파일로 기존 파일을 덮어쓰지 않기 위해서다.
   docker compose -f "$COMPOSE_FILE.new" config -q \
     || fail "받은 compose 파일이 현재 .env 로 해석되지 않습니다. 기존 파일을 그대로 두고 중단합니다."
+  if [ "$METRICS" = true ]; then
+    # overlay 와 blackbox 설정도 같은 커밋에서 받는다. compose 와 버전이 어긋나지 않게 하기 위해서다.
+    # 새 compose 와 함께 해석되는지 먼저 확인하고, 둘 다 통과해야 기존 파일을 바꾼다.
+    base_url="${COMPOSE_URL%/docker-compose.prod.yml}"
+    mkdir -p monitoring
+    curl -fsSL "$base_url/$OVERLAY_FILE" -o "$OVERLAY_FILE.new" \
+      && curl -fsSL "$base_url/monitoring/blackbox.yml" -o monitoring/blackbox.yml.new \
+      || fail "모니터링 overlay 를 받지 못했습니다: $base_url/$OVERLAY_FILE"
+    docker compose -f "$COMPOSE_FILE.new" -f "$OVERLAY_FILE.new" config -q \
+      || fail "받은 모니터링 overlay 가 현재 .env 로 해석되지 않습니다. 기존 파일을 그대로 두고 중단합니다."
+    mv "$OVERLAY_FILE.new" "$OVERLAY_FILE"
+    mv monitoring/blackbox.yml.new monitoring/blackbox.yml
+    echo "모니터링 overlay 갱신."
+  fi
   [ -f "$COMPOSE_FILE" ] && cp "$COMPOSE_FILE" "$COMPOSE_FILE.bak"
   mv "$COMPOSE_FILE.new" "$COMPOSE_FILE"
   echo "검증 통과. 이전 파일은 $COMPOSE_FILE.bak 로 남겨 두었습니다."
@@ -80,13 +100,19 @@ else
   [ -f "$COMPOSE_FILE" ] || fail "$APP_DIR/$COMPOSE_FILE 이 없습니다."
 fi
 
-dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
+if [ "$METRICS" = true ]; then
+  [ -f "$OVERLAY_FILE" ] || fail "APP_PRIVATE_IP 가 있는데 $APP_DIR/$OVERLAY_FILE 이 없습니다."
+  dc() { docker compose -f "$COMPOSE_FILE" -f "$OVERLAY_FILE" "$@"; }
+else
+  dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
+fi
 
 # compose 가 기대한 서비스 5개를 정확히 정의하는지 확인한다.
 # 다른 구성(옛 1차 파일 등)을 잘못 가리켰을 때 일부 서비스만 교체되거나 고아 컨테이너가 남는 것을 막는다.
 step "3/7 배포 범위 확인"
 expected="backend db notification rabbitmq web"
-services="$(dc config --services | sort | tr '\n' ' ' | sed 's/ $//')"
+# overlay 의 exporter 는 빼고 본 구성 파일만 센다.
+services="$(docker compose -f "$COMPOSE_FILE" config --services | sort | tr '\n' ' ' | sed 's/ $//')"
 echo "compose 가 정의한 서비스: $services"
 [ "$services" = "$expected" ] \
   || fail "compose 서비스 목록이 기대와 다릅니다.
@@ -152,6 +178,10 @@ else
   dc up -d --no-recreate db rabbitmq
 fi
 dc up -d --no-deps --force-recreate backend notification web
+if [ "$METRICS" = true ]; then
+  # exporter 는 상태가 없어 설정이 바뀌었을 때만 다시 만든다.
+  dc up -d --no-deps node-exporter cadvisor blackbox-exporter
+fi
 
 # ---------------------------------------------------------------------------
 # 6. 헬스 체크 — 프론트(Caddy)를 거쳐 백엔드까지 실제로 응답하는지 확인한다.
