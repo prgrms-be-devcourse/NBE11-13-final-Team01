@@ -3,8 +3,8 @@
 set -uo pipefail
 job_type="${1:-basic}"
 case "$job_type" in
-  basic) main_class=com.zipick.batch.NoticeCollectionApplication ;;
-  ai) main_class=com.zipick.batch.NoticeAiApplication ;;
+  basic) main_class=com.zipick.batch.NoticeCollectionApplication; service=collector ;;
+  ai) main_class=com.zipick.batch.NoticeAiApplication; service=ai-collector ;;
   *) echo '사용법: collect-notices-observed.sh [basic|ai]' >&2; exit 2 ;;
 esac
 script_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -50,7 +50,7 @@ if [ -r "$metrics_file" ]; then
 fi
 
 cd "$deploy_dir" || exit 1
-if docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint java collector \
+if docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint java "$service" \
   -XX:MaxRAMPercentage=40 "-Dloader.main=$main_class" -cp app.jar org.springframework.boot.loader.launch.PropertiesLauncher 2>&1 | tee "$run_log"; then
   result=0
 else
