@@ -19,9 +19,20 @@ public final class DockerAvailability {
         return AVAILABLE;
     }
 
+    /**
+     * 실제로 Docker 에 붙어 본다.
+     *
+     * <p>⚠️ {@code isDockerAvailable()} 로는 판정할 수 없다. 데몬이 꺼져 있어도 true 를 돌려주는 것을
+     * 확인했다(설정된 docker host 가 있으면 '사용 가능'으로 보는 듯하다). 그 값을 믿었더니
+     * 통합 테스트가 건너뛰어지지 않고 컨테이너를 띄우다 실패했다.
+     *
+     * <p>{@code client()} 는 연결·핑까지 시도하므로 데몬이 없거나 응답하지 않으면 예외를 던진다.
+     * 호출 비용이 있지만 클래스 로딩 때 한 번만 돈다.
+     */
     private static boolean probe() {
         try {
-            return DockerClientFactory.instance().isDockerAvailable();
+            DockerClientFactory.instance().client();
+            return true;
         } catch (Throwable ignored) {
             // 데몬이 꺼져 있거나 소켓이 없으면 예외가 난다. 그래도 빌드는 계속되어야 한다.
             return false;

@@ -209,42 +209,64 @@ utils/supplyMatch.ts              "검색 조건 일치" 공급 유형 판정 (�
 
 ## 4. 알려진 문제
 
-### 🔴 P1 — Docker 없이 `./gradlew test` 를 돌리면 61건이 실패한다
+### ✅ (해결됨) Docker 없이 `./gradlew test` 를 돌리면 통합 테스트가 실패하던 문제
 
-**증상**
+> 2026-10-28 수정 완료. **다시 조사할 필요 없다.** 아래는 원인과 검증 기록이다.
 
-```
-Docker 켜짐:  528 tests, 2 skipped, 0 failures
-Docker 꺼짐:  528 tests, 2 skipped, 61 failures   ← 전부 ApplicationContext 로드 실패
-```
+**증상이었던 것**
 
-PostgreSQL Testcontainers 통합 테스트가 **건너뛰어지지 않고 실패한다.** CI 에 Docker 가 없으면 빌드가 깨진다.
+Docker 가 없을 때 PostgreSQL Testcontainers 통합 테스트가 건너뛰어지지 않고
+`ApplicationContext` 로드 실패로 전부 깨졌다. Docker 없는 CI 에서는 빌드가 그대로 실패했다.
 
-**원인** (확인함)
+**진짜 원인 — `@EnabledIf` 는 상위 클래스에서 상속되지 않는다**
 
-`PostgresRepositoryTestBase` 의 `@EnabledIf` 상속 자체는 정상 동작한다.
-문제는 조건 함수다 — `DockerClientFactory.instance().isDockerAvailable()` 이
-**데몬이 꺼져 있어도 `true` 를 돌려준다.** 중첩 클래스가 아닌
-`CandidateQueryRepositoryIntegrationTest` 도 29건 전부 실행·실패한 것이 근거다.
+처음에는 `DockerClientFactory.instance().isDockerAvailable()` 이 데몬이 꺼져 있어도
+`true` 를 돌려주는 것이 원인이라고 봤는데, **그것만으로는 설명되지 않았다.**
+조건 함수를 실제 연결 시도로 고쳐 `false` 를 돌려주도록 만든 뒤에도 테스트가 그대로 실행됐다
+(진단용 테스트로 `isAvailable() = false` 출력을 직접 확인했다).
 
-**수정 방향**
+JUnit 의 `@EnabledIf` 는 `@Inherited` 가 아니다. 그래서 이런 일이 벌어진다.
 
-`src/test/java/com/zipick/support/DockerAvailability.java` 의 `probe()` 를
-"조회"가 아니라 **실제 연결 시도**로 바꾼다.
+1. `@EnabledIf` 에 메타 애너테이션으로 달린 `@ExtendWith(EnabledIfCondition.class)` 는
+   **상속되어** 하위 클래스에 등록된다
+2. 그런데 정작 `EnabledIfCondition` 이 `@EnabledIf` 애너테이션을 찾지 못한다
+3. 조건이 없으면 **"기본값 = 활성"** 으로 판단한다 → 그대로 실행된다
 
-```java
-private static boolean probe() {
-    try {
-        DockerClientFactory.instance().client();   // 연결 안 되면 여기서 예외
-        return true;
-    } catch (Throwable ignored) {
-        return false;
-    }
-}
-```
+조용히 활성화되기 때문에 "조건을 달았는데 왜 안 먹지"를 알아채기 어렵다.
 
-고친 뒤 **Docker 를 끈 상태로** `./gradlew cleanTest test` 를 돌려
-`failures=0, skipped=63` 이 나오는지 반드시 확인할 것 (`test` 태스크는 캐시되므로 `cleanTest` 필수).
+**수정 내용** (테스트 지원 코드만, 운영 코드 무변경)
+
+| 파일 | 변경 |
+| --- | --- |
+| `support/DockerRequiredCondition.java` (신규) | `ExecutionCondition` 직접 구현. 애너테이션 탐색이 필요 없어 상속 함정을 피한다 |
+| `support/PostgresRepositoryTestBase.java` | `@EnabledIf` → `@ExtendWith(DockerRequiredCondition.class)`. **`@ExtendWith` 로 등록한 Extension 은 하위 클래스에 상속된다** |
+| `support/DockerAvailability.java` | `isDockerAvailable()` → `client()` 로 실제 연결 시도 |
+
+앞으로 `PostgresRepositoryTestBase` 를 상속하는 테스트는 **따로 표시하지 않아도** 자동으로 적용된다.
+
+**검증 결과** (`./gradlew cleanTest test`, `test` 태스크가 캐시되므로 `cleanTest` 필수)
+
+| | tests | skipped | failures | 빌드 |
+| --- | --- | --- | --- | --- |
+| Docker OFF | 724 | **47** (통합 45 + 기존 2) | **0** | SUCCESSFUL |
+| Docker ON | 748 | 2 (기존) | **0** | SUCCESSFUL |
+
+Docker OFF 에서 통합 테스트 4개 클래스가 모두 skipped 로 떨어지는 것을 클래스별로 확인했다
+(`EmailVerificationServiceIntegrationTest`, `CandidateQueryRepositoryIntegrationTest`,
+`HousingInfraSnapshotRepositoryIntegrationTest`, `HousingPinQueryRepositoryIntegrationTest` 중첩 6개).
+Docker ON 에서는 같은 클래스들이 skipped=0 으로 정상 실행된다.
+
+커버리지 게이트(Line 80 / Branch 60)도 양쪽 다 통과한다.
+
+| | Line | Branch |
+| --- | --- | --- |
+| Docker OFF | 82.12% | 65.90% |
+| Docker ON | 82.77% | 66.27% |
+
+통합 테스트가 빠져도 1%p 미만 차이라 **Docker 없는 CI 에서도 커버리지로 빌드가 깨지지 않는다.**
+
+⚠️ 다만 **skip 은 "검증하지 않았다"는 뜻**이다. JOIN·EXISTS 가 실제 PostgreSQL 에서 맞게 도는지는
+Docker 가 있는 환경에서만 확인된다. 테스트 결과를 볼 때 skipped 개수를 함께 보라.
 
 ### 🟡 P2 — `utils/supplyMatch.ts` 가 백엔드 판정을 복제하고 있다
 
@@ -327,7 +349,7 @@ cd zipick-frontend && npm run dev
 
 # 검증
 cd zipick-frontend && npx tsc --noEmit && npm run build
-cd zipick-backend  && ./gradlew test        # 통합 테스트는 Docker 필요 (4장 P1 참고)
+cd zipick-backend  && ./gradlew test        # Docker 없으면 통합 테스트 45건은 자동 skip (4장 참고)
 ```
 
 외부 API 키는 `zipick-backend/config/application-secret.yml` 에 둔다 (`.gitignore` 대상).
