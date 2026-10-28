@@ -28,6 +28,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final TokenService tokenService;
+    private final EmailVerificationService emailVerification;
 
     @Transactional
     public SignupResponse signup(SignupRequest request) {
@@ -35,8 +36,11 @@ public class AuthService {
         if (userRepository.existsByEmail(request.email())) {
             throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
         }
+        // 이메일 인증이 켜진 서버면 인증을 마친 이메일만 가입할 수 있다
+        emailVerification.assertVerified(request.email(), request.verificationToken());
 
         User user = userRepository.save(request.toUser(passwordEncoder.encode(request.password())));
+        emailVerification.consume(request.email());
 
         log.info("[AUTH] 회원가입 성공 userId: {}", user.getId());
 

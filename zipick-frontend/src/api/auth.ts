@@ -7,8 +7,18 @@ import { clearSession, setAccessToken, setUser, type AuthUser } from '../hooks/u
  */
 export const authApi = {
   // 가입 응답에는 토큰이 없다(userId·email만). 자동 로그인하려면 login을 한 번 더 불러야 한다.
-  signup: (email: string, password: string) =>
-    unwrap<{ userId: number; email: string }>(api.post('/api/auth/signup', { email, password })),
+  // verificationToken: 가입 이메일 인증을 마치고 받은 토큰. 서버가 인증을 요구하면(required) 없이는 400 EMAIL_NOT_VERIFIED.
+  signup: (email: string, password: string, verificationToken?: string | null) =>
+    unwrap<{ userId: number; email: string }>(api.post('/api/auth/signup', { email, password, verificationToken: verificationToken ?? null })),
+
+  // 가입 이메일 인증. required=false 면 이 서버는 인증 없이 가입할 수 있다(로컬 개발) — 코드 입력 단계를 건너뛴다.
+  sendVerification: (email: string) =>
+    unwrap<{ required: boolean; expiresInMinutes: number; resendAfterSeconds: number }>(
+      api.post('/api/auth/email-verifications', { email }),
+    ),
+  // 맞으면 인증 완료 토큰(10분). 틀리면 400 VERIFICATION_CODE_INVALID, 여러 번 틀리면 429 VERIFICATION_TOO_MANY_ATTEMPTS.
+  confirmVerification: (email: string, code: string) =>
+    unwrap<{ verificationToken: string; expiresInMinutes: number }>(api.post('/api/auth/email-verifications/confirm', { email, code })),
 
   login: (email: string, password: string) =>
     unwrap<{ accessToken: string }>(api.post('/api/auth/login', { email, password })),

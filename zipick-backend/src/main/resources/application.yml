@@ -49,6 +49,16 @@ gemini:
     base-url: https://generativelanguage.googleapis.com
 
 zipick:
+  auth:
+    # 회원가입 이메일 인증 (안서호). 알림센터의 이메일 채널(SES/SMTP)이 켜져 있어야 하므로 로컬 기본값은 끔.
+    # 운영은 EMAIL_VERIFICATION_REQUIRED=true. 켜면 가입 전 /api/auth/email-verification/send → confirm 을 거쳐야 한다
+    email-verification:
+      required: ${EMAIL_VERIFICATION_REQUIRED:false}
+      code-ttl: 10m
+      token-ttl: 10m          # 코드 확인 뒤 받은 인증 완료 토큰으로 가입할 수 있는 시간
+      resend-cooldown: 60s
+      max-attempts: 5
+      max-sends-per-day: 10
   # 공고 첨부 PDF에서 전체 공급주택 행을 추출하는 3.5 Flash Lite 전용 정책.
   # 신청 가이드와 API Key·Base URL을 공유하되 아래 실행 정책은 독립적으로 적용한다.
   gemini-pdf-parser:

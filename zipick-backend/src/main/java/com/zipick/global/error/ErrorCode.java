@@ -21,6 +21,11 @@ public enum ErrorCode {
     EXPIRED_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "만료된 Refresh Token입니다."),
     REFRESH_TOKEN_NOT_FOUND(HttpStatus.UNAUTHORIZED, "Refresh Token이 없습니다."),
     DUPLICATE_EMAIL(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
+    EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증을 먼저 완료해 주세요."),
+    VERIFICATION_CODE_INVALID(HttpStatus.BAD_REQUEST, "인증 코드가 올바르지 않거나 만료됐습니다."),
+    VERIFICATION_TOO_MANY_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "인증 코드를 여러 번 틀렸어요. 코드를 다시 받아 주세요."),
+    VERIFICATION_RESEND_TOO_SOON(HttpStatus.TOO_MANY_REQUESTS, "인증 메일을 방금 보냈어요. 잠시 뒤 다시 시도해 주세요."),
+    VERIFICATION_DAILY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "오늘 보낼 수 있는 인증 메일 횟수를 넘었어요. 내일 다시 시도해 주세요."),
 
     HOUSE_NOT_FOUND(HttpStatus.NOT_FOUND, "공급주택을 찾을 수 없습니다."),
     ANNOUNCEMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "공고를 찾을 수 없습니다."),

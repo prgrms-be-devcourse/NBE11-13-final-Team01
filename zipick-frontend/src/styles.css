@@ -377,6 +377,13 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 }
 .auth-rule--ok { color: var(--ink); }
 .auth-rule--ok .auth-rule__mark { background: var(--accent); border-color: var(--accent); color: #fff; }
+.auth-verify { display: flex; flex-direction: column; gap: 6px; }
+.auth-verify__row { display: flex; gap: 8px; align-items: stretch; }
+.auth-verify__row input { flex: 1; letter-spacing: 4px; font-variant-numeric: tabular-nums; }
+.auth-verify__send { align-self: flex-start; }
+.auth-verify__resend { align-self: flex-start; font-size: 12px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+.auth-verify__resend:disabled { color: var(--muted); cursor: default; }
+.auth-verify__done { margin: 0; font-size: 13px; color: var(--ok, #059669); font-weight: 600; }
 .auth-alt { text-align: center; color: var(--muted); font-size: 13px; margin: 2px 0 0; }
 .auth-alt a { color: var(--accent); font-weight: 600; }
 .auth-alt a:hover { text-decoration: underline; }

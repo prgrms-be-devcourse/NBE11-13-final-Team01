@@ -10,6 +10,7 @@ import com.zipick.auth.jwt.JwtProperties;
 import com.zipick.auth.jwt.JwtProvider;
 import com.zipick.auth.jwt.JwtProviderFixture;
 import com.zipick.auth.service.AuthService;
+import com.zipick.auth.service.EmailVerificationService;
 import com.zipick.auth.service.TokenService;
 import com.zipick.global.config.CookieProperties;
 import com.zipick.global.config.CorsProperties;
@@ -46,6 +47,9 @@ class AuthControllerLogoutTest {
 
     @MockitoBean
     private AuthService authService;
+
+    @MockitoBean
+    private EmailVerificationService emailVerificationService;
 
     @MockitoBean
     private TokenService tokenService;
