@@ -155,9 +155,20 @@ if [ -n "${GHCR_TOKEN_PARAM:-}" ]; then
    인스턴스 역할(AmazonSSMManagedInstanceCore)과 리전을 확인하세요."
   echo "GHCR 로그인 (임시 설정 폴더)"
 fi
-docker pull -q "$BACKEND_IMAGE"      || fail "백엔드 이미지를 받지 못했습니다: $BACKEND_IMAGE"
-docker pull -q "$NOTIFICATION_IMAGE" || fail "알림센터 이미지를 받지 못했습니다: $NOTIFICATION_IMAGE"
-docker pull -q "$WEB_IMAGE"          || fail "프론트 이미지를 받지 못했습니다: $WEB_IMAGE"
+# 레지스트리 경로가 없는 이름(zipick-backend:sha-...)은 수동 배포가 docker load 로 서버에 올린 이미지다. 받을 곳이 없으니
+# 서버에 있는지만 확인한다. (CD 가 막혔을 때 로컬 빌드 → docker save | ssh docker load → 이 스크립트로 배포한다)
+pull_image() {
+  local image="$1" label="$2"
+  if [[ "${image%%:*}" != */* ]]; then
+    docker image inspect "$image" > /dev/null 2>&1 || fail "$label 이미지가 서버에 없습니다: $image (docker load 로 먼저 올리세요)"
+    echo "서버의 이미지 사용: $image"
+    return
+  fi
+  docker pull -q "$image" || fail "$label 이미지를 받지 못했습니다: $image"
+}
+pull_image "$BACKEND_IMAGE"      "백엔드"
+pull_image "$NOTIFICATION_IMAGE" "알림센터"
+pull_image "$WEB_IMAGE"          "프론트"
 if [ -n "${GHCR_TOKEN_PARAM:-}" ]; then
   docker logout ghcr.io > /dev/null 2>&1 || true
   rm -rf "$DOCKER_CONFIG"; unset DOCKER_CONFIG; trap - EXIT
@@ -234,6 +245,13 @@ if [ "$nstatus" != "healthy" ]; then
   exit 1
 fi
 echo "알림센터 healthy."
+
+# 방금 배포한 이미지를 latest 로도 붙인다. compose 의 기본값이 zipick-*:latest 라서,
+# 이미지 변수 없이 실행되는 것들(cron 의 collector·ai-collector, 사람이 직접 치는 compose 명령)이 이전 버전을 쓰지 않게 한다.
+docker tag "$BACKEND_IMAGE"      zipick-backend:latest
+docker tag "$NOTIFICATION_IMAGE" zipick-notification:latest
+docker tag "$WEB_IMAGE"          zipick-web:latest
+echo "latest 태그 갱신 (수집기·수동 compose 명령이 이 버전을 씀)"
 
 # 태그 없는 중간 이미지만 지운다. 이전 버전 이미지는 레지스트리에 남아 있어 언제든 다시 받을 수 있다.
 docker image prune -f > /dev/null || true
