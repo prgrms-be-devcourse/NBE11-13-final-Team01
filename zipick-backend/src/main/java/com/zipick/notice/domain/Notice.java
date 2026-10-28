@@ -255,6 +255,14 @@ public class Notice extends BaseTimeEntity {
         return lastMissingCheckedOn;
     }
 
+    /**
+     * 공고일. 같은 건물에 몇 주 간격으로 올라온 공고들이 제목·기관·유형까지 모두 같은 경우가 있어,
+     * 지도에서 겹친 주택을 구분해 보여 줄 때 이 값이 유일한 구분자가 된다 (MapHousingSummaryResponse).
+     */
+    public LocalDate getAnnouncedAt() {
+        return announcedAt;
+    }
+
     public Instant getApplyStartAt() {
         return applyStartAt;
     }
