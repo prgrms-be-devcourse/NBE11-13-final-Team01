@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 class LhPdfHousingParserTest {
 
@@ -23,6 +24,45 @@ class LhPdfHousingParserTest {
                 .containsExactly(
                         "강원특별자치도 춘천시 효자문길 38 (효자동)",
                         "경기도 성남시 분당구 판교동 123-4"
+                );
+    }
+
+    @Test
+    void 일반구가_있는_도시는_시군구를_구까지_읽는다() {
+        // 예전에는 토큰 하나만 읽어 "천안시"·"전주시"까지만 남았고, 같은 도시가 두 지역으로 갈렸다.
+        String text = """
+                1 충청남도 천안시 서북구 오성1길 12-10
+                2 전북특별자치도 전주시 완산구 홍산로 158
+                3 경기도 부천시 소사구 소사로148번길 58-9
+                4 경상북도 포항시 북구 우창동로 157
+                """;
+
+        List<DetailedHousingUnit> units = parser.parseText(text, new LhAttachment("30", "공급주택목록.pdf"));
+
+        assertThat(units).extracting(DetailedHousingUnit::provinceName, DetailedHousingUnit::districtName)
+                .containsExactly(
+                        tuple("충청남도", "천안시 서북구"),
+                        tuple("전북특별자치도", "전주시 완산구"),
+                        tuple("경기도", "부천시 소사구"),
+                        tuple("경상북도", "포항시 북구")
+                );
+    }
+
+    @Test
+    void 일반구가_없으면_시군구만_읽고_구를_만들지_않는다() {
+        String text = """
+                1 강원특별자치도 춘천시 효자문길 38 (효자동)
+                2 서울특별시 강남구 선릉로121길 12
+                3 경상북도 칠곡군 왜관읍 달오3길 26-10
+                """;
+
+        List<DetailedHousingUnit> units = parser.parseText(text, new LhAttachment("31", "공급주택목록.pdf"));
+
+        assertThat(units).extracting(DetailedHousingUnit::provinceName, DetailedHousingUnit::districtName)
+                .containsExactly(
+                        tuple("강원특별자치도", "춘천시"),
+                        tuple("서울특별시", "강남구"),
+                        tuple("경상북도", "칠곡군")
                 );
     }
 

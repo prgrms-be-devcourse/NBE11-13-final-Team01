@@ -119,13 +119,26 @@ public final class HouseFilterPredicates {
         };
     }
 
-    /** "시도 시군구" 키 → (시도, 시군구) 쌍 비교. 시도 이름에 공백이 없으므로 첫 공백으로 나눈다 */
+    /**
+     * "시도 시군구" 키 → (시도, 시군구) 쌍 비교. 시도 이름에 공백이 없으므로 첫 공백으로 나눈다.
+     *
+     * <p>고른 시군구가 일반구를 가진 도시면 그 도시의 모든 구를 포함한다
+     * ("경기도 부천시" → 소사구·원미구·오정구). 추천의
+     * {@link com.zipick.housing.domain.RegionMatcher}와 같은 계층 규칙을 써서
+     * 필터와 추천이 같은 지역을 같은 범위로 보게 한다.
+     */
     private static Predicate regionIn(Set<String> keys) {
         BooleanBuilder or = new BooleanBuilder();
         for (String key : keys) {
             int i = key.indexOf(' ');
-            if (i < 0) or.or(housing.provinceName.eq(key).or(housing.districtName.eq(key)));
-            else or.or(housing.provinceName.eq(key.substring(0, i)).and(housing.districtName.eq(key.substring(i + 1))));
+            if (i < 0) {
+                or.or(housing.provinceName.eq(key).or(housing.districtName.eq(key)));
+            } else {
+                String district = key.substring(i + 1);
+                or.or(housing.provinceName.eq(key.substring(0, i))
+                        .and(housing.districtName.eq(district)
+                                .or(housing.districtName.startsWith(district + " "))));
+            }
         }
         return or;
     }
