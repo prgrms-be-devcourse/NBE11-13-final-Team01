@@ -213,7 +213,7 @@ public class HousingGeocodingService {
     private Optional<GeocodedAddress> findUnambiguous(String query) {
         KakaoAddressSearchResponse response = addressClient.search(query);
         if (response.documents().size() != 1) {
-            log.info("주소 검색 결과가 확정적이지 않아 저장하지 않습니다. query={}, count={}",
+            log.debug("주소 검색 결과가 확정적이지 않아 저장하지 않습니다. query={}, count={}",
                     query, response.documents().size());
             return Optional.empty();
         }
@@ -257,7 +257,7 @@ public class HousingGeocodingService {
             candidates.putIfAbsent(document.x() + ":" + document.y(), document);
         }
         if (candidates.size() != 1) {
-            log.info("주택 키워드 검색 결과가 확정적이지 않아 저장하지 않습니다. query={}, count={}",
+            log.debug("주택 키워드 검색 결과가 확정적이지 않아 저장하지 않습니다. query={}, count={}",
                     query, candidates.size());
             return Optional.empty();
         }

@@ -1,5 +1,6 @@
 package com.zipick.external.housingdetail;
 
+import com.zipick.external.ExternalApiMetrics;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -38,6 +39,10 @@ public class ExternalDocumentClient {
     }
 
     private HttpResponse<byte[]> get(URI uri) {
+        return ExternalApiMetrics.measure("institution", institution(uri), () -> request(uri));
+    }
+
+    private HttpResponse<byte[]> request(URI uri) {
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(REQUEST_TIMEOUT)
                 .header("User-Agent", "ZIPICK housing collector/1.0")
@@ -55,6 +60,15 @@ public class ExternalDocumentClient {
         } catch (IOException exception) {
             throw new IllegalStateException("외부 문서를 가져오지 못했습니다: " + safeUri(uri), exception);
         }
+    }
+
+    private String institution(URI uri) {
+        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+        if (host.equals("i-sh.co.kr") || host.endsWith(".i-sh.co.kr")) return "sh";
+        if (host.equals("gh.or.kr") || host.endsWith(".gh.or.kr")) return "gh";
+        if (host.equals("lh.or.kr") || host.endsWith(".lh.or.kr")) return "lh";
+        if (host.equals("khug.or.kr") || host.endsWith(".khug.or.kr")) return "hug";
+        return "other";
     }
 
     private Charset charsetFrom(String contentType) {

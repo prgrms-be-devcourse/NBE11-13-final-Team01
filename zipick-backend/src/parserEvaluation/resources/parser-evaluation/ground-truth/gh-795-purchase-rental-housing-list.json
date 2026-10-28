@@ -1,0 +1,46 @@
+{
+  "documentId": "gh-795-purchase-rental-housing-list",
+  "verification": {
+    "method": "PDF 원문의 6페이지 전체와 표의 첫 행·중간 행·마지막 행을 직접 대조",
+    "verifiedOn": "2026-10-22",
+    "notes": "문서에는 총 150개 행이 있으며 정답 필드는 원문에 표시된 값을 사용함"
+  },
+  "units": [
+    {
+      "key": "1-내유빌(1)-302",
+      "fields": {"complexName":"내유빌(1)","unitNumber":"302","address":"고양시 덕양구 명봉산로6번길 33","roomCount":"3","housingType":"다세대","exclusiveArea":"44.42","rentDeposit":"4981000","monthlyRent":"169490","elevatorAvailable":"false"},
+      "evidence": [{"page":1,"text":"1 고양시 덕양구 명봉산로6번길 33 ... 내유빌(1) 302 3 44.42 ... 다세대 무 4,981,000 169,490"}]
+    },
+    {
+      "key": "2-루체아29-202",
+      "fields": {"complexName":"루체아29","unitNumber":"202","address":"고양시 덕양구 혜음로 176","roomCount":"2","housingType":"도시형","exclusiveArea":"32.8","rentDeposit":"3959000","monthlyRent":"144350","elevatorAvailable":"true"},
+      "evidence": [{"page":1,"text":"2 고양시 덕양구 혜음로 176 ... 루체아29 202 2 32.8 ... 도시형 유 3,959,000 144,350"}]
+    },
+    {
+      "key": "12-김포안강럭스나인-719",
+      "fields": {"complexName":"김포안강럭스나인","unitNumber":"719","address":"김포시 김포한강9로75번길 132","roomCount":"1","housingType":"오피스텔","exclusiveArea":"21.6679","rentDeposit":"5810000","monthlyRent":"105460","elevatorAvailable":"true"},
+      "evidence": [{"page":1,"text":"12 김포시 김포한강9로75번길 132 ... 김포안강럭스나인 719 1 21.6679 ... 오피스텔 유 5,810,000 105,460"}]
+    },
+    {
+      "key": "37-도촌파크오피스텔-418",
+      "fields": {"complexName":"도촌파크오피스텔","unitNumber":"418","address":"성남시 중원구 도촌로8번길 20","roomCount":"1","housingType":"오피스텔","exclusiveArea":"19.47","rentDeposit":"5139000","monthlyRent":"105710","elevatorAvailable":"true"},
+      "evidence": [{"page":2,"text":"37 성남시 중원구 도촌로8번길 20 ... 도촌파크오피스텔 418 1 19.47 ... 오피스텔 유 5,139,000 105,710"}]
+    },
+    {
+      "key": "100-우주빌라D동-502",
+      "fields": {"complexName":"우주빌라D동","unitNumber":"502","address":"용인시 기흥구 공세로90번길 32","roomCount":"3","housingType":"도시형","exclusiveArea":"53.6","rentDeposit":"7151000","monthlyRent":"178480","elevatorAvailable":"true"},
+      "evidence": [{"page":4,"text":"100 용인시 기흥구 공세로90번길 32 ... 우주빌라D동 502 3 53.6 ... 도시형 유 7,151,000 178,480"}]
+    },
+    {
+      "key": "150-화이트빌-402",
+      "fields": {"complexName":"화이트빌","unitNumber":"402","address":"화성시 우정읍 조암서로 35-1","roomCount":"1","housingType":"다가구","exclusiveArea":"27.825","rentDeposit":"3910000","monthlyRent":"77950","elevatorAvailable":"false"},
+      "evidence": [{"page":6,"text":"150 화성시 우정읍 조암서로 35-1 ... 화이트빌 402 1 27.825 ... 다가구 무 3,910,000 77,950"}]
+    }
+  ],
+  "additionalAttributes": [
+    {"scope":"1-내유빌(1)-302","name":"공용면적","value":"6.885","unit":"㎡","page":1,"evidence":"44.42 6.885 51.305"},
+    {"scope":"1-내유빌(1)-302","name":"임대면적","value":"51.305","unit":"㎡","page":1,"evidence":"44.42 6.885 51.305"},
+    {"scope":"37-도촌파크오피스텔-418","name":"공용면적","value":"27.02","unit":"㎡","page":2,"evidence":"19.47 27.02 46.49"},
+    {"scope":"37-도촌파크오피스텔-418","name":"임대면적","value":"46.49","unit":"㎡","page":2,"evidence":"19.47 27.02 46.49"}
+  ]
+}

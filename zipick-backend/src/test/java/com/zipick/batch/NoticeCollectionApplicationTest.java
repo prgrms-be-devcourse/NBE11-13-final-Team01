@@ -1,5 +1,6 @@
 package com.zipick.batch;
 
+import com.zipick.infrastructure.service.HousingInfraCollectionService;
 import com.zipick.notice.dto.NoticeSyncResponse;
 import com.zipick.notice.service.MyHomeSyncService;
 import com.zipick.notification.service.CollectorReportNotifier;
@@ -25,8 +26,10 @@ class NoticeCollectionApplicationTest {
         ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
         MyHomeSyncService sync = mock(MyHomeSyncService.class);
         CollectorReportNotifier notifier = mock(CollectorReportNotifier.class);
+        HousingInfraCollectionService infra = mock(HousingInfraCollectionService.class);
         when(context.getBean(MyHomeSyncService.class)).thenReturn(sync);
         when(context.getBean(CollectorReportNotifier.class)).thenReturn(notifier);
+        when(context.getBean(HousingInfraCollectionService.class)).thenReturn(infra);
         NoticeSyncResponse result = new NoticeSyncResponse(10, 2, 1, 3, 4, 0, 0, 0, Instant.now(), Instant.now());
         when(sync.synchronize()).thenReturn(result);
 
@@ -39,6 +42,7 @@ class NoticeCollectionApplicationTest {
         }
 
         verify(sync).synchronize();
+        verify(infra).collect("공고 수집 후");   // 공고 수집 직후 같은 프로세스에서 주변 인프라를 채운다
         verify(notifier).report(result);   // 수집이 끝나면 일일 보고를 요청한다
         verify(context).close();
     }
@@ -62,9 +66,44 @@ class NoticeCollectionApplicationTest {
     }
 
     @Test
+    void infraFailureDoesNotStopTheReport() {
+        ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
+        MyHomeSyncService sync = mock(MyHomeSyncService.class);
+        CollectorReportNotifier notifier = mock(CollectorReportNotifier.class);
+        when(context.getBean(MyHomeSyncService.class)).thenReturn(sync);
+        when(context.getBean(CollectorReportNotifier.class)).thenReturn(notifier);
+        when(context.getBean(HousingInfraCollectionService.class)).thenThrow(new IllegalStateException("no infra"));
+        NoticeSyncResponse result = new NoticeSyncResponse(0, 0, 0, 0, 0, 0, 0, 0, Instant.now(), Instant.now());
+        when(sync.synchronize()).thenReturn(result);
+
+        try (MockedConstruction<SpringApplication> ignored = mockConstruction(
+                SpringApplication.class,
+                (application, c) -> when(application.run(any(String[].class))).thenReturn(context)
+        )) {
+            NoticeCollectionApplication.main(new String[]{});
+        }
+
+        verify(notifier).report(result);
+        verify(context).close();
+    }
+
+    @Test
     void hasNoPublicConstructor() throws Exception {
         Constructor<NoticeCollectionApplication> constructor = NoticeCollectionApplication.class
                 .getDeclaredConstructor();
         assertThat(constructor.canAccess(null)).isFalse();
+    }
+
+    @Test
+    void alwaysDisablesAiStages() {
+        assertThat(NoticeCollectionApplication.withAiDisabled(new String[]{
+                "--spring.profiles.active=local",
+                "--zipick.gemini-pdf-parser.enabled=true",
+                "--zipick.gemini-normalization.enabled=true"
+        })).containsExactly(
+                "--spring.profiles.active=local",
+                "--zipick.gemini-pdf-parser.enabled=false",
+                "--zipick.gemini-normalization.enabled=false"
+        );
     }
 }

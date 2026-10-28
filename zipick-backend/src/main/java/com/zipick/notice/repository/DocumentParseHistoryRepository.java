@@ -7,4 +7,5 @@ import java.util.Optional;
 
 public interface DocumentParseHistoryRepository extends JpaRepository<DocumentParseHistory, Long> {
     Optional<DocumentParseHistory> findByDocumentKeyAndParserVersion(String documentKey, String parserVersion);
+    long deleteAllByDocumentKeyStartingWithAndParserVersion(String prefix, String parserVersion);
 }

@@ -64,6 +64,12 @@ public class NoticeSyncPersistenceService {
     private final HousingMediaRepository housingMediaRepository;
     private final NoticeStatusEvaluator statusEvaluator;
     private final NoticeTypeClassifier noticeTypeClassifier;
+    private com.zipick.notice.repository.DocumentParseHistoryRepository documentHistory;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setDocumentHistory(com.zipick.notice.repository.DocumentParseHistoryRepository documentHistory) {
+        this.documentHistory = documentHistory;
+    }
 
     public NoticeSyncPersistenceService(
             AgencyRepository agencyRepository,
@@ -118,6 +124,19 @@ public class NoticeSyncPersistenceService {
         return counters.toResult();
     }
 
+    /** AI 보조 수집 결과만 기존 공고에 병합한다. 공고 상태·기간과 다른 공고의 소실 여부는 건드리지 않는다. */
+    @Transactional
+    public void synchronizeDetails(Long noticeId, NoticeResponse details, Instant collectedAt) {
+        Notice notice = noticeRepository.findById(noticeId)
+                .orElseThrow(() -> new IllegalArgumentException("AI 보조 대상 공고가 없습니다: " + noticeId));
+        synchronizeAttachments(notice, details.attachments());
+        if (!details.houses().isEmpty()) {
+            LocalDate collectionDate = LocalDate.ofInstant(collectedAt, KOREA_ZONE);
+            synchronizeHousings(notice, details.houses(), collectedAt, collectionDate, new Counters(), false);
+            recordCheckpoints(details);
+        }
+    }
+
     private void synchronizeSource(
             String source,
             List<NoticeSyncCommand> commands,
@@ -143,14 +162,6 @@ public class NoticeSyncPersistenceService {
             seenNoticeIds.add(sourceNotice.noticeId());
 
             Notice notice = existingNotices.get(sourceNotice.noticeId());
-            if (notice == null) {
-                notice = new Notice(source, sourceNotice.noticeId(), sourceNotice.title(), NoticeStatus.OPEN);
-                counters.createdNotices++;
-            } else {
-                counters.updatedNotices++;
-            }
-
-            Agency agency = resolveAgency(sourceNotice.supplyInstitutionName(), sourceNotice.url(), agencyCache);
             LocalDate announcementDate = parseDate(sourceNotice.announcementDate());
             LocalDate winnerAnnouncementDate = parseDate(sourceNotice.winnerAnnouncementDate());
             LocalDate applicationStartDate = parseDate(sourceNotice.applicationStartDate());
@@ -159,7 +170,18 @@ public class NoticeSyncPersistenceService {
                     sourceNotice.statusName(), sourceNotice.title(),
                     applicationStartDate, applicationEndDate, collectionDate
             );
+            // SH 목록에서 마감일을 확인한 과거 공고는 기존 데이터 보정에만 사용한다.
+            if (notice == null && "SH".equals(source) && status.status() == NoticeStatus.CLOSED) {
+                continue;
+            }
+            if (notice == null) {
+                notice = new Notice(source, sourceNotice.noticeId(), sourceNotice.title(), NoticeStatus.OPEN);
+                counters.createdNotices++;
+            } else {
+                counters.updatedNotices++;
+            }
 
+            Agency agency = resolveAgency(sourceNotice.supplyInstitutionName(), sourceNotice.url(), agencyCache);
             notice.synchronize(
                     agency,
                     sourceNotice.previousNoticeId(),
@@ -184,11 +206,28 @@ public class NoticeSyncPersistenceService {
             Notice savedNotice = noticeRepository.save(notice);
             synchronizeAttachments(savedNotice, sourceNotice.attachments());
             if (!sourceNotice.houses().isEmpty()) {
-                synchronizeHousings(savedNotice, sourceNotice.houses(), collectedAt, collectionDate, counters);
+                synchronizeHousings(savedNotice, sourceNotice.houses(), collectedAt, collectionDate, counters,
+                        !sourceNotice.preservesExistingHousings());
+                recordCheckpoints(sourceNotice);
             }
         }
         markMissingNotices(existingNotices, seenNoticeIds, collectionDate, counters,
                 NOTICE_MISSING_THRESHOLD);
+    }
+
+
+    private void recordCheckpoints(NoticeResponse notice) {
+        if (documentHistory == null) return;
+        for (var checkpoint : notice.parseCheckpoints()) {
+            int separator = checkpoint.documentKey().lastIndexOf(':');
+            if (separator < 0) throw new IllegalArgumentException("파싱 이력 키 형식이 잘못되었습니다.");
+            documentHistory.deleteAllByDocumentKeyStartingWithAndParserVersion(
+                    checkpoint.documentKey().substring(0, separator + 1), checkpoint.parserVersion());
+            documentHistory.flush();
+            var history = new com.zipick.notice.domain.DocumentParseHistory(checkpoint.documentKey(), checkpoint.parserVersion());
+            history.markSuccess(checkpoint.size(), checkpoint.unitCount());
+            documentHistory.save(history);
+        }
     }
 
     private void synchronizeAttachments(
@@ -216,7 +255,8 @@ public class NoticeSyncPersistenceService {
             List<NoticeHousingResponse> sourceHousings,
             Instant collectedAt,
             LocalDate collectionDate,
-            Counters counters
+            Counters counters,
+            boolean markMissing
     ) {
         Map<String, Housing> existingHousings = new LinkedHashMap<>();
         for (Housing housing : housingRepository.findAllByNoticeId(notice.getId())) {
@@ -259,10 +299,13 @@ public class NoticeSyncPersistenceService {
             );
             Housing savedHousing = housingRepository.save(housing);
             counters.synchronizedHousings++;
-            synchronizeSupplies(savedHousing, sourceHousing.supplies(), collectedAt, collectionDate, counters);
+            synchronizeSupplies(
+                    savedHousing, sourceHousing.supplies(), collectedAt, collectionDate, counters, markMissing
+            );
             synchronizeMedia(savedHousing, sourceHousing.media());
         }
 
+        if (!markMissing) return;
         for (Housing housing : existingHousings.values()) {
             if (!seenHousingKeys.contains(housing.getSourceHousingKey())) {
                 if (housing.markMissing(collectionDate, MISSING_THRESHOLD)) {
@@ -325,7 +368,8 @@ public class NoticeSyncPersistenceService {
             List<NoticeSupplyResponse> sourceSupplies,
             Instant collectedAt,
             LocalDate collectionDate,
-            Counters counters
+            Counters counters,
+            boolean markMissing
     ) {
         Map<String, HousingSupply> existingSupplies = new LinkedHashMap<>();
         for (HousingSupply supply : housingSupplyRepository.findAllByHousingId(housing.getId())) {
@@ -372,6 +416,7 @@ public class NoticeSyncPersistenceService {
             counters.synchronizedSupplies++;
         }
 
+        if (!markMissing) return;
         for (HousingSupply supply : existingSupplies.values()) {
             if (!seenSupplyKeys.contains(supply.getSourceSupplyKey())
                     && supply.markMissing(collectionDate, MISSING_THRESHOLD)) {

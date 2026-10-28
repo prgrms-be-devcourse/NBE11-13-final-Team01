@@ -54,6 +54,15 @@ class GhNoticeCollectorTest {
     }
 
     @Test
+    void keepsKnownStartForOpenEndedApplicationPeriod() {
+        GhNoticeCollector.DateRange period = collector.parsePeriod(
+                "<li>온라인접수기간 : 2026.09.01 09:00 ~</li>");
+
+        assertThat(period.start()).isEqualTo(LocalDate.of(2026, 9, 1));
+        assertThat(period.end()).isNull();
+    }
+
+    @Test
     void collectsActiveNoticeFromBothListsAndEnrichesIt() {
         ExternalDocumentClient client = mock(ExternalDocumentClient.class);
         HousingDetailEnricher enricher = mock(HousingDetailEnricher.class);

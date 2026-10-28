@@ -2,6 +2,8 @@
 
 이 문서는 ZIPICK의 **현재 소스 설정 기준으로 배포 담당자가 확인할 항목**을 정리합니다. 기존 중간 배포 인프라의 실제 서버 구성·도메인·컨테이너 서비스명은 이 문서에 제공되지 않았으므로, 특정 서버 명령이나 도메인을 임의로 확정하지 않습니다.
 
+별도 모니터링 EC2, 앱 서버 Exporter, Grafana 접근 및 수집기 실행 설정은 [모니터링 README](../deploy/monitoring/README.md)를 참조합니다. 해당 구성은 AWS 운영 환경에 적용·검증되지 않았습니다.
+
 ## 1. 실행 프로파일과 필수 환경
 
 | 항목 | 확인 내용 |
@@ -46,11 +48,23 @@ cors:
 
 Vite의 `VITE_*` 환경 변수는 프론트엔드 **빌드 시점** 값입니다. 이미 빌드된 정적 파일에는 컨테이너 런타임 환경 변수만 바꾸어도 자동 반영되지 않을 수 있습니다.
 
-> **보안 점검 필요:** 현재 `SecurityConfig`는 `/api/internal/**`와 `/api/external/**`를 `permitAll()` 처리하고 있으며 운영 보호 TODO가 있습니다. 배포 전 해당 경로의 노출과 권한 제한 여부를 담당자와 확인해야 합니다. 또한 CSRF가 비활성화되어 있어 cross-site 쿠키 사용 방식이 바뀐다면 관련 위협을 별도 검토하세요.
+> **보안 점검 필요:** 현재 `SecurityConfig`는 `/api/internal/**`와 `/api/external/**`를 `permitAll()` 처리하고 있으며 운영 보호 TODO가 있습니다. 운영 웹 서버는 두 경로의 컨트롤러를 등록하지 않습니다(`COLLECTOR_API_ENABLED=false`, `EXTERNAL_PROXY_ENABLED=false`). 배포 전 해당 경로의 노출과 권한 제한 여부를 담당자와 확인해야 합니다. 또한 CSRF가 비활성화되어 있어 cross-site 쿠키 사용 방식이 바뀐다면 관련 위협을 별도 검토하세요.
 
 ## 3. 주변 인프라 배치 운영
 
-주변 인프라는 웹 백엔드에서만 `@Scheduled`로 자동 수집합니다. 공고 수집 전용 `NoticeCollectionApplication`에서는 인프라 배치가 실행되지 않습니다.
+주변 인프라 수집은 **운영에서는 collector 프로세스가** 맡습니다. 공고 수집(`NoticeCollectionApplication`)·AI 보완(`NoticeAiApplication`)이 끝난 직후 같은 프로세스에서 `HousingInfraCollectionService`를 한 번 실행합니다. 좌표가 생기는 바로 그 자리에서 채우므로 아래 보정 실행이 필요 없습니다.
+
+| 프로세스 | 하는 일 | `INFRA_COLLECTION_ENABLED` | `NOTIFICATION_SCHEDULER_ENABLED` | 메모리 상한 |
+| --- | --- | --- | --- | --- |
+| 웹 서버 (`backend`, 상시) | API 요청, 알림 스케줄러 | `false` — 카카오 호출·긴 수집을 웹 프로세스에서 하지 않음 | `true` | - |
+| 기본 수집기 (`collector`) | `NoticeCollectionApplication`: 공고 수집 → 주변 인프라 (AI 끔) | `true` | `false` — 알림 중복 발송 방지 | 1500m |
+| AI 수집기 (`ai-collector`) | `NoticeAiApplication`: 첨부 PDF Gemini 추출·정규화 → 주변 인프라 | `true` | `false` | 1800m |
+
+수집기 둘은 compose `profiles: [batch]`라 평소엔 뜨지 않고, 실행할 때만 떴다가 지워집니다. 셋 다 `COLLECTOR_API_ENABLED=false`(수집 API 미등록)이고, 웹 서버는 `EXTERNAL_PROXY_ENABLED=false`(`/api/external/myhome/**` 미등록)입니다.
+
+실행은 `deploy/monitoring/run-daily-collection.sh`가 기본 → AI 순서로 이어서 부르고(`collect-notices-observed.sh basic|ai`, 같은 잠금이라 동시에 돌지 않음), 기본 수집만 지표 없이 돌릴 때는 `deploy/collect-notices.sh`를 씁니다. 예약 실행(cron)은 서버에서 따로 등록합니다.
+
+아래 표의 웹 스케줄러(기동·보정·일일 cron)는 `INFRA_COLLECTION_ENABLED=true`인 환경(로컬 기본값)에서만 실제로 수집합니다.
 
 | 항목 | 현재 기본값 |
 | --- | --- |

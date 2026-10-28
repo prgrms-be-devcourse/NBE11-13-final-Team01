@@ -1,9 +1,10 @@
 -- ZIPICK 공고 수집 파트 로컬 PostgreSQL DDL
--- 전체 초기화 순서: notice-init.sql → local-init.sql → infra-init.sql
+-- 전체 초기화 순서: notice-init.sql → local-init.sql → infra-init.sql → guide-init.sql
 -- 이 스크립트도 기존 공고 수집 테이블을 DROP하므로 로컬에서만 사용한다.
 
 -- notice와 housing을 참조하는 다른 도메인의 자식 테이블부터 제거한다.
 -- 아래 테이블은 후속 local-init.sql과 infra-init.sql에서 다시 생성된다.
+DROP TABLE IF EXISTS notice_application_guide;
 DROP TABLE IF EXISTS interest_notices;
 DROP TABLE IF EXISTS housing_infra_place;
 DROP TABLE IF EXISTS housing_infra_snapshot;

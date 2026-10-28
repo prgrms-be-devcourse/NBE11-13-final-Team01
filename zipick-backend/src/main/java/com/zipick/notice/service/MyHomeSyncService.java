@@ -114,6 +114,7 @@ public class MyHomeSyncService {
             return new SourceCollection(collector.get(), true);
         } catch (RuntimeException exception) {
             // 한 기관의 장애로 이미 수집한 마이홈/LH 데이터까지 저장하지 못하는 일을 막는다.
+            log.warn("COLLECTOR_METRIC event=source_error source={}", source);
             log.error("{} 공고 수집을 건너뜁니다: {}", source, exception.getMessage(), exception);
             return new SourceCollection(List.of(), false);
         }

@@ -1,8 +1,10 @@
-# 운영 배포: EC2 한 대에 db(PostgreSQL) + rabbitmq + backend(메인) + notification(알림센터) + web(Caddy: 프론트 정적 파일 + /api 프록시)
+# 운영 배포: 앱 EC2 에 rabbitmq + backend(메인) + notification(알림센터) + web(Caddy: 프론트 정적 파일 + /api 프록시)
+# DB 는 프라이빗 서브넷의 별도 EC2(zipick-db, deploy/db-server/)에 있고, .env 의 DB_HOST 로 가리킨다.
+# DB_HOST 를 비우면 예전처럼 이 파일의 db 컨테이너를 쓴다 (첫 설치·롤백용으로 서비스 정의는 남겨 둔다).
 # 알림센터·RabbitMQ 는 바깥에 열지 않는다. backend 는 알림 요청을 rabbitmq 에 던지고, 테스트 발송·내역·묶음은 http://notification:8081 로 부른다.
 # 알림센터는 판단 없이 보내기만 한다(스펙: docs/notification-api.md). 알림 설정은 메인 DB 에 있다.
 # 비밀 값은 같은 폴더의 .env 에서 읽는다 (.env.prod.example 참고, git 에 올리지 않음).
-# 외부에는 web 의 80/443 만 열린다. db 와 backend 는 컨테이너 네트워크 안에서만 접근할 수 있다.
+# 외부에는 web 의 80/443 만 열린다. backend 는 컨테이너 네트워크 안에서만, DB 서버는 앱 서버 보안 그룹에서만 접근할 수 있다.
 # 프로젝트 이름을 고정한다. 서버 기존 배포(~/zipick 에서 실행 → 디렉터리명 기반 'zipick')와 같은 볼륨(zipick_db-data 등)에 붙기 위해서다.
 # 이름이 달라지면 빈 볼륨이 새로 생겨 DB 가 비어 보인다.
 name: zipick
@@ -52,14 +54,19 @@ services:
     image: ${BACKEND_IMAGE:-zipick-backend:latest}
     build: ../zipick-backend
     restart: unless-stopped
+    # db 는 외부 서버일 수 있어 의존성에 넣지 않는다. 로컬 db 를 쓸 때는 배포 스크립트가 db 를 먼저 띄운다.
     depends_on:
-      db:
-        condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    environment:
+    # collector 가 같은 값을 물려받는다 (&app-env). 둘이 다른 것은 아래 '프로세스 역할' 세 개뿐이다.
+    environment: &app-env
       SPRING_PROFILES_ACTIVE: prod
-      DB_HOST: db
+      # 프로세스 역할: 웹 서버는 요청 처리만 한다. 공고·주변 인프라 수집과 수집 API 는 collector 가 맡는다.
+      INFRA_COLLECTION_ENABLED: "false"
+      COLLECTOR_API_ENABLED: "false"
+      EXTERNAL_PROXY_ENABLED: "false"
+      NOTIFICATION_SCHEDULER_ENABLED: "true"
+      DB_HOST: ${DB_HOST:-db}
       DB_PORT: 5432
       DB_NAME: zipick
       DB_USERNAME: ${DB_USERNAME}
@@ -89,17 +96,43 @@ services:
       APPLICATION_GUIDE_MODEL: ${APPLICATION_GUIDE_MODEL:-}
       APPLICATION_GUIDE_DAILY_CALL_BUDGET: ${APPLICATION_GUIDE_DAILY_CALL_BUDGET:-}
 
+  # 공고 수집기 두 개. 웹 서버와 같은 이미지·설정으로 수집만 한 번 하고 끝나는 별도 프로세스다.
+  # 평소엔 뜨지 않는다(profiles). monitoring/collect-notices-observed.sh [basic|ai] 가 run 으로 실행하고,
+  # monitoring/run-daily-collection.sh 가 basic → ai 순서로 이어서 부른다 (같은 잠금이라 동시에 돌지 않는다).
+  #   collector    : NoticeCollectionApplication — 공고 수집(마이홈·LH·SH·GH·HUG) → 주변 인프라. AI 는 강제로 끔
+  #   ai-collector : NoticeAiApplication — 첨부 PDF Gemini 추출·정규화 → 주변 인프라. 오래 걸리고 Gemini 비용이 든다
+  # 웹 서버와 메모리를 나눠 쓰므로 각각 상한을 둔다. 스크립트의 -XX:MaxRAMPercentage=40 → 힙은 상한의 40%.
+  collector:
+    image: ${BACKEND_IMAGE:-zipick-backend:latest}
+    profiles: [batch]
+    restart: "no"
+    mem_limit: 1500m
+    environment: &collector-env
+      <<: *app-env
+      INFRA_COLLECTION_ENABLED: "true"
+      COLLECTOR_API_ENABLED: "false"
+      # 마감·새 공고 알림은 웹 서버의 스케줄러만 보낸다 (중복 발송 방지)
+      NOTIFICATION_SCHEDULER_ENABLED: "false"
+
+  ai-collector:
+    image: ${BACKEND_IMAGE:-zipick-backend:latest}
+    profiles: [batch]
+    restart: "no"
+    # PDF 를 메모리에 올려 텍스트를 뽑으므로 기본 수집기보다 넉넉히 둔다 (힙 약 720MB)
+    mem_limit: 1800m
+    # Gemini 키는 app-env 의 GEMINI_API_KEY 를 쓴다. PDF 추출·정규화는 진입점이 강제로 켠다
+    environment: *collector-env
+
   notification:
     image: ${NOTIFICATION_IMAGE:-zipick-notification:latest}
     build: ../zipick-notification
     restart: unless-stopped
+    # db 는 외부 서버일 수 있어 의존성에 넣지 않는다. 로컬 db 를 쓸 때는 배포 스크립트가 db 를 먼저 띄운다.
     depends_on:
-      db:
-        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
-      DB_HOST: db
+      DB_HOST: ${DB_HOST:-db}
       DB_PORT: 5432
       DB_NAME: zipick_notification
       DB_USERNAME: ${DB_USERNAME}

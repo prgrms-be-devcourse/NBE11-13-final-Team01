@@ -12,6 +12,7 @@ import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -48,17 +49,30 @@ public class ShNoticeCollector {
     private final HousingDetailEnricher detailEnricher;
     private final ShCollectorProperties properties;
     private final ShApplicationPeriodParser periodParser;
+    private final ShApplicationPeriodDocumentResolver periodDocumentResolver;
 
+    @Autowired
     public ShNoticeCollector(
             ExternalDocumentClient documentClient,
             HousingDetailEnricher detailEnricher,
             ShCollectorProperties properties,
-            ShApplicationPeriodParser periodParser
+            ShApplicationPeriodParser periodParser,
+            ShApplicationPeriodDocumentResolver periodDocumentResolver
     ) {
         this.documentClient = documentClient;
         this.detailEnricher = detailEnricher;
         this.properties = properties;
         this.periodParser = periodParser;
+        this.periodDocumentResolver = periodDocumentResolver;
+    }
+
+    ShNoticeCollector(
+            ExternalDocumentClient documentClient,
+            HousingDetailEnricher detailEnricher,
+            ShCollectorProperties properties,
+            ShApplicationPeriodParser periodParser
+    ) {
+        this(documentClient, detailEnricher, properties, periodParser, null);
     }
 
     public List<NoticeSyncCommand> collect() {
@@ -69,13 +83,12 @@ public class ShNoticeCollector {
         List<NoticeSyncCommand> commands = new ArrayList<>();
         for (ShNoticeItem item : items) {
             String detailHtml = documentClient.getText(URI.create(item.detailUrl()));
-            ShApplicationPeriod period = periodParser.parse(detailHtml).orElse(null);
+            ShApplicationPeriod period = periodParser.parse(detailHtml)
+                    .or(() -> periodDocumentResolver == null ? java.util.Optional.empty()
+                            : periodDocumentResolver.resolve(
+                                    URI.create(item.detailUrl()), detailHtml, item.registeredDate()))
+                    .orElse(null);
             LocalDate today = LocalDate.now(KOREA_ZONE);
-            if (period != null && !period.isNotExpiredOn(today)) {
-                log.info("SH 접수 마감일이 지난 공고를 제외합니다: seq={}, start={}, end={}, title={}",
-                        item.sequence(), period.startDate(), period.endDate(), item.title());
-                continue;
-            }
             NoticeResponse basic = new NoticeResponse(
                     "SH", item.sequence(), "공고중", item.title(), "서울주택도시개발공사",
                     null, item.registeredDate().toString(), null,
@@ -83,6 +96,13 @@ public class ShNoticeCollector {
                     period == null ? null : period.endDate().toString(), null,
                     item.detailUrl(), item.detailUrl(), null, List.of(), List.of()
             );
+            if (period != null && !period.isNotExpiredOn(today)) {
+                // 기존에 저장된 공고의 기간과 상태는 갱신하되, 상세 문서를 다시 수집하지 않는다.
+                log.info("SH 접수 마감 공고를 확인했습니다: seq={}, start={}, end={}, title={}",
+                        item.sequence(), period.startDate(), period.endDate(), item.title());
+                commands.add(new NoticeSyncCommand(basic, rawPayload(item, period)));
+                continue;
+            }
             NoticeResponse enriched = detailEnricher.enrich(basic);
             commands.add(new NoticeSyncCommand(enriched, rawPayload(item, period)));
             pause();

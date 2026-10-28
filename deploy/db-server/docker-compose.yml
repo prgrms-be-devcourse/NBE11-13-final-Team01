@@ -1,0 +1,28 @@
+# DB 서버(zipick-db, 프라이빗 서브넷 t4g.small)에서 도는 PostgreSQL.
+# 서버의 ~/zipick-db 에 이 파일과 .env(DB_USERNAME·DB_PASSWORD, 앱 서버 .env 와 같은 값, chmod 600)를 두고
+#   sudo docker compose up -d
+# 5432 는 호스트에 열지만 보안 그룹(zipick-db-sg)이 앱 서버에서 오는 연결만 받는다.
+# 앱 서버는 ~/zipick/.env 의 DB_HOST 에 이 서버의 프라이빗 IP 를 넣는다.
+name: zipick-db
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: zipick
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME 필요}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD 필요}
+      TZ: Asia/Seoul
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=100"]
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d zipick"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  db-data:

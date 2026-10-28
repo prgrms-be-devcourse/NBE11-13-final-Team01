@@ -43,6 +43,12 @@ public class GhHousingDetailSource implements HousingDetailSource {
 
     private final ExternalDocumentClient documentClient;
     private GeminiPdfHousingDetailSupport geminiSupport;
+    private com.zipick.notice.repository.DocumentParseHistoryRepository historyRepository;
+
+    @Autowired(required = false)
+    void setHistoryRepository(com.zipick.notice.repository.DocumentParseHistoryRepository historyRepository) {
+        this.historyRepository = historyRepository;
+    }
 
     public GhHousingDetailSource(ExternalDocumentClient documentClient) {
         this.documentClient = documentClient;
@@ -70,6 +76,15 @@ public class GhHousingDetailSource implements HousingDetailSource {
         URI detailUri = URI.create(notice.url());
         Document document = Jsoup.parse(documentClient.getText(detailUri), detailUri.toString());
         List<NoticeAttachmentResponse> attachments = attachments(document, notice.noticeId());
+        boolean cacheEnabled = historyRepository != null && (geminiSupport == null || !geminiSupport.enabled());
+        byte[] htmlBytes = document.select("div[id^=tab]").outerHtml().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String key = "GH:" + com.zipick.external.housingdetail.DocumentFingerprint.sha256(
+                notice.noticeId().getBytes(java.nio.charset.StandardCharsets.UTF_8)) + ":"
+                + com.zipick.external.housingdetail.DocumentFingerprint.sha256(htmlBytes);
+        if (cacheEnabled && historyRepository.findByDocumentKeyAndParserVersion(key, "GH_HTML_V2")
+                .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent()) {
+            return new HousingDetailResult(List.of(), attachments, Map.of(), true);
+        }
         List<DetailedHousingUnit> units = new ArrayList<>();
         Map<String, List<DetailedHousingMedia>> mediaByUnit = new LinkedHashMap<>();
 
@@ -119,7 +134,10 @@ public class GhHousingDetailSource implements HousingDetailSource {
             }
         }
         List<DetailedHousingUnit> completed = supplementFromHousingPdf(notice, attachments, units);
-        return new HousingDetailResult(completed, attachments, mediaByUnit);
+        var checkpoints = cacheEnabled && !completed.isEmpty()
+                ? List.of(new com.zipick.notice.dto.ParseCheckpoint(key, "GH_HTML_V2", htmlBytes.length, completed.size()))
+                : List.<com.zipick.notice.dto.ParseCheckpoint>of();
+        return new HousingDetailResult(completed, attachments, mediaByUnit, false, checkpoints);
     }
 
     private List<DetailedHousingUnit> supplementFromHousingPdf(

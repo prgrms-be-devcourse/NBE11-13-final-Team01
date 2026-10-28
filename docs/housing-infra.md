@@ -238,7 +238,13 @@ Provider 가 돌려주는 Map 은 세 상태를 구분한다. `ScoreCalculator.s
 - **수집 범위와 지도 노출 범위는 다르다.** 수집은 `UPCOMING`+`OPEN`(추천 후보와 동일),
   지도 상세 조회 API 는 `OPEN`만 반환한다. `UPCOMING` 주택의 인프라는 추천 점수에만 쓰인다.
 
-**왜 보정 실행이 필요한가**
+**운영에서는 collector 프로세스가 공고 수집 직후 이어서 수집한다**
+
+운영 웹 서버는 `INFRA_COLLECTION_ENABLED=false`이고, collector 프로세스(`NoticeCollectionApplication`·`NoticeAiApplication`)가
+공고 처리를 마친 직후 같은 프로세스에서 `HousingInfraCollectionService.collect()`를 부른다.
+좌표가 생긴 바로 다음에 수집하므로 운영에서는 아래 보정 실행이 필요 없다. 아래 내용은 웹 스케줄러로 수집하는 환경(로컬 기본값)에 해당한다.
+
+**왜 보정 실행이 필요한가 (웹 스케줄러로 수집할 때)**
 
 두 수집기는 서로를 모른다. 기동 직후 공고 수집과 인프라 수집이 **각자 돌 수 있고**,
 인프라 기동 수집이 먼저 끝나면 그 뒤에 좌표가 채워진 주택은 **다음 날 cron 까지 인프라 없이 남는다.**

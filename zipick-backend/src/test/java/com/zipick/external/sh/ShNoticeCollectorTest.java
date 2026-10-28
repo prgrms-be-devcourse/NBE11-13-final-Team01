@@ -63,7 +63,7 @@ class ShNoticeCollectorTest {
     }
 
     @Test
-    void doesNotCollectNoticeWhoseApplicationPeriodHasEnded() {
+    void includesExpiredPeriodForUpdatingExistingNoticesWithoutParsingHousing() {
         String listHtml = """
                 <table id="listTb"><tbody>
                   <tr><td>1725</td><td><a onclick="getDetailView('311725')">청년 매입임대주택 입주자 모집공고</a></td><td>2026-01-01</td></tr>
@@ -85,7 +85,11 @@ class ShNoticeCollectorTest {
                 new ShApplicationPeriodParser()
         );
 
-        assertThat(endedNoticeCollector.collect()).isEmpty();
+        var commands = endedNoticeCollector.collect();
+        assertThat(commands).hasSize(1);
+        assertThat(commands.getFirst().notice().applicationStartDate()).isEqualTo("2026-01-12");
+        assertThat(commands.getFirst().notice().applicationEndDate()).isEqualTo("2026-01-14");
+        assertThat(commands.getFirst().notice().houses()).isEmpty();
     }
 
     @Test

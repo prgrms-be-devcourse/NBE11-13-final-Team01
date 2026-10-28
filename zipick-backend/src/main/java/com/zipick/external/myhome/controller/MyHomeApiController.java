@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,7 +23,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
-// SecurityConfig: /api/external/** 는 permitAll
+// SecurityConfig: /api/external/** 는 permitAll 이라 누구나 공공 API 를 우리 키로 대신 호출할 수 있다.
+// 원본 응답 확인용(개발) 엔드포인트라 운영 웹 서버는 EXTERNAL_PROXY_ENABLED=false 로 등록하지 않는다.
+@ConditionalOnProperty(prefix = "zipick.external-proxy", name = "enabled", havingValue = "true", matchIfMissing = true)
 @SecurityRequirements
 @RestController
 @RequestMapping("/api/external/myhome")

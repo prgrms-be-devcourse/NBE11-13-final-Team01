@@ -1,0 +1,50 @@
+{
+  "documentId": "sh-311521-seoripul-youth-art-town",
+  "verification": {
+    "method": "PDF 원문 표와 본문을 페이지 단위로 직접 대조",
+    "verifiedOn": "2026-10-22",
+    "notes": "금액 단위는 원, 면적은 주거전용면적(㎡)을 사용함"
+  },
+  "units": [
+    {
+      "key": "1차-202",
+      "fields": {"unitNumber":"202","address":"서울특별시 서초구 반포대로9길 59-16","exclusiveArea":"27.98","rentDeposit":"31600000","monthlyRent":"411700","elevatorAvailable":"true","communityFacilityAvailable":"true","totalParkingSpaces":"5"},
+      "evidence": [{"page":1,"text":"1차 : 서울시 서초구 반포대로9길 59-16"},{"page":1,"text":"주차면수 5면, 승강기"},{"page":2,"text":"1차 202 ... 27.98 ... 31,600,000 411,700"}]
+    },
+    {
+      "key": "1차-203",
+      "fields": {"unitNumber":"203","address":"서울특별시 서초구 반포대로9길 59-16","exclusiveArea":"27.71","rentDeposit":"31600000","monthlyRent":"411700","elevatorAvailable":"true","communityFacilityAvailable":"true","totalParkingSpaces":"5"},
+      "evidence": [{"page":2,"text":"1차 203 ... 27.71 ... 31,600,000 411,700"}]
+    },
+    {
+      "key": "1차-302",
+      "fields": {"unitNumber":"302","address":"서울특별시 서초구 반포대로9길 59-16","exclusiveArea":"27.98","rentDeposit":"32200000","monthlyRent":"419400","elevatorAvailable":"true","communityFacilityAvailable":"true","totalParkingSpaces":"5"},
+      "evidence": [{"page":2,"text":"1차 302 ... 27.98 ... 32,200,000 419,400"}]
+    },
+    {
+      "key": "1차-402",
+      "fields": {"unitNumber":"402","address":"서울특별시 서초구 반포대로9길 59-16","exclusiveArea":"32.5","rentDeposit":"37400000","monthlyRent":"487300","elevatorAvailable":"true","communityFacilityAvailable":"true","totalParkingSpaces":"5"},
+      "evidence": [{"page":2,"text":"1차 402 ... 32.5 ... 37,400,000 487,300"}]
+    },
+    {
+      "key": "2차-201",
+      "fields": {"unitNumber":"201","address":"서울특별시 서초구 남부순환로315길 88-7","exclusiveArea":"30.2","rentDeposit":"33080000","monthlyRent":"431000","elevatorAvailable":"true","communityFacilityAvailable":"true","totalParkingSpaces":"7"},
+      "evidence": [{"page":1,"text":"2차 : 서울시 서초구 남부순환로315길 88-7"},{"page":1,"text":"주차면수 7면, 승강기"},{"page":2,"text":"2차 201 ... 30.2 ... 33,080,000 431,000"}]
+    },
+    {
+      "key": "2차-502",
+      "fields": {"unitNumber":"502","address":"서울특별시 서초구 남부순환로315길 88-7","exclusiveArea":"24.83","rentDeposit":"28070000","monthlyRent":"365700","elevatorAvailable":"true","communityFacilityAvailable":"true","totalParkingSpaces":"7"},
+      "evidence": [{"page":2,"text":"2차 502 ... 24.83 ... 28,070,000 365,700"}]
+    }
+  ],
+  "additionalAttributes": [
+    {"scope":"1차","name":"건물 층수","value":"지상 5층","page":1,"evidence":"1차 : 지상5층 12세대"},
+    {"scope":"1차","name":"건물 전체 세대수","value":"12","unit":"세대","page":1,"evidence":"1차 : 지상5층 12세대"},
+    {"scope":"1차","name":"주민공동시설 종류","value":"오픈형 커뮤니티실","page":1,"evidence":"주민공동시설(오픈형 커뮤니티실) 1개소"},
+    {"scope":"2차","name":"건물 층수","value":"지상 5층","page":1,"evidence":"2차 : 지상5층 17세대"},
+    {"scope":"2차","name":"건물 전체 세대수","value":"17","unit":"세대","page":1,"evidence":"2차 : 지상5층 17세대"},
+    {"scope":"2차","name":"주민공동시설 종류","value":"음악연습실","page":1,"evidence":"주민공동시설(음악연습실) 1개소"},
+    {"scope":"공통","name":"세대 구조","value":"원룸, 화장실, 다용도실","page":1,"evidence":"세대구조 : 원룸, 화장실, 다용도실"},
+    {"scope":"공통","name":"기본 옵션","value":"인덕션, 세탁기, 냉장고, 에어컨, 옷수납장, 책상","page":1,"evidence":"기본옵션: 인덕션, 세탁기, 냉장고, 에어컨, 옷수납장, 책상"}
+  ]
+}

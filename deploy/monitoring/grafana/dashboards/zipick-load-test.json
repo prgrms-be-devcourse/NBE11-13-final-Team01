@@ -1,0 +1,448 @@
+{
+  "uid": "zipick-load-test",
+  "title": "ZIPICK · 부하테스트",
+  "description": "부하테스트 중 서버 지표를 확인합니다. 요청 수에는 일반 트래픽도 포함됩니다.",
+  "schemaVersion": 40,
+  "version": 3,
+  "refresh": "30s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "서버·컨테이너",
+      "type": "link",
+      "url": "/grafana/d/zipick-overview",
+      "targetBlank": false
+    },
+    {
+      "title": "메인 서비스",
+      "type": "link",
+      "url": "/grafana/d/zipick-details",
+      "targetBlank": false
+    },
+    {
+      "title": "공고 수집기",
+      "type": "link",
+      "url": "/grafana/d/zipick-collector",
+      "targetBlank": false
+    },
+    {
+      "title": "알림 시스템",
+      "type": "link",
+      "url": "/grafana/d/zipick-notification",
+      "targetBlank": false
+    },
+    {
+      "title": "부하테스트",
+      "type": "link",
+      "url": "/grafana/d/zipick-load-test",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "API 요청 수 / 초",
+      "description": "백엔드에서 관측한 전체 요청이며 k6만 분리한 값은 아닙니다.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (uri) (rate(http_server_requests_seconds_count{job=\"backend\",uri=~\"/api/v1/map/housings.*|/api/v1/houses.*\",environment!~\"synthetic_test|real_process_failure_test\"}[1m]))",
+          "legendFormat": "{{uri}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "API 응답 시간 · p95 추정",
+      "description": "서버 히스토그램 구간 기반 추정치입니다. 정확한 k6 p95는 k6 결과를 확인하세요.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le,uri) (rate(http_server_requests_seconds_bucket{job=\"backend\",uri=~\"/api/v1/map/housings.*|/api/v1/houses.*\",environment!~\"synthetic_test|real_process_failure_test\"}[1m])))",
+          "legendFormat": "{{uri}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "API 서버 오류 / 초",
+      "description": "HTTP 5xx만 표시합니다. 지표가 없으면 오류 0이라고 단정하지 않습니다. 전체 실패율은 k6 결과를 확인하세요.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (uri) (rate(http_server_requests_seconds_count{job=\"backend\",status=~\"5..\",uri=~\"/api/v1/map/housings.*|/api/v1/houses.*\",environment!~\"synthetic_test|real_process_failure_test\"}[1m]))",
+          "legendFormat": "{{uri}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "DB 연결 풀 · 사용 중과 대기",
+      "description": "백엔드 연결 풀 기준입니다.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(hikaricp_connections_active{job=\"backend\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "사용 중",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(hikaricp_connections_pending{job=\"backend\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "대기",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "서버 CPU 사용률",
+      "description": "테스트 대상 EC2와 로드 생성기의 CPU를 구별하세요.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * (1 - avg by (server_name) (rate(node_cpu_seconds_total{mode=\"idle\",server_name!=\"\",environment!~\"synthetic_test|real_process_failure_test\"}[1m])))",
+          "legendFormat": "{{server_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "서버 메모리 사용률",
+      "description": "",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{server_name!=\"\",environment!~\"synthetic_test|real_process_failure_test\"} / node_memory_MemTotal_bytes{server_name!=\"\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "{{server_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "컨테이너 메모리 사용량",
+      "description": "컨테이너 이름 지표가 제공되지 않으면 No data입니다.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{job=\"cadvisor\",name!=\"\",environment!~\"synthetic_test|real_process_failure_test\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "PostgreSQL 연결 수",
+      "description": "PostgreSQL Exporter가 연결된 경우에만 표시합니다.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (instance) (pg_stat_database_numbackends{job=\"postgres\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "현재 연결",
+          "refId": "A"
+        },
+        {
+          "expr": "pg_settings_max_connections{job=\"postgres\",environment!~\"synthetic_test|real_process_failure_test\"}",
+          "legendFormat": "최대 연결",
+          "refId": "B"
+        }
+      ]
+    }
+  ]
+}

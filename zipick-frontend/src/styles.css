@@ -57,6 +57,10 @@ h3 { font-size: 15px; margin: 0; }
 .panel__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
 .field { border: 0; padding: 0; margin: 0 0 12px; }
 .field legend { font-size: 12px; color: var(--muted); margin-bottom: 4px; padding: 0; }
+.req { color: var(--bad); font-weight: 700; margin-left: 2px; }
+.required-note { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+.field-group { margin: 4px 0 0; font-size: 13px; }
+.missing-required { font-size: 12.5px; color: var(--bad); margin: 4px 0 0; }
 .range { display: flex; align-items: center; gap: 6px; }
 .range input { width: 100%; }
 input[type="number"], input[type="text"], input[type="date"], input[type="email"], input[type="password"], input:not([type]) {
@@ -440,6 +444,7 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 .auth-verify__row { display: flex; gap: 8px; align-items: stretch; }
 .auth-verify__row input { flex: 1; letter-spacing: 4px; font-variant-numeric: tabular-nums; }
 .auth-verify__send { align-self: flex-start; }
+.auth-verify__hint { font-size: 12px; color: var(--muted); }
 .auth-verify__resend { align-self: flex-start; font-size: 12px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
 .auth-verify__resend:disabled { color: var(--muted); cursor: default; }
 .auth-verify__done { margin: 0; font-size: 13px; color: var(--ok, #059669); font-weight: 600; }
