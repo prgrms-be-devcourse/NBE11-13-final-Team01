@@ -14,6 +14,7 @@ import com.zipick.notice.domain.Notice;
 import com.zipick.notice.domain.NoticeStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -23,7 +24,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,6 +36,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -50,13 +56,18 @@ class HousingInfraCollectionSchedulerTest {
     @Mock
     private HousingInfraPersistenceService persistenceService;
 
+    /** 저장에 성공한 주택. 실제 쿼리와 같게, 저장된 주택은 다음 batch 대상에서 빠진다. */
+    private final Set<Long> persisted = new HashSet<>();
+    /** 수집을 시도한 순서. 같은 주택이 한 실행 안에서 다시 선택되는지 확인한다. */
+    private final List<Long> attempted = new ArrayList<>();
+
     @Test
     @DisplayName("수집 대상이 없으면 카카오를 호출하지 않는다")
     void doesNotCallKakaoWithoutTargets() {
         givenTargets(List.of());
         HousingInfraCollectionScheduler scheduler = scheduler(configuredKey());
 
-        scheduler.collectPendingHousings();
+        scheduler.collectOnStartup();
 
         verifyNoInteractions(collector, persistenceService);
     }
@@ -68,7 +79,8 @@ class HousingInfraCollectionSchedulerTest {
                 new KakaoLocalApiProperties(null, null)
         );
 
-        scheduler.collectPendingHousings();
+        scheduler.collectOnStartup();
+        scheduler.collectDaily();
 
         verifyNoInteractions(snapshotRepository, collector, persistenceService);
     }
@@ -77,10 +89,11 @@ class HousingInfraCollectionSchedulerTest {
     @DisplayName("설정으로 수집을 끄면 아무것도 하지 않는다")
     void skipsWhenDisabled() {
         HousingInfraCollectionScheduler scheduler = scheduler(
-                configuredKey(), new Collection(false, 100, 3)
+                configuredKey(), collection(false, 100, 3)
         );
 
-        scheduler.collectPendingHousings();
+        scheduler.collectOnStartup();
+        scheduler.collectDaily();
 
         verifyNoInteractions(snapshotRepository, collector, persistenceService);
     }
@@ -88,12 +101,12 @@ class HousingInfraCollectionSchedulerTest {
     @Test
     @DisplayName("수집에 성공한 주택만 저장한다")
     void savesSuccessfulHousings() {
-        givenTargets(List.of(housing(1L), housing(2L)));
-        given(collector.collect(eq(1L), any(), any())).willReturn(success());
-        given(collector.collect(eq(2L), any(), any())).willReturn(success());
+        givenTargets(housings(1L, 2L));
+        givenCollect(1L, success());
+        givenCollect(2L, success());
         HousingInfraCollectionScheduler scheduler = scheduler(configuredKey());
 
-        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.runOnce();
+        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
 
         assertThat(summary.targets()).isEqualTo(2);
         assertThat(summary.saved()).isEqualTo(2);
@@ -101,14 +114,63 @@ class HousingInfraCollectionSchedulerTest {
     }
 
     @Test
+    @DisplayName("한 batch 보다 대상이 많으면 대기 없이 다음 batch 를 이어서 모두 처리한다")
+    void drainsEveryBatchInOneRun() {
+        givenTargets(housings(1L, 2L, 3L, 4L, 5L));
+        givenCollectAll(success());
+        // batch 2개씩 → 2 + 2 + 1 로 세 batch 를 연속 처리하고, 네 번째 조회에서 비어 끝난다
+        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey(), collection(true, 2, 3));
+
+        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
+
+        assertThat(summary.batches()).isEqualTo(3);
+        assertThat(summary.targets()).isEqualTo(5);
+        assertThat(summary.saved()).isEqualTo(5);
+        assertThat(attempted).containsExactly(1L, 2L, 3L, 4L, 5L);
+        verify(snapshotRepository, times(4)).findCollectionTargets(
+                any(), any(), any(), anyLong(), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("저장에 성공한 주택은 다음 batch 에서 다시 선택되지 않는다")
+    void doesNotReselectPersistedHousings() {
+        givenTargets(housings(1L, 2L, 3L, 4L));
+        givenCollectAll(success());
+        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey(), collection(true, 2, 3));
+
+        scheduler.drain();
+
+        // 주택마다 정확히 한 번씩만 수집한다
+        assertThat(attempted).containsExactly(1L, 2L, 3L, 4L);
+        assertThat(persisted).containsExactlyInAnyOrder(1L, 2L, 3L, 4L);
+    }
+
+    @Test
+    @Timeout(10)
+    @DisplayName("저장되지 않은 실패 주택이 같은 실행 안에서 다시 선택되지 않아 무한 루프가 생기지 않는다")
+    void failedHousingsDoNotLoopForever() {
+        // 전부 데이터 오류라 저장되지 않는다. 커서가 없다면 같은 batch 가 영원히 다시 조회된다.
+        givenTargets(housings(1L, 2L, 3L));
+        givenCollectAll(InfraCollectionResult.dataError(6));
+        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey(), collection(true, 2, 3));
+
+        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
+
+        assertThat(summary.dataErrors()).isEqualTo(3);
+        assertThat(summary.saved()).isZero();
+        assertThat(attempted).containsExactly(1L, 2L, 3L);
+        verifyNoInteractions(persistenceService);
+    }
+
+    @Test
     @DisplayName("한 주택의 데이터 오류 때문에 다른 주택 수집이 멈추지 않는다")
     void continuesAfterDataError() {
-        givenTargets(List.of(housing(1L), housing(2L)));
-        given(collector.collect(eq(1L), any(), any())).willReturn(InfraCollectionResult.dataError(6));
-        given(collector.collect(eq(2L), any(), any())).willReturn(success());
+        givenTargets(housings(1L, 2L));
+        givenCollect(1L, InfraCollectionResult.dataError(6));
+        givenCollect(2L, success());
         HousingInfraCollectionScheduler scheduler = scheduler(configuredKey());
 
-        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.runOnce();
+        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
 
         assertThat(summary.dataErrors()).isEqualTo(1);
         assertThat(summary.saved()).isEqualTo(1);
@@ -119,31 +181,113 @@ class HousingInfraCollectionSchedulerTest {
     }
 
     @Test
-    @DisplayName("카카오 호출이 연속 실패하면 회차를 중단해 헛호출을 막는다")
+    @DisplayName("카카오 호출이 연속 실패하면 batch 가 남아 있어도 실행 전체를 중단한다")
     void abortsAfterConsecutiveApiErrors() {
-        givenTargets(List.of(housing(1L), housing(2L), housing(3L), housing(4L)));
-        given(collector.collect(anyLong(), any(), any())).willReturn(InfraCollectionResult.apiError(1));
-        HousingInfraCollectionScheduler scheduler = scheduler(
-                configuredKey(), new Collection(true, 100, 2)
-        );
+        givenTargets(housings(1L, 2L, 3L, 4L, 5L, 6L));
+        givenCollectAll(InfraCollectionResult.apiError(1));
+        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey(), collection(true, 2, 2));
 
-        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.runOnce();
+        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
 
         assertThat(summary.aborted()).isTrue();
         assertThat(summary.apiErrors()).isEqualTo(2);
+        // 첫 batch 안에서 임계치에 닿았으므로 두 번째 batch 를 조회조차 하지 않는다
+        assertThat(summary.batches()).isEqualTo(1);
         verify(collector, times(2)).collect(anyLong(), any(), any());
         verifyNoInteractions(persistenceService);
     }
 
-    private void givenTargets(List<Housing> targets) {
-        // 추천 후보와 같은 상태 집합(공고 예정 + 접수 중)으로 조회하는지 함께 확인한다
+    @Test
+    @DisplayName("일일 정기 실행도 기동 수집과 같은 drain 로직을 쓴다")
+    void dailyRunUsesSameDrain() {
+        givenTargets(housings(1L, 2L, 3L));
+        givenCollectAll(success());
+        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey(), collection(true, 2, 3));
+
+        scheduler.collectDaily();
+
+        assertThat(attempted).containsExactly(1L, 2L, 3L);
+        verify(persistenceService, times(3)).save(anyLong(), any(), any(), anyList(), any());
+    }
+
+    @Test
+    @DisplayName("보정 창이 열려 있는 동안에는 기동 수집 이후에도 다시 실행한다")
+    void repeatsWhileCatchUpWindowIsOpen() {
+        givenTargets(housings(1L));
+        givenCollectAll(success());
+        HousingInfraCollectionScheduler scheduler = scheduler(
+                configuredKey(), collection(true, 100, 3, Duration.ofHours(1))
+        );
+
+        scheduler.collectOnStartup();   // 기동 수집
+        scheduler.collectOnStartup();   // 보정 실행
+
+        // 두 번 모두 drain 이 돈다. 첫 실행은 [1] + 빈 조회 2회, 두 번째는 이미 저장돼 빈 조회 1회다.
+        verify(snapshotRepository, times(3)).findCollectionTargets(
+                any(), any(), any(), anyLong(), any(Pageable.class));
+        assertThat(attempted).containsExactly(1L);
+    }
+
+    @Test
+    @DisplayName("보정 창이 닫히면 기동 수집 메서드는 더 이상 수집하지 않는다")
+    void retiresAfterCatchUpWindow() {
+        givenTargets(housings(1L, 2L));
+        givenCollectAll(success());
+        HousingInfraCollectionScheduler scheduler = scheduler(
+                configuredKey(), collection(true, 100, 3, Duration.ZERO)
+        );
+
+        scheduler.collectOnStartup();   // 기동 수집은 창 길이와 무관하게 항상 한 번 실행한다
+        scheduler.collectOnStartup();   // 창이 닫혀 아무것도 하지 않는다
+        scheduler.collectOnStartup();
+
+        assertThat(attempted).containsExactly(1L, 2L);
+        verify(snapshotRepository, times(2)).findCollectionTargets(
+                any(), any(), any(), anyLong(), any(Pageable.class));
+    }
+
+    /**
+     * 실제 쿼리와 같은 의미로 답한다.
+     *   - 커서보다 큰 id 만
+     *   - 저장에 성공한 주택은 조건에서 빠진다 (실패한 주택은 그대로 남는다)
+     *   - batch size 만큼만
+     * 커서가 없으면 실패 주택 때문에 같은 batch 가 무한히 반복된다는 점을 이 stub 이 그대로 드러낸다.
+     */
+    private void givenTargets(List<Housing> all) {
         given(snapshotRepository.findCollectionTargets(
-                eq(HouseFilter.OPEN_STATUSES), any(Instant.class), any(String.class), any(Pageable.class)
-        )).willReturn(targets);
+                eq(HouseFilter.OPEN_STATUSES), any(Instant.class), any(String.class),
+                anyLong(), any(Pageable.class)
+        )).willAnswer(invocation -> {
+            long cursor = invocation.getArgument(3);
+            Pageable pageable = invocation.getArgument(4);
+            return all.stream()
+                    .filter(housing -> housing.getId() > cursor)
+                    .filter(housing -> !persisted.contains(housing.getId()))
+                    .limit(pageable.getPageSize())
+                    .toList();
+        });
+        lenient().doAnswer(invocation -> {
+            persisted.add(invocation.getArgument(0));
+            return null;
+        }).when(persistenceService).save(anyLong(), any(), any(), anyList(), any());
+    }
+
+    private void givenCollect(Long housingId, InfraCollectionResult result) {
+        given(collector.collect(eq(housingId), any(), any())).willAnswer(invocation -> {
+            attempted.add(invocation.getArgument(0));
+            return result;
+        });
+    }
+
+    private void givenCollectAll(InfraCollectionResult result) {
+        given(collector.collect(anyLong(), any(), any())).willAnswer(invocation -> {
+            attempted.add(invocation.getArgument(0));
+            return result;
+        });
     }
 
     private HousingInfraCollectionScheduler scheduler(KakaoLocalApiProperties kakaoProperties) {
-        return scheduler(kakaoProperties, new Collection(true, 100, 3));
+        return scheduler(kakaoProperties, collection(true, 100, 3));
     }
 
     private HousingInfraCollectionScheduler scheduler(
@@ -162,6 +306,16 @@ class HousingInfraCollectionSchedulerTest {
         );
     }
 
+    private static Collection collection(boolean enabled, int batchSize, int apiFailureThreshold) {
+        return collection(enabled, batchSize, apiFailureThreshold, Duration.ofHours(1));
+    }
+
+    private static Collection collection(
+            boolean enabled, int batchSize, int apiFailureThreshold, Duration catchUpWindow
+    ) {
+        return new Collection(enabled, batchSize, apiFailureThreshold, catchUpWindow);
+    }
+
     private static KakaoLocalApiProperties configuredKey() {
         return new KakaoLocalApiProperties("test-key", null);
     }
@@ -172,6 +326,11 @@ class HousingInfraCollectionSchedulerTest {
                         new NearestPlace("1", "신설동역", 683, null, null, null, null, null))),
                 1
         );
+    }
+
+    private static List<Housing> housings(Long... ids) {
+        Set<Long> unique = new LinkedHashSet<>(List.of(ids));
+        return unique.stream().map(HousingInfraCollectionSchedulerTest::housing).toList();
     }
 
     private static Housing housing(Long id) {

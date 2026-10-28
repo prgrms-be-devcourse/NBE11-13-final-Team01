@@ -34,12 +34,20 @@ public interface HousingInfraSnapshotRepository extends JpaRepository<HousingInf
      * 범위가 다르면 추천 목록 안에서 어떤 집만 인프라 점수를 받아 순위 비교가 공정하지 않다.
      * 좌표가 아직 없는 주택은 제외하므로, 공고 수집 → 좌표 보완이 끝난 뒤에만 대상이 된다.
      * Housing 과 연관이 없는 엔티티라 on 절로 직접 조인한다.
+     *
+     * <p><b>afterHousingId 는 커서(keyset) 페이징이다.</b> 한 번의 실행에서 대상이 없어질 때까지
+     * 연속으로 batch 를 가져오는데, offset 방식으로는 두 가지가 모두 깨진다.
+     *   - 실패한 주택은 저장되지 않아 조건을 계속 만족한다 → offset 0 을 다시 읽으면 영원히 같은 batch 다
+     *   - 성공한 주택은 대상에서 빠져 나간다 → 뒤쪽 offset 이 앞으로 밀려 일부 주택을 건너뛴다
+     * 마지막으로 처리한 주택 id 를 넘겨 그보다 큰 id 만 읽으면 둘 다 생기지 않는다.
+     * 처음 조회는 0 을 넘긴다(주택 id 는 1 부터 시작하는 시퀀스다).
      */
     @Query("""
             select h
             from Housing h
             left join HousingInfraSnapshot s on s.housingId = h.id
-            where h.active = true
+            where h.id > :afterHousingId
+              and h.active = true
               and h.notice.status in :statuses
               and h.latitude is not null
               and h.longitude is not null
@@ -56,6 +64,7 @@ public interface HousingInfraSnapshotRepository extends JpaRepository<HousingInf
             @Param("statuses") Collection<NoticeStatus> statuses,
             @Param("ttlThreshold") Instant ttlThreshold,
             @Param("policySignature") String policySignature,
+            @Param("afterHousingId") Long afterHousingId,
             Pageable pageable
     );
 }
