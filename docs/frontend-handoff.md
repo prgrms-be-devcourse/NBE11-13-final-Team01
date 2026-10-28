@@ -134,6 +134,9 @@ statuses=OPEN,CLOSED  → {OPEN}
 
 고르지 **않은** 조건은 애초에 걸리지 않으므로, 값이 비어 있다는 이유로 주택이 사라지지는 않는다.
 
+> 2026-10-29: 지도가 이 값을 무시하므로 `FilterPanel` 의 `includeUnknown` 토글을 **화면에서 뺐다.**
+> 동작하지 않는 스위치를 보여 주면 안 되기 때문이다. 서버 정책(`MapHousingFilterPolicy`)은 그대로다.
+
 ### 2-7. D-day 는 한국 시간 기준이다
 
 접수 일정은 DB 에 `Instant` 로 들어 있고, DTO 에서 `LocalDate.ofInstant(..., Asia/Seoul)` 로 바꾼다.
@@ -178,9 +181,12 @@ notice/dto/
 ```
 pages/MapPage.tsx                 모드·필터·선택 상태 조립 (URL 쿼리가 단일 출처)
 features/map/
-  MapPanel.tsx                    지도 인스턴스 생성·유지. 핀만 갈아 끼운다
-  clustering.ts                   군집화. PinLayer { render, highlight, destroy } 계약
-  kakaoMaps.ts                    SDK 로더 + 타입 (libraries=clusterer)
+  MapPanel.tsx                    지도 인스턴스 생성·유지. 핀만 갈아 끼운다. 확대/축소/전국 보기 버튼
+  clustering.ts                   카카오 Marker·CustomOverlay 로 그린다
+                                  PinLayer { render, highlight, resetStage, destroy } 계약
+  regionCluster.ts                행정구역 군집 규칙 (SDK 무의존 순수 함수)
+  locationGroup.ts                같은 좌표 묶기 + 보수적 중복 제거 (SDK 무의존 순수 함수)
+  kakaoMaps.ts                    SDK 로더 + 타입 (추가 라이브러리 없음)
 components/
   HousingDetail.tsx               공개 상세. 지도 패널과 /houses/:id 가 같은 컴포넌트를 쓴다
   map/RecommendationSidebar.tsx   추천 목록 + 우선순위·완화·피드백
@@ -295,26 +301,33 @@ DTO 변경이라 담당자 승인이 필요해 하지 않았다.
 
 | 항목 | 왜 필요한가 | 범위 |
 | --- | --- | --- |
-| `MapHousingSummaryResponse` 에 `province`·`district` 추가 | 행정구역별 클러스터링의 전제. 주소 문자열 파싱은 부정확하다 | DTO 2필드. `Housing` 에 이미 있는 값이라 쿼리 변경 불필요 |
+| ~~`MapHousingSummaryResponse` 에 `province`·`district` 추가~~ | ✅ **완료 (2026-10-29).** 승인 후 반영했다. 함께 `noticeId`·`noticeAnnouncedAt`·`applyEndAt` 도 추가해 같은 좌표의 공고를 구분할 수 있게 했다(9필드 → 14필드). 쿼리 구조·스키마 변경 없음 | — |
 | 좌표 없는 주택 집계 | 전체 공고 모드에서 "지도에 안 뜨는 N곳"을 안내할 수 없다 (서버가 조회 단계에서 빼므로 개수를 모른다) | 집계 엔드포인트 또는 응답에 카운트 추가 |
 | 상세 응답의 "조건 일치" 플래그 | P2 해소 | `MapHousingSupplyResponse` 에 1필드 |
 
 ### 프론트엔드
 
-- **행정구역별 클러스터링** — 계획·수정 지점은 [`docs/map-clustering.md`](./map-clustering.md) 에 정리.
-  `clustering.ts` 의 `TODO(행정구역별 클러스터링)` 주석이 이 문서를 가리킨다.
-  `PinLayer` 계약만 지키면 `clustering.ts` 하나만 갈아 끼우면 된다.
-- **군집 파라미터 튜닝** — `minLevel: 6`, `minClusterSize: 2` 는 임의값이다. 실데이터로 조정 필요.
-- **브라우저 수동 검증** — 지금까지 타입 검사·빌드·모듈 로드까지만 확인했다. 아래 6장 참고.
+- ~~**행정구역별 클러스터링**~~ — ✅ **완료 (2026-10-29).** 최종 구현과 정책은
+  [`docs/map-clustering.md`](./map-clustering.md) 에 정리했다. 카카오 `MarkerClusterer` 는 더 이상 쓰지 않는다.
+- **군집 레벨 경계 튜닝** — `CLUSTER_LEVELS = { province: 11, district: 7 }` 은 실데이터로 맞춘 초기값이다.
+  최종 정책이 아니며 `regionCluster.ts` 상수 하나로 조정한다.
+- **브라우저 수동 검증** — 지도 군집·drill-down·위치 목록은 실화면에서 통과시켰다.
+  추천 슬라이더·인증·모바일 등 **아래 6장의 나머지 항목은 아직 그대로다.**
 
 ---
 
 ## 6. 아직 하지 않은 브라우저 검증
 
-**이 영역은 실제 화면에서 한 번도 통과시킨 적이 없다.** 이어받는 사람이 가장 먼저 할 일이다.
+**이 영역은 대부분 실제 화면에서 통과시킨 적이 없다.** 이어받는 사람이 가장 먼저 할 일이다.
+
+> **2026-10-29 에 실화면으로 통과시킨 범위 (지도 군집만).**
+> 전국 15개 시도 군집 합 316곳 = 툴바 표시, 시도→시군구→개별 단계가 화면 전체에서 일관,
+> 군집 클릭 후 대상 주택이 모두 뷰포트 안(원주 16/16, 정선 2/2, 춘천 41/41, 달성군 19/19),
+> 축소 시 단계 해제, 위치 목록 ↔ 상세 ↔ 목록 복귀, 새 탐색 시 선택 초기화.
+> **아래 추천·인증·모바일 항목은 그대로 남아 있다.**
 
 **전체 공고**
-- [ ] `/` → `/map` 이동, 핀 표시, 군집 숫자가 주택 수와 맞는지
+- [x] `/` → `/map` 이동, 핀 표시, 군집 숫자가 주택 수와 맞는지 (2026-10-29)
 - [ ] 필터 변경 시 핀 갱신 + **지도 중심·확대가 유지되는지** (전국으로 튕기면 안 됨)
 - [ ] 필터를 바꿔도 `?housing=`·`?mode=` 가 풀리지 않는지
 - [ ] 공고중(UPCOMING) 공고의 상세와 **사진이 깨지지 않는지**
