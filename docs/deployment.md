@@ -52,7 +52,16 @@ Vite의 `VITE_*` 환경 변수는 프론트엔드 **빌드 시점** 값입니다
 
 ## 3. 주변 인프라 배치 운영
 
-주변 인프라는 웹 백엔드에서만 `@Scheduled`로 자동 수집합니다. 공고 수집 전용 `NoticeCollectionApplication`에서는 인프라 배치가 실행되지 않습니다.
+주변 인프라 수집은 **운영에서는 collector 프로세스가** 맡습니다. 공고 수집(`NoticeCollectionApplication`)·AI 보완(`NoticeAiApplication`)이 끝난 직후 같은 프로세스에서 `HousingInfraCollectionService`를 한 번 실행합니다. 좌표가 생기는 바로 그 자리에서 채우므로 아래 보정 실행이 필요 없습니다.
+
+| 프로세스 | `INFRA_COLLECTION_ENABLED` | `COLLECTOR_API_ENABLED` | `NOTIFICATION_SCHEDULER_ENABLED` |
+| --- | --- | --- | --- |
+| 웹 서버 (`backend`) | `false` — 카카오 호출·긴 수집을 웹 프로세스에서 하지 않음 | `false` — `POST /api/internal/notices/sync` 미등록 | `true` |
+| 수집기 (`collector`, compose `profiles: [batch]`) | `true` | `false` | `false` — 알림 중복 발송 방지 |
+
+실행은 `deploy/collect-notices.sh` 또는 `deploy/monitoring/run-daily-collection.sh`(지표 기록)로 하며, 둘 다 `docker compose run --rm --no-deps collector`를 씁니다. 예약 실행(cron)은 서버에서 따로 등록합니다.
+
+아래 표의 웹 스케줄러(기동·보정·일일 cron)는 `INFRA_COLLECTION_ENABLED=true`인 환경(로컬 기본값)에서만 실제로 수집합니다.
 
 | 항목 | 현재 기본값 |
 | --- | --- |

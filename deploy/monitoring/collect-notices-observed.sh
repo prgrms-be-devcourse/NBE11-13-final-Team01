@@ -50,7 +50,7 @@ if [ -r "$metrics_file" ]; then
 fi
 
 cd "$deploy_dir" || exit 1
-if docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint java backend \
+if docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint java collector \
   -XX:MaxRAMPercentage=40 "-Dloader.main=$main_class" -cp app.jar org.springframework.boot.loader.launch.PropertiesLauncher 2>&1 | tee "$run_log"; then
   result=0
 else

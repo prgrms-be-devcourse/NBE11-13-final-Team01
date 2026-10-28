@@ -58,8 +58,13 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    environment:
+    # collector 가 같은 값을 물려받는다 (&app-env). 둘이 다른 것은 아래 '프로세스 역할' 세 개뿐이다.
+    environment: &app-env
       SPRING_PROFILES_ACTIVE: prod
+      # 프로세스 역할: 웹 서버는 요청 처리만 한다. 공고·주변 인프라 수집과 수집 API 는 collector 가 맡는다.
+      INFRA_COLLECTION_ENABLED: "false"
+      COLLECTOR_API_ENABLED: "false"
+      NOTIFICATION_SCHEDULER_ENABLED: "true"
       DB_HOST: ${DB_HOST:-db}
       DB_PORT: 5432
       DB_NAME: zipick
@@ -89,6 +94,23 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       APPLICATION_GUIDE_MODEL: ${APPLICATION_GUIDE_MODEL:-}
       APPLICATION_GUIDE_DAILY_CALL_BUDGET: ${APPLICATION_GUIDE_DAILY_CALL_BUDGET:-}
+
+  # 공고 수집기. 웹 서버와 같은 이미지·설정으로 수집만 한 번 하고 끝나는 별도 프로세스다.
+  # 평소엔 뜨지 않는다(profiles). collect-notices.sh / monitoring/collect-notices-observed.sh 가 run 으로 실행한다:
+  #   docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint java collector ... -Dloader.main=<진입점>
+  #   진입점: com.zipick.batch.NoticeCollectionApplication(공고 수집 → 주변 인프라) / NoticeAiApplication(AI 보완 → 주변 인프라)
+  # 웹 서버와 메모리를 나눠 쓰므로 상한을 둔다. 스크립트의 -XX:MaxRAMPercentage=40 → 힙 약 600MB.
+  collector:
+    image: ${BACKEND_IMAGE:-zipick-backend:latest}
+    profiles: [batch]
+    restart: "no"
+    mem_limit: 1500m
+    environment:
+      <<: *app-env
+      INFRA_COLLECTION_ENABLED: "true"
+      COLLECTOR_API_ENABLED: "false"
+      # 마감·새 공고 알림은 웹 서버의 스케줄러만 보낸다 (중복 발송 방지)
+      NOTIFICATION_SCHEDULER_ENABLED: "false"
 
   notification:
     image: ${NOTIFICATION_IMAGE:-zipick-notification:latest}

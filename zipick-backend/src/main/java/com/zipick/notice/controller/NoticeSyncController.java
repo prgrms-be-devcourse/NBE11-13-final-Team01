@@ -7,11 +7,14 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// SecurityConfig: /api/internal/** 는 permitAll (운영에서는 별도 보호가 필요하다)
+// SecurityConfig: /api/internal/** 는 permitAll 이라 누구나 부를 수 있다.
+// 운영 웹 서버는 COLLECTOR_API_ENABLED=false 로 이 엔드포인트를 아예 등록하지 않는다. 수집은 collector 프로세스가 맡는다.
+@ConditionalOnProperty(prefix = "zipick.collector", name = "api-enabled", havingValue = "true", matchIfMissing = true)
 @SecurityRequirements
 @RestController
 @RequestMapping("/api/internal/notices")

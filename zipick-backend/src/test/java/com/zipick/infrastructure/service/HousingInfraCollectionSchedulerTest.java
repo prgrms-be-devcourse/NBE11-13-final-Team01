@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -104,9 +105,9 @@ class HousingInfraCollectionSchedulerTest {
         givenTargets(housings(1L, 2L));
         givenCollect(1L, success());
         givenCollect(2L, success());
-        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey());
+        HousingInfraCollectionService service = service(configuredKey());
 
-        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
+        HousingInfraCollectionService.CollectionSummary summary = service.drain();
 
         assertThat(summary.targets()).isEqualTo(2);
         assertThat(summary.saved()).isEqualTo(2);
@@ -119,9 +120,9 @@ class HousingInfraCollectionSchedulerTest {
         givenTargets(housings(1L, 2L, 3L, 4L, 5L));
         givenCollectAll(success());
         // batch 2개씩 → 2 + 2 + 1 로 세 batch 를 연속 처리하고, 네 번째 조회에서 비어 끝난다
-        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey(), collection(true, 2, 3));
+        HousingInfraCollectionService service = service(configuredKey(), collection(true, 2, 3));
 
-        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
+        HousingInfraCollectionService.CollectionSummary summary = service.drain();
 
         assertThat(summary.batches()).isEqualTo(3);
         assertThat(summary.targets()).isEqualTo(5);
@@ -136,9 +137,9 @@ class HousingInfraCollectionSchedulerTest {
     void doesNotReselectPersistedHousings() {
         givenTargets(housings(1L, 2L, 3L, 4L));
         givenCollectAll(success());
-        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey(), collection(true, 2, 3));
+        HousingInfraCollectionService service = service(configuredKey(), collection(true, 2, 3));
 
-        scheduler.drain();
+        service.drain();
 
         // 주택마다 정확히 한 번씩만 수집한다
         assertThat(attempted).containsExactly(1L, 2L, 3L, 4L);
@@ -152,9 +153,9 @@ class HousingInfraCollectionSchedulerTest {
         // 전부 데이터 오류라 저장되지 않는다. 커서가 없다면 같은 batch 가 영원히 다시 조회된다.
         givenTargets(housings(1L, 2L, 3L));
         givenCollectAll(InfraCollectionResult.dataError(6));
-        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey(), collection(true, 2, 3));
+        HousingInfraCollectionService service = service(configuredKey(), collection(true, 2, 3));
 
-        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
+        HousingInfraCollectionService.CollectionSummary summary = service.drain();
 
         assertThat(summary.dataErrors()).isEqualTo(3);
         assertThat(summary.saved()).isZero();
@@ -168,9 +169,9 @@ class HousingInfraCollectionSchedulerTest {
         givenTargets(housings(1L, 2L));
         givenCollect(1L, InfraCollectionResult.dataError(6));
         givenCollect(2L, success());
-        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey());
+        HousingInfraCollectionService service = service(configuredKey());
 
-        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
+        HousingInfraCollectionService.CollectionSummary summary = service.drain();
 
         assertThat(summary.dataErrors()).isEqualTo(1);
         assertThat(summary.saved()).isEqualTo(1);
@@ -185,9 +186,9 @@ class HousingInfraCollectionSchedulerTest {
     void abortsAfterConsecutiveApiErrors() {
         givenTargets(housings(1L, 2L, 3L, 4L, 5L, 6L));
         givenCollectAll(InfraCollectionResult.apiError(1));
-        HousingInfraCollectionScheduler scheduler = scheduler(configuredKey(), collection(true, 2, 2));
+        HousingInfraCollectionService service = service(configuredKey(), collection(true, 2, 2));
 
-        HousingInfraCollectionScheduler.CollectionSummary summary = scheduler.drain();
+        HousingInfraCollectionService.CollectionSummary summary = service.drain();
 
         assertThat(summary.aborted()).isTrue();
         assertThat(summary.apiErrors()).isEqualTo(2);
@@ -246,6 +247,42 @@ class HousingInfraCollectionSchedulerTest {
                 any(), any(), any(), anyLong(), any(Pageable.class));
     }
 
+    @Test
+    @DisplayName("수집기 프로세스가 부르는 collect 는 실행 결과 요약을 돌려준다")
+    void collectReturnsSummaryForCollector() {
+        givenTargets(housings(1L, 2L));
+        givenCollectAll(success());
+
+        Optional<HousingInfraCollectionService.CollectionSummary> summary =
+                service(configuredKey()).collect("공고 수집 후");
+
+        assertThat(summary).isPresent();
+        assertThat(summary.get().saved()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("수집이 꺼져 있으면 collect 는 빈 값을 돌려주고 아무것도 조회하지 않는다")
+    void collectReturnsEmptyWhenDisabled() {
+        Optional<HousingInfraCollectionService.CollectionSummary> summary =
+                service(configuredKey(), collection(false, 100, 3)).collect("공고 수집 후");
+
+        assertThat(summary).isEmpty();
+        verifyNoInteractions(snapshotRepository, collector, persistenceService);
+    }
+
+    @Test
+    @DisplayName("수집 중 예상치 못한 오류가 나도 collect 는 예외를 던지지 않는다")
+    void collectSwallowsUnexpectedErrors() {
+        given(snapshotRepository.findCollectionTargets(any(), any(), any(), anyLong(), any(Pageable.class)))
+                .willThrow(new IllegalStateException("db down"));
+
+        Optional<HousingInfraCollectionService.CollectionSummary> summary =
+                service(configuredKey()).collect("공고 수집 후");
+
+        assertThat(summary).isEmpty();
+        verifyNoInteractions(collector, persistenceService);
+    }
+
     /**
      * 실제 쿼리와 같은 의미로 답한다.
      *   - 커서보다 큰 id 만
@@ -293,10 +330,18 @@ class HousingInfraCollectionSchedulerTest {
     private HousingInfraCollectionScheduler scheduler(
             KakaoLocalApiProperties kakaoProperties, Collection collection
     ) {
-        InfraProperties properties = new InfraProperties(
-                Duration.ofDays(30), collection, List.of(SUBWAY)
-        );
-        return new HousingInfraCollectionScheduler(
+        return new HousingInfraCollectionScheduler(service(kakaoProperties, collection), properties(collection));
+    }
+
+    private HousingInfraCollectionService service(KakaoLocalApiProperties kakaoProperties) {
+        return service(kakaoProperties, collection(true, 100, 3));
+    }
+
+    private HousingInfraCollectionService service(
+            KakaoLocalApiProperties kakaoProperties, Collection collection
+    ) {
+        InfraProperties properties = properties(collection);
+        return new HousingInfraCollectionService(
                 snapshotRepository,
                 collector,
                 persistenceService,
@@ -304,6 +349,10 @@ class HousingInfraCollectionSchedulerTest {
                 new InfraPolicy(properties),
                 kakaoProperties
         );
+    }
+
+    private static InfraProperties properties(Collection collection) {
+        return new InfraProperties(Duration.ofDays(30), collection, List.of(SUBWAY));
     }
 
     private static Collection collection(boolean enabled, int batchSize, int apiFailureThreshold) {
