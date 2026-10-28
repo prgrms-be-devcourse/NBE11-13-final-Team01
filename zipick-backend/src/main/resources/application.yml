@@ -22,6 +22,23 @@ spring:
 server:
   port: 8080
 
+# API 응답 시간의 대략적인 분포를 제한된 구간으로 기록한다.
+management:
+  metrics:
+    distribution:
+      slo:
+        '[http.server.requests]': 100ms,300ms,1s,3s,10s
+
+logging:
+  level:
+    # 일부 공공기관 PDF의 불완전한 내장 글꼴 메타데이터가 같은 경고를 글자마다 반복한다.
+    # 실제 PDF 읽기 실패와 우리 파서의 검증 경고는 그대로 출력한다.
+    org.apache.pdfbox.pdmodel.font.PDSimpleFont: error
+    org.apache.pdfbox.pdmodel.font.PDType0Font: error
+    org.apache.pdfbox.pdmodel.font.PDCIDFontType2: error
+    org.apache.fontbox.ttf.PostScriptTable: error
+    org.apache.fontbox.ttf.CmapSubtable: error
+
 jwt:
   issuer: zipick
   # Base64로 인코딩된 32바이트 이상 키를 환경 변수로 주입한다. 생성: openssl rand -base64 32
@@ -71,7 +88,7 @@ zipick:
   gemini-pdf-parser:
     key: ${gemini.api.key:}
     base-url: ${gemini.api.base-url:https://generativelanguage.googleapis.com}
-    enabled: ${GEMINI_PDF_PARSER_ENABLED:false}
+    enabled: ${GEMINI_PDF_PARSER_ENABLED:true}
     model: ${GEMINI_PDF_PARSER_MODEL:gemini-3.5-flash-lite}
     max-file-bytes: 20971520
     # PDF 한 건씩 처리하므로 모델의 출력 한도를 사용한다.
@@ -83,6 +100,8 @@ zipick:
     # 신규 PDF가 일일 한도를 전부 소진하지 않도록 보정 호출 몫을 남긴다.
     retry-call-reserve: 20
     max-continuation-calls: 4
+    # 일반 문서는 최초 1회만 분석한다. 예상 공급행이 이 값 이상인 대형 문서만 누락행을 후속 호출한다.
+    continuation-min-expected-units: 50
     # 호출 횟수보다 문서별 완전성을 우선해 PDF 한 건만 한 요청에 전달한다.
     max-documents-per-request: 1
     max-pages-per-request: 120
@@ -90,7 +109,7 @@ zipick:
     cache-directory: .gemini-pdf-cache
   # Lite 추출 JSON을 DB 구조로 검수하는 3.8 Flash 전용 정책.
   gemini-normalization:
-    enabled: ${GEMINI_NORMALIZATION_ENABLED:false}
+    enabled: ${GEMINI_NORMALIZATION_ENABLED:true}
     # Lite 추출이 모두 끝난 뒤 DB 저장 직전에 3.8 Flash로 JSON만 묶어서 검수한다.
     model: gemini-3.8-flash
     thinking-level: low

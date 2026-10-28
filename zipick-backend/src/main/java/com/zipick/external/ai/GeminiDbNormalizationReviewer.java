@@ -57,7 +57,7 @@ public class GeminiDbNormalizationReviewer {
     }
 
     public boolean enabled() {
-        return properties.enabled() && pdfProperties.key() != null && !pdfProperties.key().isBlank();
+        return properties.enabled() && pdfProperties.isConfigured();
     }
 
     public GeminiNormalizationResult review(List<GeminiNormalizationDocument> documents) {
@@ -118,13 +118,23 @@ public class GeminiDbNormalizationReviewer {
     }
 
     private CallResult callWithOneRetry(String requestBody) {
+        budget.acquire(false);
         try {
-            budget.acquire(false);
             return new CallResult(transport.generate(requestBody), 1);
         } catch (RuntimeException first) {
             log.warn("Gemini DB 정규화 첫 호출 실패, 예약 호출로 한 번 재시도합니다: {}", first.getMessage());
-            budget.acquire(true);
-            return new CallResult(transport.generate(requestBody), 2);
+            try {
+                budget.acquire(true);
+            } catch (RuntimeException budgetFailure) {
+                GeminiFinalFailureLogger.logFailure("normalization", first);
+                throw budgetFailure;
+            }
+            try {
+                return new CallResult(transport.generate(requestBody), 2);
+            } catch (RuntimeException last) {
+                GeminiFinalFailureLogger.logFailure("normalization", last);
+                throw last;
+            }
         }
     }
 

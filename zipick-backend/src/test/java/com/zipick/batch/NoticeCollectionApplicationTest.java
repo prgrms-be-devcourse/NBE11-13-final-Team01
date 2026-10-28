@@ -67,4 +67,17 @@ class NoticeCollectionApplicationTest {
                 .getDeclaredConstructor();
         assertThat(constructor.canAccess(null)).isFalse();
     }
+
+    @Test
+    void alwaysDisablesAiStages() {
+        assertThat(NoticeCollectionApplication.withAiDisabled(new String[]{
+                "--spring.profiles.active=local",
+                "--zipick.gemini-pdf-parser.enabled=true",
+                "--zipick.gemini-normalization.enabled=true"
+        })).containsExactly(
+                "--spring.profiles.active=local",
+                "--zipick.gemini-pdf-parser.enabled=false",
+                "--zipick.gemini-normalization.enabled=false"
+        );
+    }
 }

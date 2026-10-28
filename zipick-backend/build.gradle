@@ -31,6 +31,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // 운영 모니터링 서버가 API와 JVM 지표를 수집한다.
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
     // 주소가 없는 LH 공고의 공급주택 목록(XLS/XLSX, 텍스트 PDF)을 읽는다.
     implementation 'org.apache.poi:poi-ooxml:5.5.1'
@@ -150,7 +153,68 @@ tasks.named('check') {
 // QueryDSL Q클래스 생성 위치
 def querydslDir = layout.buildDirectory.dir('generated/querydsl').get().asFile
 sourceSets { main.java.srcDirs += [querydslDir] }
-tasks.withType(JavaCompile).configureEach {
+// QueryDSL 생성물은 main 컴파일에만 연결한다. 별도 평가 source set이 같은 출력 폴더를
+// 공유하면 Gradle 9가 태스크 의존성 충돌로 빌드를 중단한다.
+tasks.named('compileJava', JavaCompile) {
     options.generatedSourceOutputDirectory.set(file(querydslDir))
 }
 clean { delete file(querydslDir) }
+
+// 실제 PDF를 대상으로 기존 파서와 AI 파서를 비교하는 수동 평가 도구.
+// 외부 사이트 호출과 Gemini 비용이 발생할 수 있어 일반 test/CI와 분리한다.
+sourceSets {
+    parserEvaluation {
+        java.srcDir 'src/parserEvaluation/java'
+        compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+configurations {
+    parserEvaluationImplementation.extendsFrom testImplementation
+    parserEvaluationRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+tasks.register('parserEvaluation', JavaExec) {
+    group = 'verification'
+    description = '공식 PDF 원문 정답셋과 현재 상세주택 파서 결과를 비교합니다.'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.ParserEvaluationApplication'
+    workingDir = rootProject.projectDir.parentFile
+}
+
+tasks.register('pdfLayoutDump', JavaExec) {
+    group = 'verification'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.PdfLayoutDumpApplication'
+    workingDir = rootProject.projectDir.parentFile
+}
+
+tasks.register('hybridParserTrial', JavaExec) {
+    group = 'verification'
+    description = 'Gemini가 전체 PDF에서 상세주택을 직접 추출하는 흐름을 시험합니다.'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.HybridParserTrialApplication'
+    workingDir = rootProject.projectDir.parentFile
+}
+
+tasks.register('aiParserAccuracy', JavaExec) {
+    group = 'verification'
+    description = '저장된 AI 파싱 결과를 PDF 원문 정답셋과 대조해 정확도·누락·근거 일치율을 계산합니다.'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.AiParserAccuracyApplication'
+    workingDir = rootProject.projectDir.parentFile
+}
+
+tasks.register('normalizationReviewTrial', JavaExec) {
+    group = 'verification'
+    description = '저장된 Gemini Lite JSON을 묶어 3.8 Flash 정규화 검수를 시험합니다.'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.NormalizationReviewTrialApplication'
+    workingDir = rootProject.projectDir.parentFile
+}

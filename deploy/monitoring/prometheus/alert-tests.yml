@@ -1,0 +1,169 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+tests:
+  - name: gemini-transient-error-recovers
+    interval: 1m
+    input_series:
+      - series: 'zipick_collector_last_gemini_http_errors{job_type="ai",stage="extraction",category="5xx",instance="collector:9100"}'
+        values: '1x10'
+      - series: 'zipick_collector_last_gemini_final_failures{job_type="ai",stage="extraction",category="5xx",instance="collector:9100"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: CollectorGeminiErrors
+        exp_alerts: []
+  - name: gemini-final-failure
+    interval: 1m
+    input_series:
+      - series: 'zipick_collector_last_gemini_final_failures{job_type="ai",stage="normalization",category="5xx",instance="collector:9100"}'
+        values: '1x5 0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CollectorGeminiErrors
+        exp_alerts:
+          - exp_labels: {job_type: ai, stage: normalization, category: 5xx, instance: 'collector:9100', severity: warning}
+            exp_annotations: {summary: '수집기의 Gemini 호출이 최종 실패했습니다: normalization / 5xx / collector:9100'}
+      - eval_time: 7m
+        alertname: CollectorGeminiErrors
+        exp_alerts: []
+  - name: frontend-probe-failed
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="service-probe",service="frontend",instance="http://web:80/"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: InternalServiceUnreachable
+        exp_alerts:
+          - exp_labels: {job: service-probe, service: frontend, instance: 'http://web:80/', severity: warning}
+            exp_annotations: {summary: '서비스 접근 점검 실패: frontend'}
+  - name: frontend-probe-recovers
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="service-probe",service="frontend",instance="http://web:80/"}'
+        values: '0x5 1x5'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: InternalServiceUnreachable
+        exp_alerts:
+          - exp_labels: {job: service-probe, service: frontend, instance: 'http://web:80/', severity: warning}
+            exp_annotations: {summary: '서비스 접근 점검 실패: frontend'}
+      - eval_time: 7m
+        alertname: InternalServiceUnreachable
+        exp_alerts: []
+  - name: collector-failure-and-recovery
+    interval: 1m
+    input_series:
+      - series: 'zipick_collector_last_run_success{job="node",job_type="basic",instance="collector:9100"}'
+        values: '0x5 1x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: CollectorFailed
+        exp_alerts:
+          - exp_labels: {job: node, job_type: basic, instance: 'collector:9100', severity: warning}
+            exp_annotations: {summary: '공고 수집기 실행이 실패했습니다: basic / collector:9100'}
+      - eval_time: 7m
+        alertname: CollectorFailed
+        exp_alerts: []
+  - name: brief-memory-pressure-does-not-alert
+    interval: 1m
+    input_series:
+      - series: 'node_memory_MemAvailable_bytes{job="node",instance="host:9100"}'
+        values: '5x3 50x10'
+      - series: 'node_memory_MemTotal_bytes{job="node",instance="host:9100"}'
+        values: '100x14'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: HostMemoryLow
+        exp_alerts: []
+  - name: backend-disconnect-and-recovery
+    interval: 1m
+    input_series:
+      - series: 'up{job="backend",instance="backend:19090"}'
+        values: '0x5 1x5'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: MonitoringTargetDown
+        exp_alerts:
+          - exp_labels: {job: backend, instance: 'backend:19090', severity: critical}
+            exp_annotations: {summary: '지표 수집 대상 연결 실패: backend / backend:19090'}
+      - eval_time: 7m
+        alertname: MonitoringTargetDown
+        exp_alerts: []
+  - name: queue-backlog
+    interval: 1m
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages_ready{job="rabbitmq",queue="notifications",instance="rabbit:15692"}'
+        values: '101x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: RabbitQueueBacklog
+        exp_alerts:
+          - exp_labels: {job: rabbitmq, queue: notifications, instance: 'rabbit:15692', severity: warning}
+            exp_annotations: {summary: 'RabbitMQ 처리 대기 메시지가 지속적으로 쌓이고 있습니다'}
+  - name: sustained-api-server-errors
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="backend",status="200"}'
+        values: '0+60x15'
+      - series: 'http_server_requests_seconds_count{job="backend",status="500"}'
+        values: '0+10x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: BackendHighErrorRate
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: {summary: '최근 API 서버 오류 비율이 높습니다'}
+  - name: client-errors-are-not-server-outages
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="backend",status="200"}'
+        values: '0+60x15'
+      - series: 'http_server_requests_seconds_count{job="backend",status="404"}'
+        values: '0+10x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: BackendHighErrorRate
+        exp_alerts: []
+  - name: exporter-down-is-not-db-down
+    interval: 1m
+    input_series:
+      - series: 'up{job="postgres",instance="db:9187"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: MonitoringTargetDown
+        exp_alerts:
+          - exp_labels: {job: postgres, instance: 'db:9187', severity: critical}
+            exp_annotations: {summary: '지표 수집 대상 연결 실패: postgres / db:9187'}
+      - eval_time: 5m
+        alertname: PostgresDown
+        exp_alerts: []
+  - name: exporter-up-but-database-down
+    interval: 1m
+    input_series:
+      - series: 'up{job="postgres",instance="db:9187"}'
+        values: '1x10'
+      - series: 'pg_up{job="postgres",instance="db:9187"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PostgresDown
+        exp_alerts:
+          - exp_labels: {job: postgres, instance: 'db:9187', severity: critical}
+            exp_annotations: {summary: 'PostgreSQL에 연결할 수 없습니다: db:9187'}
+  - name: database-connection-recovers
+    interval: 1m
+    input_series:
+      - series: 'pg_up{job="postgres",instance="db:9187"}'
+        values: '0x5 1x5'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PostgresDown
+        exp_alerts:
+          - exp_labels: {job: postgres, instance: 'db:9187', severity: critical}
+            exp_annotations: {summary: 'PostgreSQL에 연결할 수 없습니다: db:9187'}
+      - eval_time: 7m
+        alertname: PostgresDown
+        exp_alerts: []

@@ -11,6 +11,8 @@ import org.springframework.boot.WebApplicationType;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * IntelliJ에서 공고 수집만 한 번 실행하기 위한 별도 진입점이다.
@@ -29,7 +31,9 @@ public final class NoticeCollectionApplication {
         // 웹 전용 SecurityFilterChain 같은 빈은 수집 실행에서 생성하지 않는다.
         application.setLazyInitialization(true);
 
-        try (ConfigurableApplicationContext context = application.run(args)) {
+        try (LocalCollectorObservation observation = LocalCollectorObservation.start("basic");
+             ConfigurableApplicationContext context = application.run(withAiDisabled(args))) {
+            if (observation != null) observation.attachAfterStartup();
             MyHomeSyncService syncService = context.getBean(MyHomeSyncService.class);
             NoticeSyncResponse result = syncService.synchronize();
             // elapsedSeconds 는 synchronize() 전체(수집 → 저장 → 정규화 → 좌표 보완) 시간이다.
@@ -53,6 +57,20 @@ public final class NoticeCollectionApplication {
             } catch (RuntimeException e) {
                 log.warn("수집 보고를 보내지 못했습니다: {}", e.toString());
             }
+            if (observation != null) observation.success();
         }
+    }
+
+    static String[] withAiDisabled(String[] args) {
+        List<String> effective = new ArrayList<>();
+        if (args != null) {
+            for (String arg : args) {
+                if (!arg.startsWith("--zipick.gemini-pdf-parser.enabled=")
+                        && !arg.startsWith("--zipick.gemini-normalization.enabled=")) effective.add(arg);
+            }
+        }
+        effective.add("--zipick.gemini-pdf-parser.enabled=false");
+        effective.add("--zipick.gemini-normalization.enabled=false");
+        return effective.toArray(String[]::new);
     }
 }

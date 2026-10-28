@@ -38,6 +38,12 @@ public class HugNoticeCollector {
 
     private final ExternalDocumentClient documentClient;
     private final HugCollectorProperties properties;
+    private com.zipick.notice.repository.DocumentParseHistoryRepository historyRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setHistoryRepository(com.zipick.notice.repository.DocumentParseHistoryRepository historyRepository) {
+        this.historyRepository = historyRepository;
+    }
 
     public HugNoticeCollector(ExternalDocumentClient documentClient, HugCollectorProperties properties) {
         this.documentClient = documentClient;
@@ -78,13 +84,24 @@ public class HugNoticeCollector {
                 continue;
             }
             String id = group.announcedAt().toString() + "-" + group.period().start() + "-" + group.period().end();
-            List<NoticeHousingResponse> houses = group.rows().stream().map(row -> toHousing(id, row)).toList();
+            byte[] data = JSON_MAPPER.writeValueAsBytes(group.rows());
+            String key = "HUG:" + com.zipick.external.housingdetail.DocumentFingerprint.sha256(
+                    id.getBytes(java.nio.charset.StandardCharsets.UTF_8)) + ":"
+                    + com.zipick.external.housingdetail.DocumentFingerprint.sha256(data);
+            boolean skipped = historyRepository != null && historyRepository
+                    .findByDocumentKeyAndParserVersion(key, "HUG_ROWS_V2")
+                    .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent();
+            List<NoticeHousingResponse> houses = skipped ? List.of()
+                    : group.rows().stream().map(row -> toHousing(id, row)).toList();
             String title = group.announcedAt() + " HUG 든든전세주택 입주자 모집공고";
             NoticeResponse notice = new NoticeResponse(
                     "HUG", id, "공고중", title, "주택도시보증공사", null,
                     group.announcedAt().toString(), null, text(group.period().start()),
                     text(group.period().end()), "든든전세주택", properties.listUrl(),
-                    properties.listUrl(), null, houses, group.rows().getFirst().attachments()
+                    properties.listUrl(), null, houses, group.rows().getFirst().attachments(), skipped,
+                    historyRepository != null && !houses.isEmpty()
+                            ? List.of(new com.zipick.notice.dto.ParseCheckpoint(key, "HUG_ROWS_V2", data.length, houses.size()))
+                            : List.of()
             );
             commands.add(new NoticeSyncCommand(notice, JSON_MAPPER.writeValueAsString(group.rows())));
         }

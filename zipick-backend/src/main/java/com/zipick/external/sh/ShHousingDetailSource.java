@@ -97,21 +97,22 @@ public class ShHousingDetailSource implements HousingDetailSource {
         List<ShAttachment> attachments = findAttachments(html);
         List<NoticeAttachmentResponse> savedAttachments = toAttachmentResponses(detailUri, attachments);
         savedAttachments = appendExternalMediaLinks(savedAttachments, detailUri, attachments);
+        boolean failed = false;
 
         for (ShAttachment attachment : housingCandidates(attachments)) {
             String documentKey = documentKey(attachment);
             boolean aiEnabled = geminiSupport != null && geminiSupport.enabled();
             String parserVersion = aiEnabled
                     ? "SH_" + geminiSupport.parserVersion() : PARSER_VERSION;
-            if (historyRepository.findByDocumentKeyAndParserVersion(documentKey, parserVersion)
-                    .filter(DocumentParseHistory::isSuccess)
-                    .isPresent()) {
-                log.info("SH 첨부 재파싱 생략: seq={}, fileSeq={}, fileName={}",
-                        attachment.seq(), attachment.fileSeq(), attachment.oriFileNm());
-                return new HousingDetailResult(List.of(), savedAttachments, Map.of());
-            }
             try {
                 byte[] bytes = documentClient.getBytes(downloadUri(detailUri, attachment));
+                String fingerprintKey = "SH:" + attachment.brdId() + ":" + attachment.seq() + ":"
+                        + attachment.fileSeq() + ":" + com.zipick.external.housingdetail.DocumentFingerprint.sha256(bytes);
+                if (historyRepository.findByDocumentKeyAndParserVersion(fingerprintKey, parserVersion)
+                        .filter(DocumentParseHistory::isSuccess).isPresent()) {
+                    log.info("SH 변경 없는 첨부 재파싱 생략: seq={}, fileSeq={}", attachment.seq(), attachment.fileSeq());
+                    return new HousingDetailResult(List.of(), savedAttachments, Map.of(), true);
+                }
                 ParsedAttachment parsed = parseAttachment(notice, attachment, bytes);
                 List<DetailedHousingUnit> units = parsed.units();
                 if (units.isEmpty()) {
@@ -120,22 +121,19 @@ public class ShHousingDetailSource implements HousingDetailSource {
                 if (aiEnabled && !parsed.aiComplete()) {
                     log.warn("SH AI 불완전 결과는 성공 이력으로 기록하지 않습니다: seq={}, fileSeq={}, fallbackUnits={}",
                             attachment.seq(), attachment.fileSeq(), units.size());
-                    return new HousingDetailResult(units, savedAttachments, Map.of());
+                    return new HousingDetailResult(units, savedAttachments, Map.of(), true);
                 }
-                DocumentParseHistory history = historyRepository
-                        .findByDocumentKeyAndParserVersion(documentKey, parserVersion)
-                        .orElseGet(() -> new DocumentParseHistory(documentKey, parserVersion));
-                history.markSuccess(attachment.fileSize(), units.size());
-                historyRepository.save(history);
                 log.info("SH 공급주택 첨부 선택: seq={}, fileSeq={}, fileName={}, units={}",
                         attachment.seq(), attachment.fileSeq(), attachment.oriFileNm(), units.size());
-                return new HousingDetailResult(units, savedAttachments, Map.of());
+                return new HousingDetailResult(units, savedAttachments, Map.of(), failed,
+                        List.of(new com.zipick.notice.dto.ParseCheckpoint(fingerprintKey, parserVersion, bytes.length, units.size())));
             } catch (RuntimeException exception) {
+                failed = true;
                 log.warn("SH 첨부 파싱 실패: seq={}, fileSeq={}, fileName={}, reason={}",
                         attachment.seq(), attachment.fileSeq(), attachment.oriFileNm(), exception.getMessage());
             }
         }
-        return new HousingDetailResult(List.of(), savedAttachments, Map.of());
+        return new HousingDetailResult(List.of(), savedAttachments, Map.of(), failed);
     }
 
     List<ShAttachment> findAttachments(String html) {
@@ -273,7 +271,7 @@ public class ShHousingDetailSource implements HousingDetailSource {
         }
     }
 
-    private URI downloadUri(URI detailUri, ShAttachment attachment) {
+    URI downloadUri(URI detailUri, ShAttachment attachment) {
         return detailUri.resolve("/app/com/file/innoFD.do?brdId=" + attachment.brdId()
                 + "&seq=" + attachment.seq() + "&fileTp=" + attachment.fileTp()
                 + "&fileSeq=" + attachment.fileSeq());

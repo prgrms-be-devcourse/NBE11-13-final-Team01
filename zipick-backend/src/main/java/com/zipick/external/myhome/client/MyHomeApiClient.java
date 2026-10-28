@@ -1,6 +1,7 @@
 package com.zipick.external.myhome.client;
 
 import com.zipick.external.myhome.config.MyHomeApiProperties;
+import com.zipick.external.ExternalApiMetrics;
 import com.zipick.external.myhome.dto.MyHomeApiResponse;
 import com.zipick.external.myhome.dto.MyHomeComplex;
 import com.zipick.external.myhome.dto.MyHomeComplexQuery;
@@ -76,10 +77,10 @@ public class MyHomeApiClient {
             URI uri,
             ParameterizedTypeReference<MyHomeApiResponse<T>> responseType
     ) {
-        return restClient.get()
+        return ExternalApiMetrics.measure("myhome", "api", () -> restClient.get()
                 .uri(uri)
                 .retrieve()
-                .body(responseType);
+                .body(responseType));
     }
 
     private void addIfPresent(UriComponentsBuilder builder, String name, String value) {

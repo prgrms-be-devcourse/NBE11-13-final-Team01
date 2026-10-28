@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "documents": [
+    {
+      "id": "sh-311521-seoripul-youth-art-town",
+      "agency": "SH",
+      "category": "청년예술인 공공임대",
+      "title": "서초구 청년예술인주택 서리풀 청년아트타운 잔여세대 모집 공고",
+      "sourceUrl": "https://www.i-sh.co.kr/app/com/file/innoFD.do?brdId=GS0401&seq=311521&fileTp=A&fileSeq=3",
+      "localFile": "sh-311521-seoripul-youth-art-town.pdf",
+      "parser": "SH_WITH_LH_FALLBACK",
+      "expectedUnitCount": 6,
+      "groundTruthFile": "ground-truth/sh-311521-seoripul-youth-art-town.json",
+      "requiredReasons": [
+        "한 공고문 안에 서로 다른 두 건물과 6개 호실이 함께 있음",
+        "호실별 면적·보증금·월 임대료와 건물별 승강기·공동시설·주차 정보가 함께 있음",
+        "고정 DB 필드 밖의 기본 옵션과 공동시설 종류가 등장함"
+      ]
+    },
+    {
+      "id": "gh-795-purchase-rental-housing-list",
+      "agency": "GH",
+      "category": "매입임대 자격완화",
+      "title": "26년 매입임대주택 입주자 모집공고 주택내역",
+      "sourceUrl": "https://apply-cdn.gh.or.kr/sr/sr7155/selectFileDown.do?pbancNo=795&atchFileSn=1596415&atchFileDtlSn=38&mode=1&v=20260615141559",
+      "localFile": "gh-795-purchase-rental-housing-list.pdf",
+      "parser": "SH_WITH_LH_FALLBACK",
+      "expectedUnitCount": 150,
+      "groundTruthFile": "ground-truth/gh-795-purchase-rental-housing-list.json",
+      "requiredReasons": [
+        "한 PDF에 150개 공급 호실이 들어 있음",
+        "호실별 주소·방수·전용면적·승강기·보증금·월 임대료가 한 표에 있음",
+        "공용면적과 임대면적처럼 기존 DTO 밖의 열도 존재함"
+      ]
+    },
+    {
+      "id": "lh-2026-gwangju-jeonnam-youth-housing-list",
+      "agency": "LH",
+      "category": "청년 매입임대",
+      "title": "2026년 3차 청년 매입임대주택 공급대상주택 목록",
+      "sourceUrl": "https://apply.lh.or.kr/lhapply/lhFile.do?fileid=68617360",
+      "localFile": "lh-2026-gwangju-jeonnam-youth-housing-list.pdf",
+      "parser": "SH_WITH_LH_FALLBACK",
+      "expectedUnitCount": 77,
+      "groundTruthFile": "ground-truth/lh-2026-gwangju-jeonnam-youth-housing-list.json",
+      "requiredReasons": [
+        "한 PDF에 77개 공급 호실이 들어 있음",
+        "호실별 면적·층수·방수·승강기와 순위별 임대조건이 함께 있음",
+        "성별용도·주택열람일정·공급형처럼 문서 고유 열이 존재함"
+      ]
+    },
+    {
+      "id": "hug-2026-deundeun-jeonse-notice",
+      "agency": "HUG",
+      "category": "든든전세주택",
+      "title": "HUG 든든전세주택 입주자 모집 공고(2026.5.29)",
+      "sourceUrl": "https://www.khug.or.kr/hug/homepage_file_upload/jeonse_notice_260529.pdf",
+      "localFile": "hug-2026-deundeun-jeonse-notice.pdf",
+      "parser": "LH_ADDRESS",
+      "expectedUnitCount": 0,
+      "groundTruthFile": "ground-truth/hug-2026-deundeun-jeonse-notice.json",
+      "requiredReasons": [
+        "공급주택 개별 목록은 웹에 있고 PDF에는 공고 공통 조건만 있는 유형",
+        "AI가 주택 행을 환각하지 않고 문서 수준 정보만 추출하는지 확인 가능",
+        "공급호수·임대기간·신청기간·임대조건이 서술형과 표로 섞여 있음"
+      ]
+    }
+  ]
+}

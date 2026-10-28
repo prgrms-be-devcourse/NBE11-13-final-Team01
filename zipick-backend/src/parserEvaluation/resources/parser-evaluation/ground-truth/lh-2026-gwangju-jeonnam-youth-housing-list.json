@@ -1,0 +1,48 @@
+{
+  "documentId": "lh-2026-gwangju-jeonnam-youth-housing-list",
+  "verification": {
+    "method": "PDF 원문의 4페이지 전체와 첫 행·중간 행·마지막 행을 직접 대조",
+    "verifiedOn": "2026-10-22",
+    "notes": "기본 rentDeposit/monthlyRent는 청년 1순위 조건이며 2·3순위 조건은 추가 속성으로 기록함"
+  },
+  "units": [
+    {
+      "key": "1-충장홀리어스오피스텔-708",
+      "fields": {"complexName":"충장홀리어스오피스텔","unitNumber":"708","address":"전남광주통합특별시 동구 구성로148번길 10-2","floor":"7","roomCount":"1","housingType":"오피스텔","supplyType":"단독(1인)","exclusiveArea":"23.6192","rentDeposit":"1000000","monthlyRent":"170950","elevatorAvailable":"false"},
+      "evidence": [{"page":1,"text":"1 ... 동구 구성로148번길 10-2(수기동) ... 708 ... 23.6192 ... 1 7층 N 오피스텔 1,000,000 170,950"}]
+    },
+    {
+      "key": "12-글로리빌-204A",
+      "fields": {"complexName":"글로리빌","unitNumber":"204A","address":"전남광주통합특별시 북구 중가로37번길 9","floor":"2","roomCount":"1","housingType":"다가구주택","supplyType":"공동(2인)","exclusiveArea":"26.6805","rentDeposit":"1000000","monthlyRent":"147220","elevatorAvailable":"false"},
+      "evidence": [{"page":1,"text":"12 ... 북구 중가로37번길 9(유동) 글로리빌 204A ... 공동(2인) ... 26.6805 ... 1 2층 N 다가구주택 1,000,000 147,220"}]
+    },
+    {
+      "key": "19-용봉아이윌-401",
+      "fields": {"complexName":"용봉아이윌","unitNumber":"401","address":"전남광주통합특별시 북구 설죽로148번길 83-14","floor":"4","roomCount":"2","housingType":"다세대주택","supplyType":"단독(1인)","exclusiveArea":"25.0698","rentDeposit":"1000000","monthlyRent":"187430","elevatorAvailable":"true"},
+      "evidence": [{"page":1,"text":"19 ... 북구 설죽로148번길 83-14(용봉동) 용봉아이윌 401 ... 25.0698 ... 2 4층 Y 다세대주택 1,000,000 187,430"}]
+    },
+    {
+      "key": "46-첨단센트럴파크2차-1208",
+      "fields": {"complexName":"첨단센트럴파크2차","unitNumber":"1208","address":"전남광주통합특별시 광산구 첨단중앙로170번길 87","floor":"12","roomCount":"3","housingType":"도시형생활주택(투룸형)","supplyType":"단독(1인)","exclusiveArea":"41.8300","rentDeposit":"1000000","monthlyRent":"307040","elevatorAvailable":"true"},
+      "evidence": [{"page":3,"text":"46 ... 광산구 첨단중앙로170번길 87(쌍암동) 첨단센트럴파크2차 1208 ... 41.8300 ... 3 12층 Y 도시형생활주택(투룸형) 1,000,000 307,040"}]
+    },
+    {
+      "key": "59-칼튼힐-201",
+      "fields": {"complexName":"칼튼힐","unitNumber":"201","address":"전남광주통합특별시 나주시 송월7길 20","floor":"2","roomCount":"1","housingType":"다가구주택","supplyType":"단독(1인)","exclusiveArea":"26.9690","rentDeposit":"1000000","monthlyRent":"229860","elevatorAvailable":"true"},
+      "evidence": [{"page":3,"text":"59 ... 나주시 송월7길 20(송월동) 칼튼힐 201 ... 26.9690 ... 1 2층 Y 다가구주택 1,000,000 229,860"}]
+    },
+    {
+      "key": "77-남악도휘에드가7차오피스텔-814",
+      "fields": {"complexName":"남악도휘에드가7차오피스텔","unitNumber":"814","address":"전남광주통합특별시 무안군 삼향읍 후광대로 324","floor":"8","roomCount":"1","housingType":"오피스텔","supplyType":"단독(1인)","exclusiveArea":"28.5000","rentDeposit":"1000000","monthlyRent":"94090","elevatorAvailable":"true"},
+      "evidence": [{"page":4,"text":"77 ... 무안군 삼향읍 후광대로 324 남악도휘에드가7차오피스텔 814 ... 28.5000 ... 1 8층 Y 오피스텔 1,000,000 94,090"}]
+    }
+  ],
+  "additionalAttributes": [
+    {"scope":"1-충장홀리어스오피스텔-708","name":"주거공용면적","value":"12.0391","unit":"㎡","page":1,"evidence":"23.6192 12.0391 35.6583"},
+    {"scope":"1-충장홀리어스오피스텔-708","name":"면적계","value":"35.6583","unit":"㎡","page":1,"evidence":"23.6192 12.0391 35.6583"},
+    {"scope":"1-충장홀리어스오피스텔-708","name":"청년 2·3순위 임대보증금","value":"2000000","unit":"원","page":1,"evidence":"2,000,000 206,510"},
+    {"scope":"1-충장홀리어스오피스텔-708","name":"청년 2·3순위 월임대료","value":"206510","unit":"원","page":1,"evidence":"2,000,000 206,510"},
+    {"scope":"공통","name":"성별용도","value":"남여공용","page":1,"evidence":"성별용도 ... 남여공용"},
+    {"scope":"공통","name":"주택열람일정","value":"열람불가(계약 전 주택 개방)","page":1,"evidence":"열람불가(계약 전 주택 개방)"}
+  ]
+}

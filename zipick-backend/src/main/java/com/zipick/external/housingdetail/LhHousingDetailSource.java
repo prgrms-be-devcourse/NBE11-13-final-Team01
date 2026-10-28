@@ -60,6 +60,12 @@ public class LhHousingDetailSource implements HousingDetailSource {
     private final LhHwpHousingParser hwpParser;
     private final ShPdfHousingParser shPdfParser;
     private GeminiPdfHousingDetailSupport geminiSupport;
+    private com.zipick.notice.repository.DocumentParseHistoryRepository historyRepository;
+
+    @Autowired(required = false)
+    void setHistoryRepository(com.zipick.notice.repository.DocumentParseHistoryRepository historyRepository) {
+        this.historyRepository = historyRepository;
+    }
 
     public LhHousingDetailSource(
             ExternalDocumentClient documentClient,
@@ -95,7 +101,8 @@ public class LhHousingDetailSource implements HousingDetailSource {
         String html = documentClient.getText(detailUri);
         List<LhAttachment> attachments = findAttachments(html);
         List<DetailedHousingUnit> embeddedUnits = extractEmbeddedJson(html);
-        List<DetailedHousingUnit> attachmentUnits = extractAttachments(notice, detailUri, attachments);
+        AttachmentExtraction extracted = extractAttachments(notice, detailUri, attachments);
+        List<DetailedHousingUnit> attachmentUnits = extracted.units();
         List<NoticeAttachmentResponse> planAssets = mergeAttachments(
                 extractAttachmentMetadata(detailUri, attachments),
                 extractPlanAssets(detailUri, html, attachments)
@@ -107,7 +114,9 @@ public class LhHousingDetailSource implements HousingDetailSource {
         return new HousingDetailResult(
                 mergeAttachmentDetails(embeddedUnits, attachmentUnits),
                 planAssets,
-                mediaByUnitKey
+                mediaByUnitKey,
+                extracted.skipped(),
+                extracted.checkpoints()
         );
     }
 
@@ -406,12 +415,17 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 && !normalized.matches("(?:기존주택)?매입임대(?:주택)?");
     }
 
-    private List<DetailedHousingUnit> extractAttachments(
+    private record AttachmentExtraction(List<DetailedHousingUnit> units, boolean skipped,
+            List<com.zipick.notice.dto.ParseCheckpoint> checkpoints) { }
+
+    private AttachmentExtraction extractAttachments(
             NoticeResponse notice,
             URI detailUri,
             List<LhAttachment> attachments
     ) {
         List<DetailedHousingUnit> extracted = new ArrayList<>();
+        List<com.zipick.notice.dto.ParseCheckpoint> checkpoints = new ArrayList<>();
+        boolean skipped = false;
         List<LhAttachment> supported = attachments.stream()
                 .filter(this::isSupportedDocument)
                 .toList();
@@ -420,20 +434,32 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 try {
                     URI downloadUri = detailUri.resolve("/lhapply/lhFile.do?fileid=" + attachment.fileId());
                     byte[] bytes = documentClient.getBytes(downloadUri);
+                    String key = "LH:" + shortHash(notice.noticeId() + ":" + attachment.fileId()) + ":"
+                            + DocumentFingerprint.sha256(bytes);
+                    boolean cacheEnabled = historyRepository != null && (geminiSupport == null || !geminiSupport.enabled());
+                    if (cacheEnabled && historyRepository.findByDocumentKeyAndParserVersion(key, "LH_DOCUMENT_V2")
+                            .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent()) {
+                        skipped = true;
+                        log.info("LH 변경 없는 첨부 재파싱 생략: fileId={}", attachment.fileId());
+                        break;
+                    }
                     List<DetailedHousingUnit> units = parseAttachment(notice, attachment, bytes);
                     if (!units.isEmpty()) {
                         extracted.addAll(units);
+                        if (cacheEnabled) checkpoints.add(new com.zipick.notice.dto.ParseCheckpoint(key,
+                                "LH_DOCUMENT_V2", bytes.length, units.size()));
                         log.info("LH 첨부 주택목록 선택: fileId={}, fileName={}, units={}",
                                 attachment.fileId(), attachment.fileName(), units.size());
                         break;
                     }
                 } catch (RuntimeException exception) {
+                    skipped = true;
                     log.warn("LH 첨부 주택목록 파싱 실패: fileId={}, fileName={}, reason={}",
                             attachment.fileId(), attachment.fileName(), exception.getMessage());
                 }
             }
         }
-        return List.copyOf(extracted);
+        return new AttachmentExtraction(List.copyOf(extracted), skipped, List.copyOf(checkpoints));
     }
 
     private List<NoticeAttachmentResponse> extractPlanAssets(

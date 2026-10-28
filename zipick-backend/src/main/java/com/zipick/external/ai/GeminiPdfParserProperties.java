@@ -18,6 +18,7 @@ public record GeminiPdfParserProperties(
         int dailyCallLimit,
         int retryCallReserve,
         int maxContinuationCalls,
+        int continuationMinExpectedUnits,
         String cacheDirectory,
         int maxDocumentsPerRequest,
         int maxPagesPerRequest
@@ -33,6 +34,7 @@ public record GeminiPdfParserProperties(
         dailyCallLimit = dailyCallLimit <= 0 ? 500 : dailyCallLimit;
         retryCallReserve = retryCallReserve < 0 ? 0 : Math.min(retryCallReserve, dailyCallLimit);
         maxContinuationCalls = maxContinuationCalls < 0 ? 0 : maxContinuationCalls;
+        continuationMinExpectedUnits = continuationMinExpectedUnits <= 0 ? 50 : continuationMinExpectedUnits;
         cacheDirectory = cacheDirectory == null || cacheDirectory.isBlank()
                 ? ".gemini-pdf-cache" : cacheDirectory;
         maxDocumentsPerRequest = maxDocumentsPerRequest <= 0 ? 1 : maxDocumentsPerRequest;
@@ -41,5 +43,9 @@ public record GeminiPdfParserProperties(
 
     public Path cachePath() {
         return Path.of(cacheDirectory).toAbsolutePath().normalize();
+    }
+
+    public boolean isConfigured() {
+        return enabled && key != null && !key.isBlank() && !key.startsWith("YOUR_");
     }
 }

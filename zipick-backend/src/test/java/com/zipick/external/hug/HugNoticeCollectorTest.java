@@ -112,11 +112,19 @@ class HugNoticeCollectorTest {
         HugNoticeCollector active = new HugNoticeCollector(
                 client, new HugCollectorProperties(true, "https://example.com/list?type=1", 2, 0L)
         );
+        var history = org.mockito.Mockito.mock(com.zipick.notice.repository.DocumentParseHistoryRepository.class);
+        active.setHistoryRepository(history);
 
         var commands = active.collect();
 
         assertThat(commands).hasSize(1);
         assertThat(commands.getFirst().notice().houses()).hasSize(4);
+        var checkpoint = commands.getFirst().notice().parseCheckpoints().getFirst();
+        var success = new com.zipick.notice.domain.DocumentParseHistory(checkpoint.documentKey(), checkpoint.parserVersion());
+        success.markSuccess(checkpoint.size(), checkpoint.unitCount());
+        org.mockito.Mockito.when(history.findByDocumentKeyAndParserVersion(checkpoint.documentKey(), checkpoint.parserVersion()))
+                .thenReturn(java.util.Optional.of(success));
+        assertThat(active.collect().getFirst().notice().preservesExistingHousings()).isTrue();
         assertThat(commands.getFirst().notice().attachments()).hasSize(1);
         assertThat(commands.getFirst().rawPayload()).contains("공항대로");
     }

@@ -1,0 +1,63 @@
+# 기존 deploy/docker-compose.prod.yml과 함께 앱 EC2에서만 사용한다.
+services:
+  rabbitmq:
+    # 내장 Prometheus 플러그인을 켜고 지표만 사설 IP로 연다.
+    entrypoint: ['/bin/sh', '-c', 'rabbitmq-plugins enable --offline rabbitmq_prometheus && exec docker-entrypoint.sh rabbitmq-server']
+    ports:
+      - '${APP_PRIVATE_IP:?Set APP_PRIVATE_IP}:15692:15692'
+
+  backend:
+    environment:
+      MANAGEMENT_SERVER_PORT: 19090
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,prometheus
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
+    ports:
+      - '${APP_PRIVATE_IP:?Set APP_PRIVATE_IP}:19090:19090'
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=${APP_PRIVATE_IP:?Set APP_PRIVATE_IP}:9100
+      - --collector.textfile.directory=/host/var/lib/zipick/metrics
+    volumes:
+      - /:/host:ro,rslave
+    mem_limit: 96m
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    restart: unless-stopped
+    ports:
+      - '${APP_PRIVATE_IP:?Set APP_PRIVATE_IP}:8085:8080'
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    mem_limit: 160m
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.27.0
+    restart: unless-stopped
+    command: ['--config.file=/etc/blackbox/blackbox.yml']
+    volumes:
+      - ./monitoring/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    ports:
+      - '${APP_PRIVATE_IP:?Set APP_PRIVATE_IP}:9115:9115'
+    mem_limit: 64m
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    profiles: ['postgres']
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DSN:-}
+    ports:
+      - '${APP_PRIVATE_IP:?Set APP_PRIVATE_IP}:9187:9187'
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 96m

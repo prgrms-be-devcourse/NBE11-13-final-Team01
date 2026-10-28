@@ -23,7 +23,9 @@
 -- -----------------------------------------------------------------------------
 
 -- 알림센터 분리 이전 로컬 DB에 남아 있을 수 있는 레거시 테이블도 먼저 제거한다.
--- notification_settings·campaigns 가 users를 참조하므로 users보다 반드시 앞에 와야 한다.
+-- notice_application_guide·notification_settings·campaigns 가 users를 참조하므로
+-- users보다 반드시 앞에 와야 한다.
+DROP TABLE IF EXISTS notice_application_guide;
 DROP TABLE IF EXISTS notification_events;   -- 이전 버전의 아웃박스 (지금은 알림센터 DB 에)
 DROP TABLE IF EXISTS campaigns;
 DROP TABLE IF EXISTS notification_settings;

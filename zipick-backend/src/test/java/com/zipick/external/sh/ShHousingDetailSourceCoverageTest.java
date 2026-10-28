@@ -41,6 +41,31 @@ class ShHousingDetailSourceCoverageTest {
     }
 
     @Test
+    void sameSizeChangedFileDoesNotReuseSuccessHistory() {
+        ExternalDocumentClient client = mock(ExternalDocumentClient.class);
+        LhSpreadsheetHousingParser spreadsheet = mock(LhSpreadsheetHousingParser.class);
+        DocumentParseHistoryRepository history = mock(DocumentParseHistoryRepository.class);
+        ShHousingDetailSource active = new ShHousingDetailSource(client, mock(ShPdfHousingParser.class),
+                spreadsheet, mock(LhPdfHousingParser.class), mock(LhHwpHousingParser.class), history);
+        when(client.getText(any())).thenReturn("""
+                <script>initParam.downList = [{"brdId":"G","seq":"1","fileSeq":"1",
+                "fileSize":2,"oriFileNm":"주택목록.xlsx","fileTp":"A"}];</script>
+                """);
+        when(client.getBytes(any())).thenReturn(new byte[]{1, 2}, new byte[]{1, 3});
+        when(spreadsheet.parse(any(), any())).thenReturn(List.of(unit()));
+        var first = active.extract(notice("SH", "https://www.i-sh.co.kr/detail"));
+        var checkpoint = first.parseCheckpoints().getFirst();
+        var success = new DocumentParseHistory(checkpoint.documentKey(), checkpoint.parserVersion());
+        success.markSuccess(checkpoint.size(), checkpoint.unitCount());
+        when(history.findByDocumentKeyAndParserVersion(eq(checkpoint.documentKey()), eq(checkpoint.parserVersion())))
+                .thenReturn(Optional.of(success));
+        var changed = active.extract(notice("SH", "https://www.i-sh.co.kr/detail"));
+        assertThat(changed.preservesExistingHousings()).isFalse();
+        assertThat(changed.housings()).hasSize(1);
+        assertThat(changed.parseCheckpoints().getFirst().documentKey()).isNotEqualTo(checkpoint.documentKey());
+    }
+
+    @Test
     void downloadsSpreadsheetParsesUnitsAndStoresHistory() {
         ExternalDocumentClient client = mock(ExternalDocumentClient.class);
         LhSpreadsheetHousingParser spreadsheet = mock(LhSpreadsheetHousingParser.class);
@@ -67,7 +92,8 @@ class ShHousingDetailSourceCoverageTest {
         assertThat(result.housings()).hasSize(1);
         assertThat(result.attachments()).hasSize(2);
         assertThat(result.attachments().getFirst().attachmentType()).isEqualTo("HOUSING_LIST_DETAIL");
-        verify(history).save(any(DocumentParseHistory.class));
+        assertThat(result.parseCheckpoints()).hasSize(1);
+        verify(history, never()).save(any(DocumentParseHistory.class));
     }
 
     @Test
@@ -96,7 +122,12 @@ class ShHousingDetailSourceCoverageTest {
         success.markSuccess(100L, 1);
         when(history.findByDocumentKeyAndParserVersion(anyString(), anyString()))
                 .thenReturn(Optional.of(success));
-        assertThat(active.extract(notice("SH", "https://www.i-sh.co.kr/detail")).housings()).isEmpty();
+        var skipped = active.extract(notice("SH", "https://www.i-sh.co.kr/detail"));
+        assertThat(skipped.housings()).isEmpty();
+        assertThat(skipped.preservesExistingHousings()).isTrue();
+        var enriched = new com.zipick.external.housingdetail.HousingDetailEnricher(List.of(active))
+                .enrich(notice("SH", "https://www.i-sh.co.kr/detail"));
+        assertThat(enriched.preservesExistingHousings()).isTrue();
     }
 
     @Test
@@ -156,12 +187,14 @@ class ShHousingDetailSourceCoverageTest {
         when(gemini.supplementWithStatus(any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(new GeminiPdfHousingDetailSupport.SupplementResult(List.of(unit()), true, true));
 
-        assertThat(active.extract(notice("SH", "https://www.i-sh.co.kr/detail")).housings()).hasSize(1);
+        var result = active.extract(notice("SH", "https://www.i-sh.co.kr/detail"));
+        assertThat(result.housings()).hasSize(1);
+        assertThat(result.parseCheckpoints()).hasSize(1);
 
-        verify(history, times(2)).findByDocumentKeyAndParserVersion(
+        verify(history).findByDocumentKeyAndParserVersion(
                 anyString(), eq("SH_" + GeminiPdfHousingExtractor.PROMPT_VERSION));
         verify(client).getBytes(any());
-        verify(history).save(any(DocumentParseHistory.class));
+        verify(history, never()).save(any(DocumentParseHistory.class));
     }
 
     @Test

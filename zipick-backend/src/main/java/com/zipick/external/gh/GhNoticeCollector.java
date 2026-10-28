@@ -40,6 +40,10 @@ public class GhNoticeCollector {
                     + "(20\\d{2}[.\\-/]\\d{1,2}[.\\-/]\\d{1,2}).{0,30}?[~-]\\s*"
                     + "(20\\d{2}[.\\-/]\\d{1,2}[.\\-/]\\d{1,2})"
     );
+    private static final Pattern PERIOD_START = Pattern.compile(
+            "(?:온라인접수기간|현장접수기간|접수기간|접수처\\s*운영기간)\\s*[:：]?\\s*"
+                    + "(20\\d{2}[.\\-/]\\d{1,2}[.\\-/]\\d{1,2})"
+    );
     private static final URI RENTAL_LIST = URI.create(
             "https://apply.gh.or.kr/sb/sr/sr7150/selectPbancRentHouseList.do"
     );
@@ -152,7 +156,13 @@ public class GhNoticeCollector {
                 selected = new DateRange(start, end);
             }
         }
-        return selected;
+        if (selected != null) return selected;
+        Matcher startMatcher = PERIOD_START.matcher(text);
+        while (startMatcher.find()) {
+            LocalDate start = parseDate(startMatcher.group(1));
+            if (start != null) return new DateRange(start, null);
+        }
+        return null;
     }
 
     private void collectList(URI base, Map<String, GhNoticeItem> result) {

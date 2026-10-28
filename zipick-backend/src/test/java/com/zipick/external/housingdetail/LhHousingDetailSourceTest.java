@@ -13,6 +13,31 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class LhHousingDetailSourceTest {
 
     @Test
+    void unchangedAttachmentIsSkippedAndChangedBytesAreParsed() throws Exception {
+        byte[] workbook = LhSpreadsheetTestFixture.oneHousingWorkbook();
+        var client = new StubDocumentClient("<a href=\"javascript:fileDownLoad('77');\">공급주택목록.xlsx</a>", workbook);
+        var source = source(client);
+        var history = org.mockito.Mockito.mock(com.zipick.notice.repository.DocumentParseHistoryRepository.class);
+        source.setHistoryRepository(history);
+        var first = source.extract(notice("https://apply.lh.or.kr/detail"));
+        var checkpoint = first.parseCheckpoints().getFirst();
+        var success = new com.zipick.notice.domain.DocumentParseHistory(checkpoint.documentKey(), checkpoint.parserVersion());
+        success.markSuccess(checkpoint.size(), checkpoint.unitCount());
+        org.mockito.Mockito.when(history.findByDocumentKeyAndParserVersion(checkpoint.documentKey(), checkpoint.parserVersion()))
+                .thenReturn(java.util.Optional.of(success));
+        var second = source.extract(notice("https://apply.lh.or.kr/detail"));
+        assertThat(second.preservesExistingHousings()).isTrue();
+        assertThat(second.housings()).isEmpty();
+        byte[] changed = java.util.Arrays.copyOf(workbook, workbook.length + 1);
+        var changedSource = source(new StubDocumentClient(
+                "<a href=\"javascript:fileDownLoad('77');\">공급주택목록.xlsx</a>", changed));
+        changedSource.setHistoryRepository(history);
+        var changedResult = changedSource.extract(notice("https://apply.lh.or.kr/detail"));
+        assertThat(changedResult.preservesExistingHousings()).isFalse();
+        assertThat(changedResult.housings()).hasSize(1);
+    }
+
+    @Test
     void 상세페이지에_내장된_JSON을_먼저_읽는다() {
         String html = """
                 <script>
