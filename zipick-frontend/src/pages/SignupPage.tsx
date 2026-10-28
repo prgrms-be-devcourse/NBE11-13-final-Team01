@@ -222,6 +222,8 @@ export default function SignupPage() {
                 </button>
               </span>
             </label>
+            {/* 발신 주소가 gmail.com 이라 SES 로 보낸 메일이 받는 쪽에서 스팸으로 분류될 수 있다 (도메인 인증 전까지) */}
+            <small className="auth-verify__hint">메일이 보이지 않으면 스팸함을 확인해 주세요.</small>
             <button type="button" className="linklike auth-verify__resend" onClick={sendCode} disabled={verifyBusy || resendIn > 0}>
               {resendIn > 0 ? `다시 보내기 (${resendIn}초)` : '코드 다시 보내기'}
             </button>
