@@ -651,3 +651,59 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
   파란 박스 두 개가 연달아 나와 둘 다 눈에 안 들어온다. 실제 버튼은 저장한 뒤에만 보여 준다.
 */
 .guide-cta--hint { margin-top: 6px; }
+
+/* 운영자 화면 (/admin) */
+.nav__admin { font-weight: 600; }
+.admin { display: grid; grid-template-columns: 160px 1fr; gap: 20px; align-items: start; }
+.admin__nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; }
+.admin__nav a { padding: 8px 10px; border-radius: 8px; color: var(--muted); font-size: 14px; }
+.admin__nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.admin__body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.admin__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.admin__head h1 { margin: 0; font-size: 20px; }
+.admin__toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.admin__toolbar input, .admin__toolbar select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.admin__toolbar input[type="text"], .admin__toolbar input[type="search"] { min-width: 220px; }
+.admin__pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; font-size: 13px; color: var(--muted); }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.stat__label { font-size: 12px; color: var(--muted); }
+.stat__value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+.stat__value small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.stat--bad .stat__value { color: var(--bad); }
+.stat--warn .stat__value { color: var(--warn); }
+.run-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.run-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.run-card__title { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 14px; }
+.run-card dl { margin: 4px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+.run-card dt { color: var(--muted); }
+.run-card dd { margin: 0; }
+table.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+table.admin-table th, table.admin-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+table.admin-table th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--bg); white-space: nowrap; }
+table.admin-table tr:last-child td { border-bottom: 0; }
+table.admin-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.admin-table td.actions { white-space: nowrap; }
+table.admin-table td.actions .btn + .btn { margin-left: 4px; }
+table.admin-table .clip { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+table.admin-table tr.is-selected td { background: var(--accent-soft); }
+.badge--running, .badge--pending { background: #fff7ed; border-color: var(--warn); color: var(--warn); }
+.badge--success, .badge--done, .badge--open { background: #ecfdf5; border-color: var(--ok, #059669); color: var(--ok, #059669); }
+.badge--upcoming { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.badge--closed, .badge--role_user { background: #f3f4f6; }
+.badge--role_admin { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.admin-detail { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.admin-detail h3 { margin: 0; font-size: 14px; }
+.admin-detail pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 12px; background: var(--bg); padding: 8px; border-radius: 8px; }
+.admin-detail dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; }
+.admin-detail dt { color: var(--muted); }
+.admin-detail dd { margin: 0; }
+.admin-split { display: grid; grid-template-columns: 1fr 360px; gap: 14px; align-items: start; }
+.inline-form { display: inline-flex; gap: 4px; align-items: center; }
+.inline-form input { width: 110px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; }
+.ok-text { color: var(--ok, #059669); }
+@media (max-width: 860px) {
+  .admin { grid-template-columns: 1fr; }
+  .admin__nav { position: static; flex-direction: row; flex-wrap: wrap; }
+  .admin-split { grid-template-columns: 1fr; }
+}

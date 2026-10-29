@@ -5,8 +5,13 @@ job_type="${1:-basic}"
 case "$job_type" in
   basic) main_class=com.zipick.batch.NoticeCollectionApplication; service=collector ;;
   ai) main_class=com.zipick.batch.NoticeAiApplication; service=ai-collector ;;
-  *) echo '사용법: collect-notices-observed.sh [basic|ai]' >&2; exit 2 ;;
+  # 운영자 화면의 "인프라만 다시" 요청. 공고·AI 수집 없이 주변 인프라만 채운다
+  infra) main_class=com.zipick.batch.InfraCollectionApplication; service=collector ;;
+  *) echo '사용법: collect-notices-observed.sh [basic|ai|infra]' >&2; exit 2 ;;
 esac
+# 실행 기록(collection_run)의 실행 주체. run-requested-collection.sh 가 ADMIN 과 요청 id 를 넘기고, cron 은 비워 둔다
+export COLLECTION_TRIGGER="${COLLECTION_TRIGGER:-CRON}"
+export COLLECTION_REQUEST_ID="${COLLECTION_REQUEST_ID:-}"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 deploy_dir="$(cd "$script_dir/.." && pwd)"
 metrics_dir="${ZIPICK_METRICS_DIR:-/var/lib/zipick/metrics}"
@@ -50,7 +55,7 @@ if [ -r "$metrics_file" ]; then
 fi
 
 cd "$deploy_dir" || exit 1
-if docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint java "$service" \
+if docker compose -f docker-compose.prod.yml run --rm --no-deps -e COLLECTION_TRIGGER -e COLLECTION_REQUEST_ID --entrypoint java "$service" \
   -XX:MaxRAMPercentage=40 "-Dloader.main=$main_class" -cp app.jar org.springframework.boot.loader.launch.PropertiesLauncher 2>&1 | tee "$run_log"; then
   result=0
 else

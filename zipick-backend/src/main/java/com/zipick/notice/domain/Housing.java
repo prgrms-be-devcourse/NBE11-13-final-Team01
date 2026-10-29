@@ -131,6 +131,11 @@ public class Housing extends BaseTimeEntity {
         this.longitude = longitude;
     }
 
+    /** 운영자가 목록에서 숨기거나 다시 보이게 할 때. 다음 수집에서 목록에 다시 나타나면 synchronize 가 active 를 되살린다 */
+    public void changeActive(boolean active) {
+        this.active = active;
+    }
+
     /** AI 검수기가 확정한 주택 기본 정보만 덮어씁니다. */
     public void applyAiNormalization(
             String name,

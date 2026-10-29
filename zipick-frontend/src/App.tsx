@@ -11,6 +11,12 @@ import TunePage from './pages/TunePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import AdminCampaignPage from './pages/AdminCampaignPage';
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import AdminAiDocumentsPage from './pages/admin/AdminAiDocumentsPage';
+import AdminNoticesPage from './pages/admin/AdminNoticesPage';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
+import AdminNotificationsPage from './pages/admin/AdminNotificationsPage';
 
 /**
  * 탐색은 지도 한 화면에서 한다. 전체 공고 / 맞춤 추천은 별도 페이지가 아니라 `?mode=` 로 구분되는 두 모드다.
@@ -76,15 +82,22 @@ export default function App() {
           }
         />
 
-        {/* 운영자(ROLE_ADMIN)만. 권한은 서버가 확인한다 (아니면 403) */}
+        {/* 운영자(ROLE_ADMIN)만. 메뉴는 role 로 숨기고, 권한은 서버가 다시 확인한다 (아니면 403) */}
         <Route
-          path="/admin/campaigns"
+          path="/admin"
           element={
-            <AccessGate need="LOGIN">
-              <AdminCampaignPage />
+            <AccessGate need="ADMIN">
+              <AdminLayout />
             </AccessGate>
           }
-        />
+        >
+          <Route index element={<AdminDashboardPage />} />
+          <Route path="ai-documents" element={<AdminAiDocumentsPage />} />
+          <Route path="notices" element={<AdminNoticesPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="notifications" element={<AdminNotificationsPage />} />
+          <Route path="campaigns" element={<AdminCampaignPage />} />
+        </Route>
 
         {/* 맞춤 추천은 지도 모드로. 로그인·온보딩 확인은 지도 화면이 직접 한다 */}
         <Route path="/recommendations" element={<RedirectToMap mode="recommended" />} />

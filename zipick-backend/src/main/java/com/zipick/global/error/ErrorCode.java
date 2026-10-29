@@ -40,6 +40,9 @@ public enum ErrorCode {
     PAIR_ANSWERS_NOT_ENOUGH(HttpStatus.CONFLICT, "두 집 비교 답이 부족합니다."),
 
     NOTIFICATION_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "알림 서버에 연결할 수 없습니다. 잠시 뒤 다시 시도해 주세요."),
+
+    // 운영자
+    COLLECTION_ALREADY_REQUESTED(HttpStatus.CONFLICT, "아직 처리되지 않은 수집 요청이 있습니다. 끝난 뒤 다시 요청해 주세요."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 
     private final HttpStatus status;
