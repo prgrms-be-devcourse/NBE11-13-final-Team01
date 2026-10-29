@@ -122,6 +122,10 @@ services:
     mem_limit: 1800m
     # Gemini 키는 app-env 의 GEMINI_API_KEY 를 쓴다. PDF 추출·정규화는 진입점이 강제로 켠다
     environment: *collector-env
+    # Gemini 하루 호출량 기록과 PDF 추출 응답 캐시. 실행마다 컨테이너가 지워져도 남아야
+    # 하루 호출 상한이 지켜지고 같은 PDF 를 다시 분석하지 않는다 (없으면 기록 실패로 Gemini 호출을 건너뛴다)
+    volumes:
+      - gemini-pdf-cache:/app/.gemini-pdf-cache
 
   notification:
     image: ${NOTIFICATION_IMAGE:-zipick-notification:latest}
@@ -175,6 +179,7 @@ services:
 
 volumes:
   db-data:
+  gemini-pdf-cache:
   rabbitmq-data:
   caddy-data:
   caddy-config:
