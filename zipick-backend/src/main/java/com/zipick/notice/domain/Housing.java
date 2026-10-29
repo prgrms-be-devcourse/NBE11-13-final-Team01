@@ -56,6 +56,12 @@ public class Housing extends BaseTimeEntity {
     @Column(name = "address", nullable = false, length = 500)
     private String address;
 
+    /**
+     * 지오코딩이 확인한 <b>표준 주소</b>("경북 영주시 대동로34번길 23-3"). {@link #enrichAddress}가 채운다.
+     *
+     * <p>⚠️ 중복 비교용 축약형(공백 제거·소문자)을 여기 넣지 말 것. 그 값에는 시도가 없을 수 있어
+     * {@link #normalizeRegion()}이 시도를 복구할 근거를 잃는다. 중복 판정은 수집 쪽이 따로 계산한다.
+     */
     @Column(name = "normalized_address", length = 500)
     private String normalizedAddress;
 

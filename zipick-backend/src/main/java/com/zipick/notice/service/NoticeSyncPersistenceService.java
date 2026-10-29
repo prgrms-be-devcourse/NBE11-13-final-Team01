@@ -287,7 +287,13 @@ public class NoticeSyncPersistenceService {
                     sourceHousing.provinceName(),
                     sourceHousing.districtName(),
                     sourceHousing.fullAddress(),
-                    normalizeAddress(sourceHousing.fullAddress()),
+                    // normalized_address 는 **지오코딩이 확인한 표준 주소**를 담는 칸이다(Housing#enrichAddress).
+                    // 수집 단계에는 그런 주소가 없다. 예전에는 중복 비교용 canonicalize() 값을 여기 넣었는데,
+                    // 그러면 같은 주택을 다시 수집할 때 "경북 영주시 대동로34번길 23-3" 이
+                    // "영주시대동로34번길23-3" 으로 덮여 시도를 복구할 근거가 사라졌다
+                    // (AI 상세 수집 뒤 영주시·칠곡군 주택의 province_name 이 비던 원인).
+                    // 중복 판정은 addressKeys() 가 그때그때 계산하므로 이 칸을 쓰지 않는다.
+                    null,
                     sourceHousing.roadName(),
                     sourceHousing.lotAddress(),
                     sourceHousing.roadAddress(),
@@ -567,10 +573,6 @@ public class NoticeSyncPersistenceService {
             return null;
         }
         return value.intValue();
-    }
-
-    private String normalizeAddress(String address) {
-        return AddressNormalizer.canonicalize(address);
     }
 
     private String firstSupplyType(NoticeResponse notice) {

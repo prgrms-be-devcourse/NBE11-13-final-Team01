@@ -128,4 +128,93 @@ class HousingRegionNormalizationTest {
         assertThat(h.getProvinceName()).isEqualTo("인천광역시");
         assertThat(h.getDistrictName()).isEqualTo("서해구");
     }
+
+    /**
+     * 기본 수집 → 좌표·주소 보완 → AI 상세 수집 순서를 그대로 재현한다.
+     *
+     * <p>실제로 깨졌던 경로다. AI 상세 수집이 같은 주택을 다시 {@code synchronize} 하면서
+     * 지오코딩이 넣어 둔 표준 주소("경북 영주시 …")를 중복 비교용 축약형("영주시대동로34번길23-3")으로
+     * 덮어썼고, 그 바람에 시도를 복구할 근거가 사라져 {@code province_name} 이 비었다.
+     * 주소 자체에 시도가 없는 경상북도개발공사(GBDC) 공고에서만 드러났다.
+     */
+    @Test
+    @DisplayName("AI 상세 수집이 다시 저장해도 보완으로 확정한 시도가 유지된다 — 영주시")
+    void keepsGeocodedProvinceWhenAiDetailResyncs() {
+        Housing h = housing("영주시 대동로34번길 23-3");
+
+        // ① 기본 수집: 주소에 시도가 없어 파서는 시군구만 넘긴다
+        h.synchronize(null, "더 포레", null, "영주시", "영주시 대동로34번길 23-3",
+                null, null, null, null, null, null, null, null, SEEN);
+        assertThat(h.getProvinceName()).isNull();
+
+        // ② 좌표·주소 보완: 카카오 표준 주소가 시도를 확정한다
+        h.enrichAddress("경북 영주시 대동로34번길 23-3", "경북", "영주시", null, "대동로34번길", null,
+                new BigDecimal("36.81"), new BigDecimal("128.60"));
+        assertThat(h.getProvinceName()).isEqualTo("경상북도");
+
+        // ③ AI 상세 수집: 시도 자리에 시가 밀려 들어온 값으로 같은 주택을 다시 저장한다
+        h.synchronize(null, "더 포레", "영주시", "대동로34번길", "영주시 대동로34번길 23-3",
+                null, null, null, null, null, null, null, null, SEEN);
+
+        assertThat(h.getProvinceName()).isEqualTo("경상북도");
+        assertThat(h.getDistrictName()).isEqualTo("영주시");
+        // 복구 근거가 그대로 남아 있어야 한다
+        assertThat(h.getNormalizedAddress()).isEqualTo("경북 영주시 대동로34번길 23-3");
+    }
+
+    @Test
+    @DisplayName("AI 상세 수집이 다시 저장해도 보완으로 확정한 시도가 유지된다 — 칠곡군")
+    void keepsGeocodedProvinceWhenAiDetailResyncsForCounty() {
+        Housing h = housing("칠곡군 석적읍 중리3길 10");
+
+        h.synchronize(null, "중리마을", null, "칠곡군", "칠곡군 석적읍 중리3길 10",
+                null, null, null, null, null, null, null, null, SEEN);
+        h.enrichAddress("경북 칠곡군 석적읍 중리3길 10", "경북", "칠곡군", "석적읍", "중리3길", null,
+                new BigDecimal("36.03"), new BigDecimal("128.44"));
+        assertThat(h.getProvinceName()).isEqualTo("경상북도");
+
+        h.synchronize(null, "중리마을", "칠곡군", "석적읍", "칠곡군 석적읍 중리3길 10",
+                null, null, null, null, null, null, null, null, SEEN);
+
+        assertThat(h.getProvinceName()).isEqualTo("경상북도");
+        assertThat(h.getDistrictName()).isEqualTo("칠곡군");
+    }
+
+    @Test
+    @DisplayName("같은 수집을 여러 번 반복해도 지역 값이 흔들리지 않는다")
+    void repeatedSyncIsStable() {
+        Housing h = housing("영주시 대동로34번길 23-3");
+        h.synchronize(null, "더 포레", null, "영주시", "영주시 대동로34번길 23-3",
+                null, null, null, null, null, null, null, null, SEEN);
+        h.enrichAddress("경북 영주시 대동로34번길 23-3", "경북", "영주시", null, "대동로34번길", null,
+                new BigDecimal("36.81"), new BigDecimal("128.60"));
+
+        for (int i = 0; i < 3; i++) {
+            h.synchronize(null, "더 포레", "영주시", "대동로34번길", "영주시 대동로34번길 23-3",
+                    null, null, null, null, null, null, null, null, SEEN);
+            assertThat(h.getProvinceName()).isEqualTo("경상북도");
+            assertThat(h.getDistrictName()).isEqualTo("영주시");
+        }
+    }
+
+    /**
+     * 기존 값을 무조건 지키는 것이 아니다. 뒤 수집이 <b>확정적인</b> 지역을 넘기면 그대로 바뀌어야 한다.
+     * 잘못 들어간 지역을 재수집으로 고칠 수 있어야 하기 때문이다.
+     */
+    @Test
+    @DisplayName("뒤 수집이 확정적인 시도를 넘기면 기존 값을 고친다")
+    void laterCollectionCanCorrectRegion() {
+        Housing h = housing("대구광역시 달서구 갈밭남로 17");
+        h.synchronize(null, "단지", null, "달서구", "대구광역시 달서구 갈밭남로 17",
+                null, null, null, null, null, null, null, null, SEEN);
+        h.enrichAddress("경북 칠곡군 석적읍 중리3길 10", "경북", "칠곡군", null, null, null,
+                new BigDecimal("36.03"), new BigDecimal("128.44"));
+        assertThat(h.getProvinceName()).isEqualTo("대구광역시");   // 수집값이 이미 있으면 보완은 덮지 않는다
+
+        h.synchronize(null, "단지", "경상남도", "창원시 성산구", "경상남도 창원시 성산구 중앙대로 100",
+                null, null, null, null, null, null, null, null, SEEN);
+
+        assertThat(h.getProvinceName()).isEqualTo("경상남도");
+        assertThat(h.getDistrictName()).isEqualTo("창원시 성산구");
+    }
 }
