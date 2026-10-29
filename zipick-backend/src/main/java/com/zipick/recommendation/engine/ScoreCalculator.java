@@ -1,6 +1,7 @@
 package com.zipick.recommendation.engine;
 
 import com.zipick.housing.domain.Candidate;
+import com.zipick.housing.domain.RegionMatcher;
 import com.zipick.recommendation.config.RecommendationProperties;
 import com.zipick.user.domain.UserPreference;
 import java.math.BigDecimal;
@@ -135,7 +136,9 @@ public class ScoreCalculator {
     ItemScore scoreRegion(UserContext ctx, Candidate c) {
         String key = c.regionKey();
         if (key == null) return ItemScore.unavailable(REGION, "지역 정보 없음");
-        Integer rank = ctx.regionRanks().get(key);
+        // 상위 행정구역을 고르면 하위를 포함한다 ("경기도 부천시" ⊃ "경기도 부천시 소사구").
+        // 주택 지역에 일반구 정밀도가 생겨도 관심 지역이 통째로 빠지지 않게 한다. 점수·순위 규칙은 그대로다.
+        Integer rank = RegionMatcher.rankOf(ctx.regionRanks(), key);
         if (rank == null) {
             return ItemScore.of(REGION, 0, Reason.partial(REGION, "관심 지역 밖 (" + key + ")"));
         }

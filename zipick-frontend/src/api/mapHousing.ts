@@ -3,17 +3,30 @@ import { filterToParams } from './recommendation';
 import type { AnnouncementStatus, HouseFilter } from '../types';
 
 /**
- * 지도 핀 하나. 백엔드 MapHousingSummaryResponse 와 1:1 이며 **9개 필드뿐**이다.
+ * 지도 핀 하나. 백엔드 MapHousingSummaryResponse 와 1:1 이며 **14개 필드뿐**이다.
  * 보증금·면적 같은 공급 정보는 들어 있지 않다(상세 조회에서 받는다).
  * 좌표가 없는 주택은 서버가 조회 단계에서 빼므로 위도·경도는 항상 있다.
+ *
+ * province/district 는 행정구역별 군집화가 쓴다. 주소 문자열을 프론트에서 쪼개지 않고
+ * 서버가 정규화해 둔 값을 그대로 받는다. 주소 정규화가 안 된 주택은 비어 있을 수 있어
+ * optional 이며, 그런 주택은 군집에 묶이지 않고 개별 핀으로 남는다(features/map/regionCluster).
  */
 export interface MapHousingSummary {
   housingId: number;
   name?: string | null;
   address: string;
+  province?: string | null;
+  district?: string | null;
   latitude: number;
   longitude: number;
+  /** 공고 id. 같은 좌표에 겹친 주택을 공고 단위로 구분할 때 쓴다 (features/map/locationGroup).
+   *  ⚠️ 관심 공고 저장에 쓰는 id 와 같은 값이다. housingId 와 혼동하지 말 것. */
+  noticeId: number;
   noticeTitle: string;
+  /** 공고일 (YYYY-MM-DD). 같은 건물에 반복 올라온 공고를 구분하는 유일한 값일 때가 있다 */
+  noticeAnnouncedAt?: string | null;
+  /** 접수 마감일 (YYYY-MM-DD). 공고에 일정이 없으면 null */
+  applyEndAt?: string | null;
   agencyName?: string | null;
   rentalType?: string | null;
   status: AnnouncementStatus;

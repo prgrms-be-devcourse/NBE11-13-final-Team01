@@ -29,6 +29,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -187,6 +188,12 @@ class MapHousingQueryServiceTest {
         assertThat(list.housings()).extracting(MapHousingSummaryResponse::housingId).containsExactly(2L, 5L);
         assertThat(list.housings()).extracting(MapHousingSummaryResponse::status)
                 .containsExactly(NoticeStatus.OPEN.name(), NoticeStatus.UPCOMING.name());
+        // 행정구역별 군집화가 주소 문자열을 쪼개지 않도록 정규화된 시도·시군구를 그대로 내려준다.
+        // 픽스처는 Kakao 축약형("서울")을 넣지만 Housing 이 표준명으로 저장한다(RegionNormalizer).
+        assertThat(list.housings()).extracting(MapHousingSummaryResponse::province, MapHousingSummaryResponse::district)
+                .containsExactly(tuple("서울특별시", "강남구"), tuple("서울특별시", "마포구"));
+        // 같은 좌표에 겹친 주택을 공고 단위로 구분하려면 공고 id 가 필요하다 (locationGroup)
+        assertThat(list.housings()).extracting(MapHousingSummaryResponse::noticeId).containsOnly(1L);
     }
 
     @Test

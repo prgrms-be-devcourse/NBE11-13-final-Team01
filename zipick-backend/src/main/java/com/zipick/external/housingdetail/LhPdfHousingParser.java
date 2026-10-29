@@ -39,6 +39,8 @@ public class LhPdfHousingParser {
             "공급주택\\s*[:：]\\s*(?<name>[^()\\r\\n]+?)\\s*\\("
     );
     private static final Pattern PROVINCE_PATTERN = Pattern.compile(PROVINCE);
+    /** 일반구(시 아래 구). 자치구와 글자 모양은 같지만 여기서는 '시' 바로 뒤에 올 때만 본다 */
+    private static final Pattern GENERAL_GU = Pattern.compile("^[가-힣]{1,5}구$");
     private static final Pattern NON_HOUSING_CONTEXT = Pattern.compile(
             "신청\\s*장소|접수\\s*장소|계약\\s*장소|서류\\s*제출|문의처|연락처|콜센터|"
                     + "지역본부|주거복지(?:지사|센터)|사업단|견본주택|모델하우스|홍보관"
@@ -141,10 +143,24 @@ public class LhPdfHousingParser {
         return matcher.lookingAt() ? matcher.group() : null;
     }
 
+    /**
+     * 시군구. 일반구가 있는 도시는 <b>"천안시 서북구"처럼 구까지</b> 읽는다.
+     *
+     * <p>예전에는 토큰 하나만 읽어 "충청남도 천안시 서북구 …" 에서도 "천안시"만 남았다.
+     * 그러면 같은 도시가 "천안시"와 "천안시 서북구" 두 지역으로 갈려 필터·추천 매칭이 어긋난다.
+     * 주소에 구가 없으면 예전처럼 시까지만 돌려준다(없는 구를 추측하지 않는다).
+     */
     private String districtName(String address) {
-        String[] parts = address.split(" ");
+        String[] parts = address.trim().split("\\s+");
         int start = provinceName(address) == null ? 0 : 1;
-        return parts.length > start ? parts[start] : null;
+        if (parts.length <= start) {
+            return null;
+        }
+        String city = parts[start];
+        if (city.endsWith("시") && parts.length > start + 1 && GENERAL_GU.matcher(parts[start + 1]).matches()) {
+            return city + " " + parts[start + 1];
+        }
+        return city;
     }
 
     private String match(String line, Pattern pattern) {

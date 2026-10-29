@@ -168,14 +168,14 @@ export default function FilterPanel({ filter, onChange, resultCount, regionOptio
         </div>
       </fieldset>
 
-      <label className="toggle">
-        <input
-          type="checkbox"
-          checked={filter.includeUnknown}
-          onChange={(e) => onChange({ ...filter, includeUnknown: e.target.checked })}
-        />
-        정보 없는 집도 보기
-      </label>
+      {/*
+        '정보 없는 집도 보기'(includeUnknown) 토글은 두지 않는다.
+        이 패널은 지도 화면(MapPage)에서만 쓰이는데, 지도 조회는 MapHousingFilterPolicy 가
+        includeUnknown 을 항상 false 로 덮는다(docs/frontend-handoff.md 2-6).
+        즉 눌러도 결과가 바뀌지 않아 고장난 UI 로 보인다.
+        백엔드 정책과 HouseFilter 타입·URL 파싱(utils/filterParams)은 그대로 둬서
+        기존 ?includeUnknown=false 링크와 전체 목록 API(/api/v1/houses)는 영향을 받지 않는다.
+      */}
 
       <button className="btn btn--ghost" onClick={() => onChange({ ...EMPTY_FILTER })}>
         필터 초기화

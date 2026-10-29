@@ -1,6 +1,7 @@
 package com.zipick.notice.domain;
 
 import com.zipick.global.entity.BaseTimeEntity;
+import com.zipick.notice.support.RegionNormalizer;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -139,6 +140,7 @@ public class Housing extends BaseTimeEntity {
         this.address = keepExistingWhenBlank(address, this.address);
         this.lotAddress = keepExistingWhenBlank(lotAddress, this.lotAddress);
         this.roadAddress = keepExistingWhenBlank(roadAddress, this.roadAddress);
+        normalizeRegion();
     }
 
     public void enrichAddress(
@@ -162,6 +164,7 @@ public class Housing extends BaseTimeEntity {
             this.latitude = latitude;
             this.longitude = longitude;
         }
+        normalizeRegion();
     }
 
     public boolean hasCoordinates() {
@@ -197,7 +200,24 @@ public class Housing extends BaseTimeEntity {
         this.heatingMethod = keepExistingWhenBlank(heatingMethod, this.heatingMethod);
         this.totalHouseholdCount = totalHouseholdCount == null ? this.totalHouseholdCount : totalHouseholdCount;
         this.rawPayload = rawPayload == null ? this.rawPayload : rawPayload;
+        normalizeRegion();
         markSeen(seenAt);
+    }
+
+    /**
+     * 시도·시군구 표준화. **지역 값을 쓰는 세 경로(synchronize / enrichAddress / applyAiNormalization)가
+     * 모두 마지막에 이것을 부른다.** 수집기마다 따로 정규화하지 않기 위한 공통 진입점이다.
+     *
+     * <p>이미 들어 있던 값도 다시 통과시킨다. enrichAddress 가 {@code fillWhenBlank} 라서
+     * 기존 비표준 값을 Kakao 결과로 덮지 못하던 문제가 여기서 함께 풀린다.
+     *
+     * <p>판정 근거는 {@link RegionNormalizer} 참고. 근거가 없으면 바꾸지 않는다.
+     */
+    private void normalizeRegion() {
+        RegionNormalizer.Region region =
+                RegionNormalizer.normalize(this.provinceName, this.districtName, this.address, this.normalizedAddress);
+        this.provinceName = region.province();
+        this.districtName = region.district();
     }
 
     public void synchronize(

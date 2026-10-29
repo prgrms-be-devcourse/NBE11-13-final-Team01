@@ -12,6 +12,8 @@ export interface KakaoLatLngBounds {
 export interface KakaoMap {
   setCenter(position: KakaoLatLng): void;
   setLevel(level: number): void;
+  /** 확대 수준. 숫자가 **클수록 축소**다(1 = 최대 확대). 군집 단위를 고르는 기준이 된다 */
+  getLevel(): number;
   setBounds(
     bounds: KakaoLatLngBounds,
     paddingTop?: number,
@@ -48,20 +50,6 @@ export interface KakaoMarker {
   getPosition(): KakaoLatLng;
 }
 
-/** 지도 SDK 의 clusterer 라이브러리. 가까운 마커를 확대 수준에 따라 묶어 준다. */
-export interface KakaoMarkerClusterer {
-  addMarkers(markers: KakaoMarker[], noRedraw?: boolean): void;
-  removeMarkers(markers: KakaoMarker[], noRedraw?: boolean): void;
-  clear(): void;
-  redraw(): void;
-  setMap(map: KakaoMap | null): void;
-}
-
-export interface KakaoCluster {
-  getCenter(): KakaoLatLng;
-  getSize(): number;
-}
-
 export interface KakaoRoadview {
   setPanoId(panoId: number, position: KakaoLatLng): void;
   relayout(): void;
@@ -96,16 +84,6 @@ export interface KakaoMapsApi {
   ) => KakaoMarkerImage;
   Size: new (width: number, height: number) => KakaoSize;
   Point: new (x: number, y: number) => KakaoPoint;
-  MarkerClusterer: new (options: {
-    map: KakaoMap;
-    averageCenter?: boolean;
-    minLevel?: number;
-    minClusterSize?: number;
-    disableClickZoom?: boolean;
-    gridSize?: number;
-    styles?: Record<string, string>[];
-    calculator?: number[];
-  }) => KakaoMarkerClusterer;
   Roadview: new (container: HTMLElement) => KakaoRoadview;
   RoadviewClient: new () => KakaoRoadviewClient;
   event: {
@@ -133,9 +111,10 @@ export function loadKakaoMaps(appKey: string): Promise<KakaoMapsApi> {
     const script = document.createElement('script');
     script.dataset.zipickKakaoMap = 'true';
     script.async = true;
-    // clusterer 라이브러리를 함께 받는다. 없으면 maps.MarkerClusterer 가 undefined 가 된다.
+    // 추가 라이브러리는 받지 않는다. 군집화는 행정구역 기준으로 직접 그리고(features/map/clustering),
+    // 로드뷰는 코어 SDK 에 들어 있다.
     script.src =
-      `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false&libraries=clusterer`;
+      `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false`;
     script.onload = () => {
       if (!window.kakao?.maps) {
         reject(new Error('카카오 지도 SDK를 불러왔지만 초기화하지 못했습니다.'));

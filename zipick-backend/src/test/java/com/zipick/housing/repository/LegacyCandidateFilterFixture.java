@@ -81,12 +81,27 @@ final class LegacyCandidateFilterFixture {
         };
     }
 
+    /**
+     * ⚠️ 2026-10-28 — 이 메서드만 의도적으로 원본과 다르다.
+     *
+     * <p>행정구역 정규화로 주택 시군구에 일반구 정밀도가 생기면서(예: "부천시" → "부천시 소사구"),
+     * 지역 필터와 추천이 **상위 행정구역은 하위를 포함**하도록 규칙을 함께 바꿨다.
+     * 이 fixture 는 "M1 리팩터링으로 조건이 바뀌지 않았는가"를 지키는 장치이므로, 의도한 정책 변경은
+     * 양쪽에 같이 반영해 **나머지 모든 조건에 대한 회귀 감시는 그대로 살려 둔다.**
+     * 지역 계층 규칙 자체는 {@code RegionMatcherTest} 와 {@code HouseFilterPredicatesRegionHierarchyTest} 가 지킨다.
+     */
     private static Predicate regionIn(Set<String> keys) {
         BooleanBuilder or = new BooleanBuilder();
         for (String key : keys) {
             int i = key.indexOf(' ');
-            if (i < 0) or.or(housing.provinceName.eq(key).or(housing.districtName.eq(key)));
-            else or.or(housing.provinceName.eq(key.substring(0, i)).and(housing.districtName.eq(key.substring(i + 1))));
+            if (i < 0) {
+                or.or(housing.provinceName.eq(key).or(housing.districtName.eq(key)));
+            } else {
+                String district = key.substring(i + 1);
+                or.or(housing.provinceName.eq(key.substring(0, i))
+                        .and(housing.districtName.eq(district)
+                                .or(housing.districtName.startsWith(district + " "))));
+            }
         }
         return or;
     }

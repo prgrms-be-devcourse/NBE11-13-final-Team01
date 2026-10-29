@@ -19,15 +19,23 @@ public final class AddressNormalizer {
 
     /**
      * 사람이 확인할 원문 주소는 건드리지 않고, 중복 비교에 쓸 주소만 표준화한다.
+     *
+     * <p>시도 개칭은 {@link RegionNormalizer#RENAMED_PROVINCES} 한 곳에서 관리한다(표를 두 군데 두지 않는다).
+     * 그 표에는 <b>가리키는 범위가 완전히 같은 1:1 개칭만</b> 들어 있다.
+     *
+     * <p>⚠️ 행정구역 통합(광주광역시·전라남도 → 전남광주통합특별시)은 여기에 적용하지 않는다.
+     * 이 결과가 {@code source_housing_key}의 재료라서, 치환 규칙을 바꾸면 다음 수집에서 같은 주택이
+     * 다른 키로 보여 중복 행이 생긴다. 지역 컬럼의 통합 반영은 {@code RegionNormalizer}가 따로 한다.
      */
     public static String canonicalize(String address) {
         if (!StringUtils.hasText(address)) {
             return null;
         }
-        String normalized = collapseRepeatedSegments(address.trim())
-                .replace("강원도", "강원특별자치도")
-                .replace("전라북도", "전북특별자치도")
-                .replace("제주도", "제주특별자치도")
+        String normalized = collapseRepeatedSegments(address.trim());
+        for (var rename : RegionNormalizer.RENAMED_PROVINCES.entrySet()) {
+            normalized = normalized.replace(rename.getKey(), rename.getValue());
+        }
+        normalized = normalized
                 .replaceAll("\\([^()]*\\)", "")
                 .replaceAll("[\\s,]+", "")
                 .toLowerCase();
