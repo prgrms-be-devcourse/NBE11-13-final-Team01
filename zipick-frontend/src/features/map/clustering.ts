@@ -8,7 +8,7 @@ import type {
 } from './kakaoMaps';
 import { groupByLocation, type LocationGroup } from './locationGroup';
 import {
-  SINGLE_PIN_LEVEL, effectiveUnit, layoutPins, nextStage, releasedByZoom,
+  SINGLE_PIN_LEVEL, effectiveUnit, layoutPins, nextStage, releasedByZoom, shortProvince,
   type RegionCluster, type StageOverride,
 } from './regionCluster';
 import type { MapPin } from './types';
@@ -88,6 +88,7 @@ export interface PinLayer {
 }
 
 interface Options {
+  colors?: { primary: string; selected: string };
   maps: KakaoMapsApi;
   map: KakaoMap;
   onSelect: (housingId: number) => void;
@@ -115,11 +116,11 @@ interface DrawnLocation {
  * 핀 + 군집 레이어를 만든다. 지도 인스턴스는 바깥(MapPanel)이 들고 있고,
  * 여기서는 마커·오버레이만 올렸다 내린다. 모드나 필터가 바뀌어도 지도는 다시 만들지 않는다.
  */
-export function createPinLayer({ maps, map, onSelect, onSelectLocation, onExplore }: Options): PinLayer {
-  const normalImage = new maps.MarkerImage(PIN_SVG('#2563eb', '#1d4ed8'), new maps.Size(28, 36), {
+export function createPinLayer({ maps, map, onSelect, onSelectLocation, onExplore, colors = { primary: '#2059d6', selected: '#1646b3' } }: Options): PinLayer {
+  const normalImage = new maps.MarkerImage(PIN_SVG(colors.primary, '#ffffff'), new maps.Size(28, 36), {
     offset: new maps.Point(14, 35),
   });
-  const selectedImage = new maps.MarkerImage(PIN_SVG('#dc2626', '#b91c1c'), new maps.Size(34, 44), {
+  const selectedImage = new maps.MarkerImage(PIN_SVG(colors.selected, '#ffffff'), new maps.Size(34, 44), {
     offset: new maps.Point(17, 43),
   });
 
@@ -133,10 +134,10 @@ export function createPinLayer({ maps, map, onSelect, onSelectLocation, onExplor
     const cached = badgeImages.get(key);
     if (cached) return cached;
     const src = selected
-      // 선택: 빨간 핀 + 흰 배지. 테두리까지 흰색이면 밝은 지도 위에서 배지가 묻혀 한 번 고쳤다.
-      ? BADGE_PIN('#dc2626', '#b91c1c', '#ffffff', '#b91c1c', '#b91c1c', count)
-      // 기본: 파란 핀 + 빨간 배지 (흰 테두리로 지도와 분리)
-      : BADGE_PIN('#2563eb', '#1d4ed8', '#dc2626', '#ffffff', '#ffffff', count);
+      // Selection uses the stronger brand blue and an inverted count badge.
+      ? BADGE_PIN(colors.selected, '#ffffff', '#ffffff', colors.selected, colors.selected, count)
+      // A white outline separates the normal blue pin from the map.
+      : BADGE_PIN(colors.primary, '#ffffff', colors.selected, '#ffffff', '#ffffff', count);
     const image = new maps.MarkerImage(src, new maps.Size(42, 46), { offset: new maps.Point(14, 45) });
     badgeImages.set(key, image);
     return image;
@@ -178,6 +179,9 @@ export function createPinLayer({ maps, map, onSelect, onSelectLocation, onExplor
     draw();
   }) as unknown as (...args: never[]) => void;
   maps.event.addListener(map, 'zoom_changed', zoomHandler);
+  // Some camera operations finish after zoom_changed. Reconcile against the
+  // SDK's final level without discarding a user's drill-down stage.
+  maps.event.addListener(map, 'idle', zoomHandler);
 
   /** 지도에 올라간 마커·오버레이와 그 리스너를 전부 떼어 낸다 */
   function clearDrawn() {
@@ -347,7 +351,6 @@ export function createPinLayer({ maps, map, onSelect, onSelectLocation, onExplor
     },
 
     resetStage() {
-      if (stage == null) return;
       stage = null;
       const next = currentSignature();
       if (next === signature) return;   // 확대 수준이 이미 같은 단계면 다시 그릴 이유가 없다
@@ -359,6 +362,7 @@ export function createPinLayer({ maps, map, onSelect, onSelectLocation, onExplor
       disposed = true;
       clearDrawn();
       maps.event.removeListener(map, 'zoom_changed', zoomHandler);
+      maps.event.removeListener(map, 'idle', zoomHandler);
     },
   };
 }
@@ -384,7 +388,7 @@ function clusterElement(cluster: RegionCluster, selected: boolean): HTMLElement 
 
   const label = document.createElement('span');
   label.className = 'map-cluster__label';
-  label.textContent = cluster.label;
+  label.textContent = cluster.unit === 'province' ? shortProvince(cluster.label) : cluster.label;
 
   const count = document.createElement('span');
   count.className = 'map-cluster__count';

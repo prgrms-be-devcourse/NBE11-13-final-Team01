@@ -1,0 +1,9 @@
+.zipick-theme{--zipick-blue:#2059d6;--zipick-blue-strong:#1646b3;--zipick-blue-light:#ebf2ff;--zipick-blue-mist:#f5f8ff;--zipick-ink:#1b2435;--zipick-navy:#152540;--zipick-body:#516077;--zipick-soft:#7d8799;--zipick-line:#e8edf3;--zipick-surface:#f7f9fc;--zipick-white:#fff;--zipick-green:#128463;--zipick-shadow:0 22px 72px rgba(30,64,116,.11),0 5px 14px rgba(42,72,110,.045)}
+
+/* Additive service primitives; existing landing values remain unchanged. */
+.zipick-theme {
+  --zipick-font-family: 'Noto Sans CJK KR', 'NanumSquare', 'Pretendard', system-ui, -apple-system, sans-serif;
+  --zipick-radius-control: 10px;
+  --zipick-radius-panel: 16px;
+  --zipick-shadow-panel: 0 4px 18px rgba(30, 64, 116, .06);
+}

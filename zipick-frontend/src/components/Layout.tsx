@@ -1,3 +1,6 @@
+import mapStyles from './MapLayout.module.css';
+import '../design-system/tokens.css';
+import MapBrand from './MapBrand';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { logout } from '../api/auth';
@@ -59,12 +62,13 @@ function AuthBox() {
 export default function Layout() {
   // 로그인 직후 보류된 관심 공고 저장을 이어서 실행한다. 앱 전체에서 여기 한 곳만 호출한다.
   usePendingInterestRunner();
+  const isMap = useLocation().pathname === '/map';
 
   return (
-    <div className="app">
+    <div className={isMap ? `app zipick-theme ${mapStyles.frame}` : "app"}>
       <header className="header">
         <NavLink to="/map" className="logo">
-          ZIPICK
+          {isMap ? <MapBrand /> : 'ZIPICK'}
         </NavLink>
         {/* 전체 공고와 맞춤 추천은 지도 화면 안에서 전환한다. 독립 메뉴를 두지 않는다. */}
         <nav className="nav">
