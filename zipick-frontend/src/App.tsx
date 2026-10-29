@@ -35,7 +35,7 @@ export default function App() {
     <Routes>
       <Route path="/landing" element={<LandingPage />} />
       <Route element={<Layout />}>
-        <Route index element={<Navigate to="/map" replace />} />
+        <Route index element={<Navigate to="/landing" replace />} />
 
         {/* 비회원도 볼 수 있는 화면 */}
         <Route path="/map" element={<MapPage />} />
