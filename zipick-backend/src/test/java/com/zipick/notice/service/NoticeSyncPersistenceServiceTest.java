@@ -23,6 +23,7 @@ import com.zipick.notice.repository.NoticeAttachmentRepository;
 import com.zipick.notice.repository.NoticeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -267,6 +268,87 @@ class NoticeSyncPersistenceServiceTest {
 
         assertThat(previousHousing.isActive()).isTrue();
         assertThat(previousSupply.isActive()).isTrue();
+    }
+
+    /**
+     * AI 상세 수집이 <b>이미 지오코딩을 마친</b> 주택을 다시 저장해도 지역이 깨지지 않아야 한다.
+     *
+     * <p>실제로 깨졌던 경로다. 수집 경로가 중복 비교용 축약형을 {@code normalized_address} 에 써 넣어
+     * 지오코딩이 확정한 "경북 영주시 …" 를 덮었고, 주소에 시도가 없는 경상북도개발공사(GBDC) 공고에서는
+     * 시도를 복구할 근거가 사라져 {@code province_name} 이 비었다.
+     */
+    @Test
+    void aiDetailMergeKeepsGeocodedRegionOfExistingHousing() {
+        Notice existing = withId(new Notice("GBDC", "n1", "공고", NoticeStatus.OPEN), 1L);
+        Housing geocoded = withId(
+                new Housing(existing, "DETAIL:ADDRESS:abc", "더 포레", "영주시 대동로34번길 23-3"), 307L);
+        geocoded.enrichAddress("경북 영주시 대동로34번길 23-3", "경북", "영주시", null, "대동로34번길", null,
+                new BigDecimal("36.81"), new BigDecimal("128.60"));
+        when(notices.findById(1L)).thenReturn(Optional.of(existing));
+        when(housings.findAllByNoticeId(1L)).thenReturn(List.of(geocoded));
+
+        // AI 상세 결과는 시도 자리에 시가 밀려 들어온 값을 넘긴다
+        NoticeResponse aiResult = notice(
+                "GBDC", "n1", "경상북도개발공사", null, null,
+                List.of(shiftedRegionHousing("DETAIL:ADDRESS:abc", "영주시 대동로34번길 23-3", "영주시", "대동로34번길")),
+                List.of()
+        );
+
+        service.synchronizeDetails(1L, aiResult, Instant.parse("2026-10-30T00:00:00Z"));
+
+        assertThat(geocoded.getProvinceName()).isEqualTo("경상북도");
+        assertThat(geocoded.getDistrictName()).isEqualTo("영주시");
+        assertThat(geocoded.getNormalizedAddress()).isEqualTo("경북 영주시 대동로34번길 23-3");
+    }
+
+    @Test
+    void aiDetailMergeKeepsGeocodedRegionForCounty() {
+        Notice existing = withId(new Notice("GBDC", "n2", "공고", NoticeStatus.OPEN), 2L);
+        Housing geocoded = withId(
+                new Housing(existing, "DETAIL:ADDRESS:def", "중리마을", "칠곡군 석적읍 중리3길 10"), 318L);
+        geocoded.enrichAddress("경북 칠곡군 석적읍 중리3길 10", "경북", "칠곡군", "석적읍", "중리3길", null,
+                new BigDecimal("36.03"), new BigDecimal("128.44"));
+        when(notices.findById(2L)).thenReturn(Optional.of(existing));
+        when(housings.findAllByNoticeId(2L)).thenReturn(List.of(geocoded));
+
+        service.synchronizeDetails(2L, notice(
+                "GBDC", "n2", "경상북도개발공사", null, null,
+                List.of(shiftedRegionHousing("DETAIL:ADDRESS:def", "칠곡군 석적읍 중리3길 10", "칠곡군", "석적읍")),
+                List.of()
+        ), Instant.parse("2026-10-30T00:00:00Z"));
+
+        assertThat(geocoded.getProvinceName()).isEqualTo("경상북도");
+        assertThat(geocoded.getDistrictName()).isEqualTo("칠곡군");
+    }
+
+    /**
+     * 신규 주택에는 표준 주소가 아직 없다. 중복 비교용 축약형을 대신 넣지 않는다 —
+     * 그 값이 들어가면 다음 지오코딩 결과를 덮지는 않지만, 사용자에게 보이는 주소가 되고
+     * 재수집 때 시도 복구 근거를 지운다.
+     */
+    @Test
+    void newHousingDoesNotStoreDedupKeyAsNormalizedAddress() {
+        when(notices.findAllBySource("LH")).thenReturn(List.of());
+        NoticeSyncCommand command = new NoticeSyncCommand(notice(
+                "LH", "n3", "한국토지주택공사", "2026.10.01", "20261020",
+                List.of(housing("h1", "서울특별시 강남구 테헤란로 10", supply("s1", "1"))),
+                List.of()), "{}");
+
+        service.synchronize(List.of(command), Instant.parse("2026-10-30T00:00:00Z"));
+
+        ArgumentCaptor<Housing> saved = ArgumentCaptor.forClass(Housing.class);
+        verify(housings).save(saved.capture());
+        assertThat(saved.getValue().getNormalizedAddress()).isNull();
+    }
+
+    private NoticeHousingResponse shiftedRegionHousing(
+            String key, String address, String province, String district
+    ) {
+        return new NoticeHousingResponse(
+                key, "더 포레", province, district, address,
+                null, null, null, null, null, null, null,
+                List.of(supply(key + "-s", "1")), List.of()
+        );
     }
 
     private NoticeResponse notice(
