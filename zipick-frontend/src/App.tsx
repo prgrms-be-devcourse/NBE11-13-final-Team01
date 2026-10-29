@@ -1,3 +1,4 @@
+import LandingPage from './pages/LandingPage';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import AccessGate from './components/AccessGate';
@@ -32,6 +33,7 @@ function RedirectToMap({ mode }: { mode?: 'recommended' }) {
 export default function App() {
   return (
     <Routes>
+      <Route path="/landing" element={<LandingPage />} />
       <Route element={<Layout />}>
         <Route index element={<Navigate to="/map" replace />} />
 
