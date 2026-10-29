@@ -58,11 +58,10 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    # collector 가 같은 값을 물려받는다 (&app-env). 둘이 다른 것은 아래 '프로세스 역할' 세 개뿐이다.
+    # collector 가 같은 값을 물려받는다 (&app-env). 둘이 다른 것은 아래 '프로세스 역할' 값뿐이다.
     environment: &app-env
       SPRING_PROFILES_ACTIVE: prod
       # 프로세스 역할: 웹 서버는 요청 처리만 한다. 공고·주변 인프라 수집과 수집 API 는 collector 가 맡는다.
-      INFRA_COLLECTION_ENABLED: "false"
       COLLECTOR_API_ENABLED: "false"
       EXTERNAL_PROXY_ENABLED: "false"
       NOTIFICATION_SCHEDULER_ENABLED: "true"
@@ -96,11 +95,12 @@ services:
       APPLICATION_GUIDE_MODEL: ${APPLICATION_GUIDE_MODEL:-}
       APPLICATION_GUIDE_DAILY_CALL_BUDGET: ${APPLICATION_GUIDE_DAILY_CALL_BUDGET:-}
 
-  # 공고 수집기 두 개. 웹 서버와 같은 이미지·설정으로 수집만 한 번 하고 끝나는 별도 프로세스다.
-  # 평소엔 뜨지 않는다(profiles). monitoring/collect-notices-observed.sh [basic|ai] 가 run 으로 실행하고,
-  # monitoring/run-daily-collection.sh 가 basic → ai 순서로 이어서 부른다 (같은 잠금이라 동시에 돌지 않는다).
-  #   collector    : NoticeCollectionApplication — 공고 수집(마이홈·LH·SH·GH·HUG) → 주변 인프라. AI 는 강제로 끔
-  #   ai-collector : NoticeAiApplication — 첨부 PDF Gemini 추출·정규화 → 주변 인프라. 오래 걸리고 Gemini 비용이 든다
+  # 수집기. 웹 서버와 같은 이미지·설정으로 수집만 한 번 하고 끝나는 별도 프로세스다.
+  # 평소엔 뜨지 않는다(profiles). monitoring/collect-notices-observed.sh [basic|ai|infra] 가 run 으로 실행하고,
+  # monitoring/run-daily-collection.sh 가 basic → ai → infra 순서로 이어서 부른다 (같은 잠금이라 동시에 돌지 않는다).
+  #   collector    : NoticeCollectionApplication — 공고 수집(마이홈·LH·SH·GH·HUG). AI 는 강제로 끔
+  #                  InfraCollectionApplication — 주변 인프라(카카오). 하루 한 번, 두 수집이 끝난 뒤
+  #   ai-collector : NoticeAiApplication — 첨부 PDF Gemini 추출·정규화. 오래 걸리고 Gemini 비용이 든다
   # 웹 서버와 메모리를 나눠 쓰므로 각각 상한을 둔다. 스크립트의 -XX:MaxRAMPercentage=40 → 힙은 상한의 40%.
   collector:
     image: ${BACKEND_IMAGE:-zipick-backend:latest}
@@ -109,7 +109,6 @@ services:
     mem_limit: 1500m
     environment: &collector-env
       <<: *app-env
-      INFRA_COLLECTION_ENABLED: "true"
       COLLECTOR_API_ENABLED: "false"
       # 마감·새 공고 알림은 웹 서버의 스케줄러만 보낸다 (중복 발송 방지)
       NOTIFICATION_SCHEDULER_ENABLED: "false"

@@ -52,36 +52,38 @@ Vite의 `VITE_*` 환경 변수는 프론트엔드 **빌드 시점** 값입니다
 
 ## 3. 주변 인프라 배치 운영
 
-주변 인프라 수집은 **운영에서는 collector 프로세스가** 맡습니다. 공고 수집(`NoticeCollectionApplication`)·AI 보완(`NoticeAiApplication`)이 끝난 직후 같은 프로세스에서 `HousingInfraCollectionService`를 한 번 실행합니다. 좌표가 생기는 바로 그 자리에서 채우므로 아래 보정 실행이 필요 없습니다.
+주변 인프라 수집은 **collector 프로세스의 `InfraCollectionApplication`이 하루 한 번** 합니다. 웹 서버는 인프라를 수집하지 않습니다.
+매일 09:30 cron 이 `deploy/monitoring/run-daily-collection.sh`를 실행하고, 이 스크립트가 아래 순서로 부릅니다.
 
-| 프로세스 | 하는 일 | `INFRA_COLLECTION_ENABLED` | `NOTIFICATION_SCHEDULER_ENABLED` | 메모리 상한 |
-| --- | --- | --- | --- | --- |
-| 웹 서버 (`backend`, 상시) | API 요청, 알림 스케줄러 | `false` — 카카오 호출·긴 수집을 웹 프로세스에서 하지 않음 | `true` | - |
-| 기본 수집기 (`collector`) | `NoticeCollectionApplication`: 공고 수집 → 주변 인프라 (AI 끔) | `true` | `false` — 알림 중복 발송 방지 | 1500m |
-| AI 수집기 (`ai-collector`) | `NoticeAiApplication`: 첨부 PDF Gemini 추출·정규화 → 주변 인프라 | `true` | `false` | 1800m |
+```
+기본 수집(collector) → AI 수집(ai-collector) → 주변 인프라(collector)
+```
 
-수집기 둘은 compose `profiles: [batch]`라 평소엔 뜨지 않고, 실행할 때만 떴다가 지워집니다. 셋 다 `COLLECTOR_API_ENABLED=false`(수집 API 미등록)이고, 웹 서버는 `EXTERNAL_PROXY_ENABLED=false`(`/api/external/myhome/**` 미등록)입니다.
+- 좌표는 두 수집 모두에서 생깁니다(공고 수집의 좌표 변환, AI 상세 주택 반영 뒤 좌표 보완). 그래서 **둘이 끝난 뒤 마지막에 한 번만** 돌립니다.
+- 앞 단계가 실패해도 인프라 단계는 실행합니다. 이미 들어온 주택의 인프라가 하루 밀리지 않게 하기 위해서입니다.
+- 세 단계는 같은 잠금(`flock`)을 써서 동시에 돌지 않습니다. 수동으로 공고 + 인프라만 돌릴 때는 `deploy/collect-notices.sh`를 씁니다.
 
-실행은 `deploy/monitoring/run-daily-collection.sh`가 기본 → AI 순서로 이어서 부르고(`collect-notices-observed.sh basic|ai`, 같은 잠금이라 동시에 돌지 않음), 기본 수집만 지표 없이 돌릴 때는 `deploy/collect-notices.sh`를 씁니다. 예약 실행(cron)은 서버에서 따로 등록합니다.
+| 프로세스 | 하는 일 | `NOTIFICATION_SCHEDULER_ENABLED` | 메모리 상한 |
+| --- | --- | --- | --- |
+| 웹 서버 (`backend`, 상시) | API 요청, 알림 스케줄러 | `true` | - |
+| `collector` | `NoticeCollectionApplication`(공고 수집, AI 끔), `InfraCollectionApplication`(주변 인프라) | `false` — 알림 중복 발송 방지 | 1500m |
+| `ai-collector` | `NoticeAiApplication`(첨부 PDF Gemini 추출·정규화) | `false` | 1800m |
 
-아래 표의 웹 스케줄러(기동·보정·일일 cron)는 `INFRA_COLLECTION_ENABLED=true`인 환경(로컬 기본값)에서만 실제로 수집합니다.
+수집기는 compose `profiles: [batch]`라 평소엔 뜨지 않고, 실행할 때만 떴다가 지워집니다. 모두 `COLLECTOR_API_ENABLED=false`(수집 API 미등록)이고, 웹 서버는 `EXTERNAL_PROXY_ENABLED=false`(`/api/external/myhome/**` 미등록)입니다.
+`INFRA_COLLECTION_ENABLED=false`로 두면 인프라 단계를 건너뜁니다(긴급 차단용, 기본 `true`).
 
 | 항목 | 현재 기본값 |
 | --- | --- |
 | 대상 | `OPEN`·`UPCOMING` 공고의 활성 Housing 중 좌표 보유 |
-| 최초 실행 | 백엔드 기동 약 10초 후 (`startup-delay: PT10S`) |
+| 실행 | **하루 1회**, 매일 수집의 마지막 단계 |
 | 한 번의 실행 | **대상이 없어질 때까지** 100개씩(`batch-size`) 대기 없이 이어서 처리 |
-| 보정 실행 | 기동 후 3시간 동안(`catch-up-window: PT3H`) 10분 간격(`catch-up-interval`) |
-| 정기 실행 | **하루 1회** (`daily-cron: 0 30 4 * * *`, `cron-zone: Asia/Seoul`) |
 | 수집 내용 | 주택당 카카오 카테고리 검색 최대 6회, 순차 실행 |
 | 캐시 TTL | 30일. 미수집·만료·정책 변경·좌표 변경 시 수집 대상 |
 | 연속 실패 시 | API 호출 3회 연속 실패하면 **실행 전체 중단**, 다음 실행에 다시 시도 |
 
-> ⚠️ **`spring.task.scheduling.pool-size: 2`가 필요합니다.** Spring 기본값은 1이며, 스레드가 하나면 수십 분 걸리는 인프라 수집이 도는 동안 알림 스케줄러가 큐에서 대기합니다. **알림이 유실되지는 않지만**(마감 알림은 `dedupeKey`, 새 공고는 커서로 다음 실행에 처리) 지연이 기존 약 3.5분에서 **약 50분까지 커집니다.** `application.yml`에 설정돼 있으니 배포 시 덮어쓰지 마세요.
-
 ### 최초 대량 수집
 
-**별도 절차가 없습니다.** 백엔드를 기동하면 기동 수집이 대상을 전부 소진할 때까지 이어서 처리합니다.
+**별도 절차가 없습니다.** 인프라 단계가 대상을 전부 소진할 때까지 이어서 처리합니다. 바로 채우려면 서버에서 `bash monitoring/collect-notices-observed.sh infra`를 한 번 실행합니다.
 현재 규모(좌표 보유 약 1,388개 × 6회 = 약 8,328회)에서 **약 50분**이 걸리며, 카카오 로컬 API 기능별 일일 쿼터 100,000의 약 8%입니다.
 
 batch 사이 대기를 없애도 **초당 호출 속도는 변하지 않습니다.** 주택도 카테고리도 순차 호출이라 동시 호출이 생기지 않고, 유휴 시간만 사라집니다. 따라서 예전처럼 배치 간격을 임시로 줄이는 환경 변수(`ZIPICK_INFRA_COLLECTION_INTERVAL_MS`)는 **제거됐습니다.** 배포 설정에 남아 있다면 지우세요(값이 남아 있어도 무시됩니다).
@@ -90,10 +92,10 @@ batch 사이 대기를 없애도 **초당 호출 속도는 변하지 않습니�
 
 ### 수집 완료 확인
 
-1. 백엔드 로그에서 `주변 인프라 수집 완료: batch=..., 대상=..., 저장=..., 호출실패=..., 중단=false`를 확인합니다. 한 번의 실행이 대상을 모두 소진하므로, `중단=false`인 이 로그가 곧 그 시점 대상의 완료를 뜻합니다.
+1. 수집 로그(`~/zipick/logs/collector.log`)에서 `주변 인프라 수집 완료: batch=..., 대상=..., 저장=..., 호출실패=..., 중단=false`를 확인합니다. 한 번의 실행이 대상을 모두 소진하므로, `중단=false`인 이 로그가 곧 그 시점 대상의 완료를 뜻합니다.
 2. 아래 조회 결과에서 수집 대상 수와 스냅샷 보유 수를 확인합니다. 스냅샷이 있어도 정책·좌표 불일치 또는 TTL 만료일 수 있으므로 최종 확인은 API 응답의 `FRESH` 및 서버 로그와 함께 합니다.
 3. 재시작 후에도 수집 데이터는 PostgreSQL에 유지됩니다. 정상 스냅샷을 다시 수집하지 않으므로 재시작 비용이 거의 없습니다.
-4. 기동 후 3시간이 지난 뒤에 공고를 수동 수집했다면 그 주택들은 다음 일일 cron 에서 수집됩니다. 그동안 해당 주택은 조회 API 에서 `PENDING`으로 내려가고 추천에서는 인프라 항목이 계산에서 빠집니다(가중치는 다른 항목으로 재분배). 급하면 백엔드를 재시작해 기동 수집을 다시 태우면 됩니다.
+4. 공고를 수동으로 수집했다면 그 주택들은 다음 날 매일 수집의 인프라 단계에서 채워집니다. 그동안 해당 주택은 조회 API 에서 `PENDING`으로 내려가고 추천에서는 인프라 항목이 계산에서 빠집니다(가중치는 다른 항목으로 재분배). 급하면 서버에서 `bash monitoring/collect-notices-observed.sh infra`를 실행합니다.
 
 ```sql
 -- 수집 대상별 스냅샷 저장 현황 (저장 여부만 확인, FRESH 여부는 별도 확인)

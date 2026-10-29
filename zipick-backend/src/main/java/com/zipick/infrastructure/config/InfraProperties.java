@@ -25,35 +25,24 @@ public record InfraProperties(
     }
 
     /**
-     * 수집 실행 설정.
+     * 수집 실행 설정. 실행 시점은 collector 프로세스(InfraCollectionApplication)를 부르는 cron 이 정한다.
      *
-     * <p>실행 시각 관련 값(startup-delay / catch-up-interval / daily-cron / zone)은
-     * {@code @Scheduled} 애너테이션이 {@code ${...}} 로 직접 읽는다. 애너테이션 값은 빈이 만들어지기 전에
-     * 평가되므로 이 레코드를 거칠 수 없다. 그래서 여기에는 <b>코드가 실제로 쓰는 값만</b> 둔다.
-     *
-     * @param catchUpWindow 기동 수집 이후 보정 실행을 유지하는 기간. 공고 수집이 늦게 끝나 뒤늦게
-     *                      좌표가 채워진 주택을 다음 날 cron 까지 기다리지 않고 줍기 위한 창이다.
-     *                      이 시간이 지나면 보정 실행은 은퇴하고 하루 1회 cron 만 남는다.
+     * @param enabled             끄면 수집을 건너뛴다 (긴급 차단용)
+     * @param batchSize           한 번에 DB 에서 가져올 주택 수
+     * @param apiFailureThreshold 카카오 호출 연속 실패 허용 횟수. 넘으면 실행 전체를 중단한다
      */
     public record Collection(
             boolean enabled,
             int batchSize,
-            int apiFailureThreshold,
-            Duration catchUpWindow
+            int apiFailureThreshold
     ) {
-        // application.yml 의 catch-up-window 와 같은 값으로 둔다. 설정이 빠졌을 때 조용히
-        // 더 짧은 창으로 되돌아가면, 공고 수집이 늦게 끝난 주택이 다음 날 cron 까지 남는다.
-        // 3시간은 AI ON + 빈 DB 최초 전건 공고 수집 실측(2시간 21분 25초)을 수용하는 임시 안전값이다.
-        private static final Duration DEFAULT_CATCH_UP_WINDOW = Duration.ofHours(3);
-
         public Collection {
             batchSize = batchSize <= 0 ? 100 : batchSize;
             apiFailureThreshold = apiFailureThreshold <= 0 ? 3 : apiFailureThreshold;
-            catchUpWindow = catchUpWindow == null ? DEFAULT_CATCH_UP_WINDOW : catchUpWindow;
         }
 
         static Collection defaults() {
-            return new Collection(true, 100, 3, DEFAULT_CATCH_UP_WINDOW);
+            return new Collection(true, 100, 3);
         }
     }
 

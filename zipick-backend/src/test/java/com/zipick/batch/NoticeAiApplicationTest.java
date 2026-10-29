@@ -1,7 +1,6 @@
 package com.zipick.batch;
 
 import com.zipick.external.ai.NoticeAiEnrichmentService;
-import com.zipick.infrastructure.service.HousingInfraCollectionService;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
 import org.springframework.boot.SpringApplication;
@@ -22,9 +21,7 @@ class NoticeAiApplicationTest {
     void runsOnlyAiEnrichmentAndClosesContext() {
         ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
         NoticeAiEnrichmentService service = mock(NoticeAiEnrichmentService.class);
-        HousingInfraCollectionService infra = mock(HousingInfraCollectionService.class);
         when(context.getBean(NoticeAiEnrichmentService.class)).thenReturn(service);
-        when(context.getBean(HousingInfraCollectionService.class)).thenReturn(infra);
         when(service.enrichExistingNotices()).thenReturn(
                 new NoticeAiEnrichmentService.Result(2, 2, 1, 0, 1));
 
@@ -37,7 +34,6 @@ class NoticeAiApplicationTest {
         }
 
         verify(service).enrichExistingNotices();
-        verify(infra).collect("AI 보완 후");   // 새 상세 주택의 주변 인프라를 이어서 채운다
         verify(context).close();
     }
 

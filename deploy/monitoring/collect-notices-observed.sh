@@ -5,7 +5,8 @@ job_type="${1:-basic}"
 case "$job_type" in
   basic) main_class=com.zipick.batch.NoticeCollectionApplication; service=collector ;;
   ai) main_class=com.zipick.batch.NoticeAiApplication; service=ai-collector ;;
-  *) echo '사용법: collect-notices-observed.sh [basic|ai]' >&2; exit 2 ;;
+  infra) main_class=com.zipick.batch.InfraCollectionApplication; service=collector ;;
+  *) echo '사용법: collect-notices-observed.sh [basic|ai|infra]' >&2; exit 2 ;;
 esac
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 deploy_dir="$(cd "$script_dir/.." && pwd)"

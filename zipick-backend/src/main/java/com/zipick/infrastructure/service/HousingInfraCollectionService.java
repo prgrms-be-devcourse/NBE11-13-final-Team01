@@ -25,14 +25,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * 여기서 저장해 둔 DB 데이터를 읽는다. 그래서 조회 응답이 카카오 지연에 묶이지 않는다.
  *
  * <h3>누가 부르나</h3>
- * <ul>
- *   <li><b>수집기 프로세스</b>(NoticeCollectionApplication·NoticeAiApplication) — 공고 수집이 끝난 직후 같은 프로세스에서 한 번.
- *       좌표는 공고 수집의 마지막 단계에서 생기므로, 바로 이어서 돌리면 새 주택을 그 자리에서 채운다. 운영 기본 경로다.</li>
- *   <li><b>웹 서버 스케줄러</b>({@link HousingInfraCollectionScheduler}) — 기동·보정·일일 cron.
- *       운영에서는 INFRA_COLLECTION_ENABLED=false 로 꺼서 웹 프로세스가 카카오 호출과 긴 수집을 떠안지 않게 한다.
- *       로컬처럼 수집기를 따로 돌리지 않는 환경에서만 켠다.</li>
- * </ul>
- * 어느 쪽이든 같은 {@link #drain()} 을 쓰고 같은 락으로 직렬화된다(같은 JVM 안에서).
+ * collector 프로세스의 {@code InfraCollectionApplication} 하나뿐이다. 매일 수집(run-daily-collection.sh)이
+ * 기본 수집 → AI 수집을 마친 뒤 마지막에 한 번 부른다. 두 수집이 만든 주택의 좌표가 모두 채워진 뒤라 한 번으로 충분하고,
+ * 앞 단계가 실패해도 이 단계는 실행된다. 웹 서버는 인프라를 수집하지 않는다.
  *
  * 수집 대상은 스냅샷 없음 / TTL 만료 / 정책 변경 / 좌표 변경 네 가지이며 쿼리 하나로 찾는다.
  * 실패한 주택은 저장되지 않으므로 다음 실행에 자동으로 다시 대상이 된다. 별도 재시도 장치가 없다.
@@ -45,7 +40,7 @@ public class HousingInfraCollectionService {
     /** 커서 페이징의 시작값. 주택 id 는 1 부터라 0 보다 크다는 조건이 곧 전체 조회가 된다. */
     private static final long FIRST_CURSOR = 0L;
 
-    /** 단일 인스턴스 기준 중복 실행 방지. 기동 수집이 길어져 cron 과 겹쳐도 함께 돌지 않는다. */
+    /** 같은 프로세스 안의 중복 실행 방지. (프로세스 간 중복은 수집 스크립트의 flock 이 막는다) */
     private final ReentrantLock lock = new ReentrantLock();
 
     private final HousingInfraSnapshotRepository snapshotRepository;

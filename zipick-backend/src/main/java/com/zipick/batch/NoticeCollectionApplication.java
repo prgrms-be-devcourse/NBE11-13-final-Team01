@@ -16,7 +16,8 @@ import java.util.List;
 
 /**
  * 공고 수집을 한 번 실행하는 별도 진입점이다. 운영에서는 compose 의 collector 서비스로, 로컬에서는 IntelliJ 에서 실행한다.
- * 웹 서버는 시작하지 않으며, 공고 수집 → 주변 인프라 수집 → 일일 보고 순으로 끝나면 애플리케이션도 종료한다.
+ * 웹 서버는 시작하지 않으며, 공고 수집 → 일일 보고 순으로 끝나면 애플리케이션도 종료한다.
+ * 주변 인프라는 AI 수집까지 끝난 뒤 InfraCollectionApplication 이 한 번에 채운다.
  */
 public final class NoticeCollectionApplication {
 
@@ -37,7 +38,7 @@ public final class NoticeCollectionApplication {
             MyHomeSyncService syncService = context.getBean(MyHomeSyncService.class);
             NoticeSyncResponse result = syncService.synchronize();
             // elapsedSeconds 는 synchronize() 전체(수집 → 저장 → 정규화 → 좌표 보완) 시간이다.
-            // 인프라 수집의 catch-up-window 를 이 수치에 맞춰 잡으므로, 스케줄을 조정할 때마다 다시 본다.
+            // 매일 수집(09:30 cron)의 소요 시간을 보는 기준이다.
             log.info(
                     "공고 수집 완료: 원본 행={}, 신규 공고={}, 갱신 공고={}, 주택={}, 공급정보={}, 목록 소실 마감 공고={}, 비활성 주택={}, 비활성 공급정보={}, elapsedSeconds={}",
                     result.collectedRows(),
@@ -50,8 +51,6 @@ public final class NoticeCollectionApplication {
                     result.inactiveSupplies(),
                     Duration.between(result.startedAt(), result.finishedAt()).toSeconds()
             );
-            // 새로 좌표가 생긴 주택의 주변 인프라를 이어서 채운다 (웹 서버는 운영에서 이 수집을 하지 않는다)
-            InfraCollectionStep.run(context, "공고 수집 후");
             // 운영 슬랙·메일로 일일 보고 (알림센터 스펙 견본). 받을 곳이 설정돼 있지 않으면 건너뛴다.
             // 보고가 실패해도 수집은 이미 끝났으므로 수집 결과를 실패로 만들지 않는다
             try {
