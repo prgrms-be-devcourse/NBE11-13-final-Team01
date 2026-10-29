@@ -27,7 +27,10 @@ services:
     mem_limit: 96m
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    # v0.54.0 부터 Docker 의 containerd 이미지 저장소(Docker 29 기본, io.containerd.snapshotter.v1)를 읽는다.
+    # 그 전 버전은 컨테이너를 인식하지 못해(failed to identify the read-write layer ID) 컨테이너별 지표가 비었다.
+    # v0.53 이후 이미지는 ghcr.io 에서 배포한다.
+    image: ghcr.io/google/cadvisor:v0.60.6
     restart: unless-stopped
     ports:
       - '${APP_PRIVATE_IP:?Set APP_PRIVATE_IP}:8085:8080'
