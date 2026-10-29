@@ -46,8 +46,12 @@ export interface MapPanelProps {
    * 이전에 열어 둔 위치 목록·주택 상세를 닫으라는 신호다.
    */
   onExploreStart?: () => void;
-  /** 이 값이 바뀌면 펼쳐 둔 지역 상태를 푼다. 모드 전환처럼 탐색 맥락이 통째로 바뀔 때 쓴다 */
+  /** 모드별 진입 키. 새 모드의 데이터가 준비되면 개요를 한 번 맞추고 지역 단계를 초기화한다. */
   viewResetKey?: string | number;
+  /** Current mode's query has finished with usable, non-placeholder data. */
+  viewReady?: boolean;
+  /** Copy for a loaded result that has no positions to show on the map. */
+  emptyMessage?: string;
   onSelect?: (housingId: number) => void;
   /**
    * 같은 좌표에 주택이 둘 이상 겹쳐 있는 위치를 눌렀을 때. 겹친 주택 id 를 순서대로 넘긴다.

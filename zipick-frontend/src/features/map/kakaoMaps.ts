@@ -10,8 +10,10 @@ export interface KakaoLatLngBounds {
 }
 
 export interface KakaoMap {
+  getCenter(): KakaoLatLng;
   setCenter(position: KakaoLatLng): void;
   setLevel(level: number): void;
+  setMaxLevel(level: number): void;
   /** 확대 수준. 숫자가 **클수록 축소**다(1 = 최대 확대). 군집 단위를 고르는 기준이 된다 */
   getLevel(): number;
   setBounds(

@@ -3,23 +3,24 @@ import { createPinLayer, type PinLayer } from './clustering';
 import { loadKakaoMaps } from './kakaoMaps';
 import type { KakaoMap, KakaoMapsApi } from './kakaoMaps';
 import type { MapPanelProps } from './types';
+import { cameraPins, fitOverview } from './camera';
 
 /**
  * 지도 본체. 지도 인스턴스는 한 번만 만들고 핀만 갈아 끼운다.
- * 모드 전환이나 필터 변경으로 지도를 다시 만들지 않으며, 사용자가 보던 중심·확대 수준도 유지한다.
+ * 모드 진입 시 결과 범위를 한 번 맞추고, 이후 재조회나 필터 변경은 사용자의 시점을 유지한다.
  *
  * 핀 군집화는 features/map/clustering 으로 분리해 두었다(향후 교체 대비).
  */
 
-/** 처음 보여 주는 전국 지도. '전국 보기' 버튼이 이 값으로 되돌린다 */
+/** 데이터 준비 전의 기본 시점. 결과 개요와 전국 보기는 실제 좌표로 맞춘다. */
 const NATIONWIDE = { lat: 36.5, lng: 127.8, level: 13 } as const;
 /** 확대 한계. 카카오는 숫자가 작을수록 확대다 */
 const MIN_LEVEL = 1;
-const MAX_LEVEL = 14;
+const MAX_LEVEL = 13;
 
 export default function MapPanel({
   pins, selectedId, selectedLocationIds, onSelect, onSelectLocation, onExploreStart,
-  onBoundsChange, viewResetKey, className,
+  onBoundsChange, viewResetKey, viewReady = true, emptyMessage, className,
 }: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
@@ -29,8 +30,10 @@ export default function MapPanel({
   const onSelectLocationRef = useRef(onSelectLocation);
   const onExploreStartRef = useRef(onExploreStart);
   const onBoundsChangeRef = useRef<MapPanelProps['onBoundsChange']>(undefined);
-  // 첫 핀 묶음에서만 전체가 보이도록 맞춘다. 이후 필터가 바뀌어도 사용자가 보던 영역을 지킨다.
-  const fittedRef = useRef(false);
+  const prepareLayoutRef = useRef<(() => boolean) | null>(null);
+  const overviewRef = useRef({ key: viewResetKey, action: 0, version: 0, fitted: false });
+  const [overviewAction, setOverviewAction] = useState(0);
+  const [overviewLimited, setOverviewLimited] = useState(false);
   const [readyVersion, setReadyVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const appKey = import.meta.env.VITE_KAKAO_MAP_KEY?.trim();
@@ -54,7 +57,14 @@ export default function MapPanel({
           center: new maps.LatLng(NATIONWIDE.lat, NATIONWIDE.lng),
           level: NATIONWIDE.level,
         });
+        // Apply the same limit to wheel/touch zoom and SDK-driven bounds changes.
+        mapRef.current.setMaxLevel(MAX_LEVEL);
+        const theme = getComputedStyle(containerRef.current);
         layerRef.current = createPinLayer({
+          colors: {
+            primary: theme.getPropertyValue('--zipick-blue').trim() || '#2059d6',
+            selected: theme.getPropertyValue('--zipick-blue-strong').trim() || '#1646b3',
+          },
           maps,
           map: mapRef.current,
           onSelect: (housingId) => onSelectRef.current?.(housingId),
@@ -75,6 +85,83 @@ export default function MapPanel({
       mapsRef.current = null;
     };
   }, [appKey]);
+
+  // Resizing the canvas must not recreate the SDK instance or refit the data.
+  useEffect(() => {
+    const map = mapRef.current;
+    const maps = mapsRef.current;
+    const container = containerRef.current;
+    if (!map || !maps || !container || readyVersion === 0) return;
+    let width = container.clientWidth;
+    let height = container.clientHeight;
+    let center = map.getCenter();
+    let frame: number | null = null;
+    let zooming = false;
+    let layingOut = false;
+    let disposed = false;
+    let viewChanged = false;
+
+    // The SDK derives getCenter() from its pixel origin and the current element
+    // size. Cache view changes before a resize, not after the DOM has resized.
+    const rememberCenter = () => {
+      if (!layingOut && width === container.clientWidth && height === container.clientHeight) {
+        center = map.getCenter();
+        viewChanged = true;
+      }
+    };
+    const prepareLayout = () => {
+      if (disposed || zooming) return false;
+      const nextWidth = container.clientWidth;
+      const nextHeight = container.clientHeight;
+      if (!nextWidth || !nextHeight) return false;
+      if (nextWidth === width && nextHeight === height) return true;
+      const retained = center;
+      layingOut = true;
+      viewChanged = false;
+      width = nextWidth;
+      height = nextHeight;
+      try {
+        map.relayout();
+        map.setCenter(retained);
+      } finally {
+        layingOut = false;
+      }
+      return true;
+    };
+    prepareLayoutRef.current = prepareLayout;
+    const scheduleLayout = () => {
+      if (disposed || zooming || frame != null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        prepareLayout();
+      });
+    };
+    const onZoomStart = () => { zooming = true; };
+    const onIdle = () => {
+      zooming = false;
+      // Camera setters can emit center_changed before their final pixel origin
+      // settles. Capture that final view, but never adopt our own resize rounding.
+      if (viewChanged && !layingOut && width === container.clientWidth && height === container.clientHeight) {
+        center = map.getCenter();
+        viewChanged = false;
+      }
+      scheduleLayout();
+    };
+    maps.event.addListener(map, 'center_changed', rememberCenter);
+    maps.event.addListener(map, 'zoom_start', onZoomStart);
+    maps.event.addListener(map, 'idle', onIdle);
+    const observer = new ResizeObserver(scheduleLayout);
+    observer.observe(container);
+    return () => {
+      disposed = true;
+      prepareLayoutRef.current = null;
+      observer.disconnect();
+      if (frame != null) cancelAnimationFrame(frame);
+      maps.event.removeListener(map, 'center_changed', rememberCenter);
+      maps.event.removeListener(map, 'zoom_start', onZoomStart);
+      maps.event.removeListener(map, 'idle', onIdle);
+    };
+  }, [readyVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -104,22 +191,43 @@ export default function MapPanel({
     layer.render(pins);
     layer.highlight(selectedId ?? null, selectedLocationIds);
 
-    // 처음 결과가 들어왔을 때만 전체가 보이게 맞춘다.
-    // 필터를 바꿀 때마다 맞추면 특정 지역을 보던 사용자가 매번 전국으로 튕긴다.
-    if (!fittedRef.current && pins.length > 0) {
-      fittedRef.current = true;
-      if (pins.length === 1) {
-        map.setCenter(new maps.LatLng(pins[0].lat, pins[0].lng));
-        map.setLevel(5);
-      } else {
-        const bounds = new maps.LatLngBounds();
-        pins.forEach((pin) => bounds.extend(new maps.LatLng(pin.lat, pin.lng)));
-        map.setBounds(bounds, 64, 64, 64, 64);
-      }
-    }
     // selectedId 는 아래 effect 가 따로 본다. 여기서 보면 핀을 고를 때마다 전부 다시 그린다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pins, readyVersion]);
+
+  // Consume one overview request per mode entry (including empty results), not
+  // per fetch/render. Idle retries only a pending request during an SDK zoom.
+  useEffect(() => {
+    const map = mapRef.current;
+    const maps = mapsRef.current;
+    const layer = layerRef.current;
+    const previous = overviewRef.current;
+    if (previous.key !== viewResetKey || previous.action !== overviewAction || previous.version !== readyVersion) {
+      overviewRef.current = { key: viewResetKey, action: overviewAction, version: readyVersion, fitted: false };
+    }
+    const request = overviewRef.current;
+    if (!map || !maps || !layer || !viewReady || request.fitted) return;
+    let frame: number | null = null;
+    const schedule = () => {
+      if (request.fitted || frame != null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        if (request !== overviewRef.current || request.fitted || !prepareLayoutRef.current?.()) return;
+        request.fitted = true;
+        const valid = cameraPins(pins);
+        setOverviewLimited(fitOverview(map, maps, valid) > 0);
+        // Fit first, then reset the stage using the actual SDK level. The layer
+        // also reconciles on idle if the SDK finishes a camera change later.
+        layer.resetStage();
+      });
+    };
+    maps.event.addListener(map, 'idle', schedule);
+    schedule();
+    return () => {
+      if (frame != null) cancelAnimationFrame(frame);
+      maps.event.removeListener(map, 'idle', schedule);
+    };
+  }, [pins, viewReady, viewResetKey, overviewAction, readyVersion]);
 
   // 선택 강조만 갱신한다. 마커를 다시 만들지 않는다.
   // 주택 선택(selectedId)과 위치 목록(selectedLocationIds)은 따로 움직이므로 둘 다 본다.
@@ -139,20 +247,10 @@ export default function MapPanel({
   };
 
   const resetToNationwide = () => {
-    const map = mapRef.current;
-    const maps = mapsRef.current;
-    if (!map || !maps) return;
-    map.setCenter(new maps.LatLng(NATIONWIDE.lat, NATIONWIDE.lng));
-    map.setLevel(NATIONWIDE.level);
-    // 전국으로 돌아가는 건 탐색을 처음부터 다시 하겠다는 뜻이다.
-    layerRef.current?.resetStage();
+    // Closing a detail can resize the map. Fit after React commits that layout.
     onExploreStartRef.current?.();
+    setOverviewAction((value) => value + 1);
   };
-
-  // 모드 전환처럼 탐색 맥락이 통째로 바뀌면 들어가 있던 탐색 단계도 푼다.
-  useEffect(() => {
-    layerRef.current?.resetStage();
-  }, [viewResetKey, readyVersion]);
 
   return (
     <div className={`map-shell ${className ?? ''}`}>
@@ -165,10 +263,10 @@ export default function MapPanel({
           {!appKey && <code>zipick-frontend/.env의 VITE_KAKAO_MAP_KEY</code>}
         </div>
       )}
-      {!error && readyVersion > 0 && pins.length === 0 && (
-        <div className="map-message">조건에 맞는 공급주택이 없습니다.</div>
+      {!error && readyVersion > 0 && viewReady && pins.length === 0 && (
+        <div className="map-message">{emptyMessage ?? '조건에 맞는 공급주택이 없습니다.'}</div>
       )}
-      {!error && readyVersion > 0 && <span className="map-count">주택 {pins.length}곳</span>}
+      {!error && readyVersion > 0 && <span className="map-count">주택 {pins.length}곳{overviewLimited && ' · 일부 위치는 지도를 이동해 확인하세요'}</span>}
       {!error && readyVersion > 0 && (
         <div className="map-controls" role="group" aria-label="지도 조작">
           <button type="button" aria-label="확대" title="확대" onClick={() => stepZoom(-1)}>

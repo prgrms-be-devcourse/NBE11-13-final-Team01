@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import styles from '../features/map/MapPage.module.css';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { profileApi } from '../api/profile';
@@ -64,6 +65,26 @@ export default function MapPage() {
   // 같은 좌표에 주택이 여러 곳일 때 고른 위치. URL 에는 넣지 않는다 —
   // housing 식별자·링크 의미(?housing=)를 바꾸지 않기 위해서다. 표시 방식일 뿐이다.
   const [locationIds, setLocationIds] = useState<number[] | null>(null);
+  const [selectionAction, setSelectionAction] = useState(0);
+  const panelRef = useRef<HTMLElement>(null);
+  const mapAreaRef = useRef<HTMLDivElement>(null);
+  const hasPanel = selectedId != null || locationIds != null || mode === 'recommended';
+  const selectHouse = (id: number) => {
+    patch({ housing: String(id) });
+    setSelectionAction((value) => value + 1);
+  };
+  useEffect(() => {
+    if (!selectionAction || !window.matchMedia('(max-width: 1099px)').matches) return;
+    panelRef.current?.scrollIntoView({
+      block: 'start',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+  }, [selectionAction]);
+  const returnToMap = () => {
+    if (window.matchMedia('(max-width: 1099px)').matches) {
+      mapAreaRef.current?.scrollIntoView({ block: 'start' });
+    }
+  };
 
   const { status: onboarding } = useOnboardingStatus(mode === 'recommended');
   const canRecommend = mode === 'recommended' && !!user && onboarding === 'COMPLETE';
@@ -125,16 +146,16 @@ export default function MapPage() {
   const failed = mode === 'all' ? allQuery.isError : board.query.isError;
 
   return (
-    <div className="map-page">
+    <div className={`map-page ${styles.page}`}>
       <div className="map-toolbar">
         <nav className="map-modes" aria-label="지도 보기 모드">
-          <button type="button" className={`chip ${mode === 'all' ? 'chip--on' : ''}`} onClick={() => patch({ mode: null })}>
+          <button type="button" className={`chip ${mode === 'all' ? 'chip--on' : ''}`} aria-pressed={mode === 'all'} onClick={() => patch({ mode: null })}>
             전체 공고
           </button>
           <button
             type="button"
             className={`chip ${mode === 'recommended' ? 'chip--on' : ''}`}
-            onClick={() => patch({ mode: 'recommended' })}
+            aria-pressed={mode === 'recommended'} onClick={() => patch({ mode: 'recommended' })}
           >
             맞춤 추천
           </button>
@@ -190,14 +211,20 @@ export default function MapPage() {
         </p>
       )}
 
-      <div className="map-workspace">
+      <div ref={mapAreaRef} className={`map-workspace ${styles.workspace} ${styles.withPanel}`}>
         <MapPanel
           pins={pins}
           selectedId={selectedId}
           /* 목록이 열려 있는 동안 그 위치 마커를 선택 상태로 둔다 (상세로 들어가도 유지) */
           selectedLocationIds={locationIds}
-          /* 모드가 바뀌면 지도에 펼쳐 둔 지역 상태도 푼다 */
+          /* 데이터가 준비된 모드 진입마다 카메라와 지역 단계를 함께 맞춘다 */
           viewResetKey={mode}
+          viewReady={mode === 'all'
+            ? allQuery.isSuccess && !allQuery.isFetching && !allQuery.isPlaceholderData
+            : canRecommend && board.query.isSuccess && !board.query.isFetching && !board.query.isPlaceholderData}
+          emptyMessage={mode === 'recommended'
+            ? '지도에 표시할 추천 주택의 좌표가 없습니다. 추천 목록을 확인해 주세요.'
+            : undefined}
           /*
             행정구역 군집 클릭·'전국 보기' — 새 탐색을 시작했으니 이전 선택을 닫는다.
             다른 지역을 보고 있는데 우측에 이전 위치 목록이 남아 있으면 맥락이 어긋난다.
@@ -210,21 +237,23 @@ export default function MapPage() {
           /* 단독 핀을 직접 누른 경우. 이전 위치 목록 맥락은 버린다 → '뒤로'가 지도로 간다 */
           onSelect={(id) => {
             setLocationIds(null);
-            patch({ housing: String(id) });
+            selectHouse(id);
           }}
           /* 위치 마커를 누르면 그 자리의 목록을 연다. 상세가 열려 있었다면 선택을 푼다 */
           onSelectLocation={(ids) => {
+            setSelectionAction((value) => value + 1);
             setLocationIds(ids);
             if (selectedId != null) patch({ housing: null });
           }}
           className="map-panel"
         />
 
-        <aside className="map-aside" aria-live="polite">
+        {!hasPanel && <p className={styles.hint}>지도에서 주택이나 지역을 선택해 정보를 확인하세요.</p>}
+        <aside ref={panelRef} className={`map-aside ${!hasPanel ? styles.idlePanel : ''}`} aria-label={selectedId != null ? '주택 상세' : locationIds != null ? '이 위치의 주택' : mode === 'recommended' ? '맞춤 추천' : '주택 선택 안내'} aria-live="polite">
           {selectedId != null ? (
             <>
               {/* 위치 목록에서 들어왔으면 그 목록으로, 아니면 기존처럼 지도/추천 목록으로 */}
-              <button type="button" className="map-aside__back" onClick={() => patch({ housing: null })}>
+              <button type="button" className="map-aside__back" onClick={() => { patch({ housing: null }); if (locationIds == null && mode === 'all') returnToMap(); }}>
                 ← {locationIds != null ? '이 위치 목록으로' : mode === 'recommended' ? '추천 목록으로' : '지도로'}
               </button>
               {detailQuery.isLoading && <p className="map-side__notice">상세정보를 불러오는 중…</p>}
@@ -241,8 +270,8 @@ export default function MapPage() {
           ) : locationIds != null ? (
             <LocationList
               pins={pins.filter((pin) => locationIds.includes(pin.housingId))}
-              onBack={() => setLocationIds(null)}
-              onSelect={(id) => patch({ housing: String(id) })}
+              onBack={() => { setLocationIds(null); returnToMap(); }}
+              onSelect={selectHouse}
             />
           ) : mode === 'recommended' ? (
             <RecommendationSidebar
@@ -251,10 +280,16 @@ export default function MapPage() {
               /* 조건 완화 제안도 추천과 같은 기준이어야 한다. 전체 공고 모드의 탐색 필터를 넘기지 않는다 */
               filter={EMPTY_FILTER}
               board={board}
-              onSelect={(id) => patch({ housing: String(id) })}
+              onSelect={selectHouse}
             />
           ) : (
-            <p className="map-side__notice">지도에서 집을 선택하면 상세정보와 로드뷰가 표시됩니다.</p>
+            <div className={styles.emptyPanel}>
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <path d="m3 10 9-7 9 7v10H3zM9 20v-7h6v7" strokeLinejoin="round" />
+              </svg>
+              <h2>궁금한 주택을 선택해보세요</h2>
+              <p>지도에서 주택을 선택하면<br />상세 정보와 주변 환경을 확인할 수 있어요.</p>
+            </div>
           )}
         </aside>
       </div>
