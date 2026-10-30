@@ -6,6 +6,7 @@ import com.zipick.auth.dto.response.SignupResponse;
 import com.zipick.auth.userdetails.CustomUserDetails;
 import com.zipick.global.error.BusinessException;
 import com.zipick.global.error.ErrorCode;
+import com.zipick.user.entity.Role;
 import com.zipick.user.entity.User;
 import com.zipick.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,19 @@ public class AuthService {
 
     @Transactional
     public TokenService.TokenPair login(LoginRequest request) {
+        return login(request, false);
+    }
+
+    /**
+     * 운영자 화면(/admin) 로그인. 비밀번호가 맞아도 ROLE_ADMIN 이 아니면 토큰을 발급하지 않는다.
+     * 일반 사용자에게는 운영자 계정 여부를 알리지 않도록 일반 로그인 실패와 같은 오류를 준다.
+     */
+    @Transactional
+    public TokenService.TokenPair adminLogin(LoginRequest request) {
+        return login(request, true);
+    }
+
+    private TokenService.TokenPair login(LoginRequest request, boolean adminOnly) {
 
         try {
             // 비밀번호 비교는 AuthenticationManager에 맡긴다.
@@ -57,6 +71,11 @@ public class AuthService {
             );
 
             User user = ((CustomUserDetails) authentication.getPrincipal()).getUser();
+
+            if (adminOnly && user.getRole() != Role.ROLE_ADMIN) {
+                log.warn("[AUTH] 운영자 로그인 거부(권한 없음) userId: {}", user.getId());
+                throw new BusinessException(ErrorCode.INVALID_LOGIN);
+            }
 
             TokenService.TokenPair tokenPair = tokenService.issueToken(user);
 

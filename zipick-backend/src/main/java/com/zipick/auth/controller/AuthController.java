@@ -98,6 +98,25 @@ public class AuthController {
         return ApiResponse.ok(new LoginResponse(tokenPair.accessToken()));
     }
 
+    @Operation(summary = "운영자 로그인",
+            description = "운영자 화면(/admin) 전용. ROLE_ADMIN 계정만 토큰을 받는다. "
+                    + "일반 계정은 비밀번호가 맞아도 401 INVALID_LOGIN.")
+    @SecurityRequirements   // 비로그인 호출
+    @PostMapping("/admin/login")
+    public ApiResponse<LoginResponse> adminLogin(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletResponse response
+    ) {
+        TokenService.TokenPair tokenPair = authService.adminLogin(request);
+        cookieUtil.addCookie(
+                response,
+                CookieUtil.REFRESH_TOKEN_COOKIE,
+                tokenPair.refreshToken(),
+                jwtProperties.refreshTokenExpiration()
+        );
+        return ApiResponse.ok(new LoginResponse(tokenPair.accessToken()));
+    }
+
     @Operation(summary = "Access Token 재발급",
             description = "요청 바디 없이 refreshToken 쿠키만으로 동작한다. "
                     + "Rotation이라 호출할 때마다 Refresh Token 쿠키도 새 값으로 교체되므로, "

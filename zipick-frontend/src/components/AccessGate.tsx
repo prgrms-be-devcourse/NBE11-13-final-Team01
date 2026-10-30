@@ -1,11 +1,11 @@
 import { useEffect, type ReactNode } from 'react';
 import { openGate } from '../hooks/useAuthGate';
-import { isAdmin, useAuth } from '../hooks/useAuth';
+import { useAuth } from '../hooks/useAuth';
 import { useOnboardingStatus } from '../hooks/useOnboardingStatus';
 
 interface Props {
-  /** LOGIN: 로그인만 필요 / ONBOARDING: 로그인 + 내 조건 입력까지 필요 / ADMIN: 운영자(ROLE_ADMIN) */
-  need: 'LOGIN' | 'ONBOARDING' | 'ADMIN';
+  /** LOGIN: 로그인만 필요 / ONBOARDING: 로그인 + 내 조건 입력까지 필요 */
+  need: 'LOGIN' | 'ONBOARDING';
   children: ReactNode;
 }
 
@@ -25,16 +25,6 @@ export default function AccessGate({ need, children }: Props) {
   useEffect(() => {
     if (blockedBy) openGate(blockedBy);
   }, [blockedBy]);
-
-  // 운영자 화면: 로그인은 됐는데 권한이 없으면 팝업 없이 안내만. 서버도 403 으로 막는다
-  if (need === 'ADMIN' && user && !isAdmin(user)) {
-    return (
-      <div className="empty">
-        <h2>운영자만 볼 수 있는 화면이에요</h2>
-        <p>운영자 계정(ROLE_ADMIN)으로 로그인해 주세요.</p>
-      </div>
-    );
-  }
 
   if (blockedBy === 'LOGIN') {
     return (

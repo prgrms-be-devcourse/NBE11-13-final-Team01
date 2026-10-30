@@ -12,6 +12,7 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import AdminCampaignPage from './pages/AdminCampaignPage';
 import AdminLayout from './pages/admin/AdminLayout';
+import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminAiDocumentsPage from './pages/admin/AdminAiDocumentsPage';
 import AdminNoticesPage from './pages/admin/AdminNoticesPage';
@@ -40,6 +41,20 @@ export default function App() {
   return (
     <Routes>
       <Route path="/landing" element={<LandingPage />} />
+      {/*
+        운영자 화면. 서비스 Layout 과 분리된 독립 셸(AdminLayout)이고 로그인도 따로(/admin/login, ROLE_ADMIN 만).
+        AdminLayout 이 운영자가 아니면 /admin/login 으로 보내고, 서버도 /api/v1/admin/** 를 ROLE_ADMIN 으로 막는다.
+      */}
+      <Route path="/admin/login" element={<AdminLoginPage />} />
+      <Route path="/admin" element={<AdminLayout />}>
+        <Route index element={<AdminDashboardPage />} />
+        <Route path="ai-documents" element={<AdminAiDocumentsPage />} />
+        <Route path="notices" element={<AdminNoticesPage />} />
+        <Route path="users" element={<AdminUsersPage />} />
+        <Route path="notifications" element={<AdminNotificationsPage />} />
+        <Route path="campaigns" element={<AdminCampaignPage />} />
+        <Route path="*" element={<Navigate to="/admin" replace />} />
+      </Route>
       <Route element={<Layout />}>
         <Route index element={<Navigate to="/landing" replace />} />
 
@@ -82,22 +97,6 @@ export default function App() {
           }
         />
 
-        {/* 운영자(ROLE_ADMIN)만. 메뉴는 role 로 숨기고, 권한은 서버가 다시 확인한다 (아니면 403) */}
-        <Route
-          path="/admin"
-          element={
-            <AccessGate need="ADMIN">
-              <AdminLayout />
-            </AccessGate>
-          }
-        >
-          <Route index element={<AdminDashboardPage />} />
-          <Route path="ai-documents" element={<AdminAiDocumentsPage />} />
-          <Route path="notices" element={<AdminNoticesPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="notifications" element={<AdminNotificationsPage />} />
-          <Route path="campaigns" element={<AdminCampaignPage />} />
-        </Route>
 
         {/* 맞춤 추천은 지도 모드로. 로그인·온보딩 확인은 지도 화면이 직접 한다 */}
         <Route path="/recommendations" element={<RedirectToMap mode="recommended" />} />

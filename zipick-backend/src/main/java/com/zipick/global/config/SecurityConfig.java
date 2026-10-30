@@ -56,6 +56,7 @@ public class SecurityConfig {
                                 "/api/auth/email-verifications",
                                 "/api/auth/email-verifications/**",
                                 "/api/auth/login",
+                                "/api/auth/admin/login",
                                 "/api/auth/reissue",
                                 "/error",
                                 "/actuator/**",
