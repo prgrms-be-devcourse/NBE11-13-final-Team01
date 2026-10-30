@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { profileApi } from '../api/profile';
@@ -8,6 +8,7 @@ import type { HousingType, Region, RentalType, StudentStatus, UserPreference, Us
 import { HOUSING_LABEL, RENTAL_LABEL } from '../utils/format';
 import AhpQuestions from '../components/AhpQuestions';
 import styles from '../features/onboarding/OnboardingPage.module.css';
+import { shortProvince } from '../features/map/regionCluster';
 
 /** 사전 기입: 1단계 기본 정보, 2단계 희망 주거조건, 3단계 우선순위 질문(AHP). 저장하면 추천이 다시 계산된다. */
 export default function OnboardingPage() {
@@ -33,6 +34,9 @@ export default function OnboardingPage() {
   const [homelessPicked, setHomelessPicked] = useState(false);
   const [profileInitialized, setProfileInitialized] = useState(false);
   const [profileSaveAttempted, setProfileSaveAttempted] = useState(false);
+  const [prefInitialized, setPrefInitialized] = useState(false);
+  const [prefSaveAttempted, setPrefSaveAttempted] = useState(false);
+  const prefSaveInFlight = useRef(false);
   const [pref, setPref] = useState<UserPreference>({
     regions: [],
     depositMax: null,
@@ -58,8 +62,15 @@ export default function OnboardingPage() {
     }
   }, [profileQ.data, profileQ.error, profileInitialized]);
   useEffect(() => {
-    if (prefQ.data) setPref(prefQ.data);
-  }, [prefQ.data]);
+    // 최초 조회만 복원하여 단계 왕복·재조회가 편집 중인 희망 조건을 덮어쓰지 않게 한다.
+    if (prefInitialized) return;
+    if (prefQ.data) {
+      setPref(prefQ.data);
+      setPrefInitialized(true);
+    } else if (prefQ.error instanceof ApiError && prefQ.error.code === 'PREFERENCE_NOT_FOUND') {
+      setPrefInitialized(true);
+    }
+  }, [prefQ.data, prefQ.error, prefInitialized]);
 
   const saveProfile = useMutation({
     mutationFn: () => profileApi.save(profile),
@@ -76,6 +87,7 @@ export default function OnboardingPage() {
       qc.invalidateQueries({ queryKey: ['recommendations'] });
       setStep(3);
     },
+    onSettled: () => { prefSaveInFlight.current = false; },
   });
 
   const err = (m: { isError: boolean; error: unknown }) => (m.isError ? (m.error as ApiError) : null);
@@ -103,9 +115,10 @@ export default function OnboardingPage() {
   const missingPref = [pref.regions.length === 0 && '관심 지역', !hasBudget && '예산(보증금·월 임대료 상한, 월 예산 중 하나)'].filter(
     Boolean,
   ) as string[];
+  const invalidArea = pref.areaMin != null && pref.areaMax != null && pref.areaMax < pref.areaMin;
 
   return (
-    <div className={`${styles.page} ${step === 1 ? styles.profileStage : 'onboarding'}`}>
+    <div className={`${styles.page} ${step === 1 ? styles.profileStage : step === 2 ? styles.preferenceStage : 'onboarding'}`}>
       <header className={styles.intro} aria-labelledby="onboarding-page-title">
         <p className={styles.introEyebrow}>나에게 맞는 집을 찾는 첫걸음</p>
         <h1 className={styles.introTitle} id="onboarding-page-title">내 조건 입력</h1>
@@ -259,96 +272,91 @@ export default function OnboardingPage() {
 
       {step === 2 && (
         <form
-          className="form"
+          className={styles.preferencePanel}
+          noValidate
+          aria-labelledby="preference-title"
+          aria-busy={savePref.isPending || (!prefInitialized && prefQ.isFetching)}
           onSubmit={(e) => {
             e.preventDefault();
-            savePref.mutate();
+            if (!prefInitialized || prefSaveInFlight.current) return;
+            setPrefSaveAttempted(true);
+            if (missingPref.length > 0 || invalidArea) {
+              const selector = pref.regions.length === 0 ? '#district-search' : !hasBudget ? '#depositMax' : '#areaMax';
+              e.currentTarget.querySelector<HTMLInputElement>(selector)?.focus();
+              return;
+            }
+            if (e.currentTarget.reportValidity()) {
+              // 렌더가 갱신되기 전 같은 순간에 발생한 중복 제출도 막는다.
+              prefSaveInFlight.current = true;
+              savePref.mutate();
+            }
           }}
         >
-          <h1>희망 주거조건</h1>
-          <p className="muted">추천 점수를 매기는 기준이에요. 금액은 만 원, 면적은 ㎡.</p>
-          <RequiredNote />
+          <h2 className={styles.preferenceTitle} id="preference-title">희망 주거 조건</h2>
+          <p className={styles.preferenceDescription}>원하는 지역과 예산을 알려주시면, 나에게 맞는 주택을 찾는 데 활용해요.</p>
+          {!prefInitialized ? (
+            prefQ.isError && !prefQ.isFetching ? (
+              <div className={styles.loadState} role="alert">
+                <p>희망 조건을 불러오지 못했어요. 다시 시도해 주세요.</p>
+                <button className={styles.secondaryButton} type="button" onClick={() => void prefQ.refetch()}>다시 시도</button>
+              </div>
+            ) : <p className={styles.loadState} role="status">희망 조건을 불러오는 중이에요…</p>
+          ) : (
+            <>
+              <fieldset className={styles.preferenceFields} disabled={savePref.isPending}>
+                <legend className={styles.srOnly}>희망 주거 조건 입력</legend>
+                <RegionEditor regions={pref.regions} onChange={(regions) => setPref({ ...pref, regions })} error={prefSaveAttempted && pref.regions.length === 0} />
 
-          <RegionEditor regions={pref.regions} onChange={(regions) => setPref({ ...pref, regions })} />
+                <section className={`${styles.preferenceSection} ${styles.preferenceDivider}`} aria-labelledby="budget-title">
+                  <PreferenceHeading id="budget-title" title="예산" required description="보증금 상한, 월 임대료 상한, 월 예산 중 하나 이상 입력해 주세요." />
+                  <div className={styles.preferenceGrid}>
+                    <PreferenceInput id="depositMax" label="보증금 상한" unit="만원" placeholder="예: 1000" value={pref.depositMax} invalid={prefSaveAttempted && !hasBudget} describedBy={`budget-help${prefSaveAttempted && !hasBudget ? ' budget-error' : ''}`} onChange={(depositMax) => setPref({ ...pref, depositMax })} />
+                    <PreferenceInput id="rentMax" label="월 임대료 상한" unit="만원" placeholder="예: 40" value={pref.rentMax} invalid={prefSaveAttempted && !hasBudget} describedBy={`budget-help${prefSaveAttempted && !hasBudget ? ' budget-error' : ''}`} onChange={(rentMax) => setPref({ ...pref, rentMax })} />
+                    <div className={styles.preferenceWide}>
+                      <PreferenceInput id="monthlyBudget" label="월 예산" unit="만원" placeholder="예: 80" value={pref.monthlyBudget} help="보증금을 월세로 환산한 총 월 비용이에요." invalid={prefSaveAttempted && !hasBudget} describedBy={prefSaveAttempted && !hasBudget ? 'budget-error' : undefined} onChange={(monthlyBudget) => setPref({ ...pref, monthlyBudget })} />
+                    </div>
+                  </div>
+                  <p className={styles.preferenceHelp} id="budget-help">비워 둔 항목은 상한을 적용하지 않아요. 숫자는 만원 단위로 입력해 주세요.</p>
+                  {prefSaveAttempted && !hasBudget && <p className={styles.preferenceError} id="budget-error" role="alert">보증금 상한, 월 임대료 상한, 월 예산 중 하나를 0보다 크게 입력해 주세요.</p>}
+                </section>
 
-          <p className="field-group">
-            예산 <Req /> <small className="hint">보증금 상한·월 임대료 상한·월 예산 중 하나 이상. 없으면 비용 점수를 매길 수 없어요.</small>
-          </p>
-          <div className="grid2">
-            <label>
-              보증금 상한 (만 원)
-              <input type="number" min={0} value={pref.depositMax ?? ''} onChange={(e) => setPref({ ...pref, depositMax: numOrNull(e.target.value) })} />
-            </label>
-            <label>
-              월 임대료 상한 (만 원)
-              <input type="number" min={0} value={pref.rentMax ?? ''} onChange={(e) => setPref({ ...pref, rentMax: numOrNull(e.target.value) })} />
-            </label>
-            <label>
-              전용면적 최소
-              <input type="number" min={0} step="0.1" value={pref.areaMin ?? ''} onChange={(e) => setPref({ ...pref, areaMin: numOrNull(e.target.value) })} />
-            </label>
-            <label>
-              전용면적 최대
-              <input type="number" min={0} step="0.1" value={pref.areaMax ?? ''} onChange={(e) => setPref({ ...pref, areaMax: numOrNull(e.target.value) })} />
-            </label>
-          </div>
+                <section className={`${styles.preferenceSection} ${styles.preferenceDivider}`} aria-labelledby="home-title">
+                  <PreferenceHeading id="home-title" title="면적 · 방 수" description="원하는 집 크기를 알고 있다면 입력해 주세요." />
+                  <div className={styles.preferenceGrid}>
+                    <PreferenceInput id="areaMin" label="전용면적 최소" unit="㎡" placeholder="최소 면적" step={0.1} value={pref.areaMin} invalid={prefSaveAttempted && invalidArea} describedBy={prefSaveAttempted && invalidArea ? 'area-error' : undefined} onChange={(areaMin) => setPref({ ...pref, areaMin })} />
+                    <PreferenceInput id="areaMax" label="전용면적 최대" unit="㎡" placeholder="최대 면적" step={0.1} value={pref.areaMax} invalid={prefSaveAttempted && invalidArea} describedBy={prefSaveAttempted && invalidArea ? 'area-error' : undefined} onChange={(areaMax) => setPref({ ...pref, areaMax })} />
+                    <PreferenceInput id="roomsMin" label="희망 최소 방 수" unit="개" placeholder="예: 2" min={1} max={10} value={pref.roomsMin} help="비우면 방 수는 점수에 넣지 않아요." onChange={(roomsMin) => setPref({ ...pref, roomsMin })} />
+                  </div>
+                  {prefSaveAttempted && invalidArea && <p className={styles.preferenceError} id="area-error" role="alert">전용면적 최대는 최소 이상이어야 해요.</p>}
+                </section>
 
-          <div className="grid2">
-            <label>
-              희망 최소 방 수
-              <input type="number" min={1} max={10} value={pref.roomsMin ?? ''} onChange={(e) => setPref({ ...pref, roomsMin: numOrNull(e.target.value) })} />
-              <small className="hint">비우면 방 수는 점수에 넣지 않아요.</small>
-            </label>
-          </div>
-
-          <label>
-            월 예산 (만 원, 보증금을 월세로 환산한 총 월 비용)
-            <input type="number" min={0} value={pref.monthlyBudget ?? ''} onChange={(e) => setPref({ ...pref, monthlyBudget: numOrNull(e.target.value) })} />
-            <small className="hint">비우면 보증금·월세 상한으로 계산해요.</small>
-          </label>
-
-          <fieldset className="field">
-            <legend>주택 유형</legend>
-            <div className="chips">
-              {(Object.keys(HOUSING_LABEL) as HousingType[]).map((t) => (
-                <button
-                  type="button"
-                  key={t}
-                  className={`chip ${pref.housingTypes.includes(t) ? 'chip--on' : ''}`}
-                  onClick={() => setPref({ ...pref, housingTypes: toggleIn(pref.housingTypes, t) })}
-                >
-                  {HOUSING_LABEL[t]}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset className="field">
-            <legend>공공임대 유형 (필터에만 쓰여요. 비우면 전체)</legend>
-            <div className="chips">
-              {(Object.keys(RENTAL_LABEL) as RentalType[]).map((t) => (
-                <button
-                  type="button"
-                  key={t}
-                  className={`chip ${pref.rentalTypes.includes(t) ? 'chip--on' : ''}`}
-                  onClick={() => setPref({ ...pref, rentalTypes: toggleIn(pref.rentalTypes, t) })}
-                >
-                  {RENTAL_LABEL[t]}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          {err(savePref) && <FormError e={err(savePref)!} />}
-          <MissingRequired items={missingPref} />
-          <div className="form__actions">
-            <button className="btn btn--ghost" type="button" onClick={() => setStep(1)}>
-              ← 기본 정보
-            </button>
-            <button className="btn" type="submit" disabled={savePref.isPending || missingPref.length > 0}>
-              저장하고 다음 →
-            </button>
-          </div>
+                <section className={`${styles.preferenceSection} ${styles.preferenceDivider}`} aria-labelledby="types-title">
+                  <PreferenceHeading id="types-title" title="선호하는 주택" description="여러 개 선택할 수 있어요. 선택하지 않으면 전체 유형을 살펴봐요." />
+                  <fieldset className={styles.preferenceTypes}>
+                    <legend>주택 유형</legend>
+                    <div className={styles.preferenceOptions}>
+                      {(Object.keys(HOUSING_LABEL) as HousingType[]).map((t) => (
+                        <button type="button" key={t} className={styles.preferenceChip} aria-pressed={pref.housingTypes.includes(t)} onClick={() => setPref({ ...pref, housingTypes: toggleIn(pref.housingTypes, t) })}>{HOUSING_LABEL[t]}</button>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <fieldset className={styles.preferenceTypes}>
+                    <legend>공공임대 유형 <small>필터에만 쓰여요. 선택하지 않으면 전체</small></legend>
+                    <div className={styles.preferenceOptions}>
+                      {(Object.keys(RENTAL_LABEL) as RentalType[]).map((t) => (
+                        <button type="button" key={t} className={styles.preferenceChip} aria-pressed={pref.rentalTypes.includes(t)} onClick={() => setPref({ ...pref, rentalTypes: toggleIn(pref.rentalTypes, t) })}>{RENTAL_LABEL[t]}</button>
+                      ))}
+                    </div>
+                  </fieldset>
+                </section>
+              </fieldset>
+              {err(savePref) && <div role="alert"><FormError e={err(savePref)!} /></div>}
+              <div className={styles.preferenceActions}>
+                <button className={styles.preferenceBack} type="button" onClick={() => setStep(1)}>← 기본 정보</button>
+                <button className={styles.preferenceNext} type="submit" disabled={savePref.isPending}>{savePref.isPending ? '저장 중…' : '저장하고 다음 →'}</button>
+              </div>
+            </>
+          )}
         </form>
       )}
 
@@ -367,58 +375,106 @@ export default function OnboardingPage() {
 }
 
 /** 관심 지역 최대 3곳, 고른 순서가 순위. 선택지는 수집된 공고가 있는 시군구(필터 옵션 API)에서 가져온다 */
-function RegionEditor({ regions, onChange }: { regions: Region[]; onChange: (r: Region[]) => void }) {
+function RegionEditor({ regions, onChange, error }: { regions: Region[]; onChange: (r: Region[]) => void; error: boolean }) {
   const options = useQuery({ queryKey: ['filter-options'], queryFn: houseApi.filterOptions, staleTime: 5 * 60_000 });
   const [province, setProvince] = useState<string>('');
+  const [search, setSearch] = useState('');
   const all = options.data?.regions ?? [];
   const provinces = [...new Set(all.map((r) => r.province))];
-  const current = province || provinces[0] || '';
+  const ordered = [...regions].sort((a, b) => a.rank - b.rank);
+  const savedProvince = all.find((r) => r.key === ordered[0]?.code)?.province;
+  const current = provinces.includes(province) ? province : savedProvince || provinces[0] || '';
+  const districts = all.filter((r) => r.province === current && (r.district ?? r.key).includes(search.trim()));
 
   const toggle = (g: { code: string; name: string }) => {
     const exists = regions.find((r) => r.code === g.code);
     let next: Region[];
-    if (exists) next = regions.filter((r) => r.code !== g.code);
+    if (exists) next = ordered.filter((r) => r.code !== g.code);
     else if (regions.length >= 3) return;
-    else next = [...regions, { ...g, rank: 0 }];
+    else next = [...ordered, { ...g, rank: 0 }];
     onChange(next.map((r, i) => ({ ...r, rank: i + 1 })));
   };
   return (
-    <fieldset className="field">
-      <legend>
-        관심 지역 (최대 3곳, 고른 순서가 우선순위) <Req />
-      </legend>
-      <div className="chips">
-        {regions.map((r) => (
-          <button type="button" key={r.code} className="chip chip--on" onClick={() => toggle(r)}>
-            {r.rank} {r.name} ×
-          </button>
-        ))}
-        {regions.length === 0 && <small className="hint">아래에서 시도를 고른 뒤 시군구를 누르세요.</small>}
+    <section className={styles.preferenceSection} aria-labelledby="region-title">
+      <PreferenceHeading id="region-title" title="관심 지역" required description="최대 3곳까지 선택할 수 있어요. 선택한 순서대로 우선순위가 정해져요." counter={<span className={styles.regionCount} role="status"><strong>{regions.length}</strong> / 3곳</span>} />
+      <div className={styles.selectedPanel} aria-label="선택한 관심 지역">
+        <p className={styles.selectedCaption}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 21s7-5.5 7-12a7 7 0 0 0-14 0c0 6.5 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg>선택한 지역 · 순서대로 추천에 반영해요</p>
+        <div className={styles.selectedItems}>
+          {ordered.map((r) => {
+            const option = all.find((option) => option.key === r.code);
+            const label = option ? `${shortProvince(option.province)} · ${r.name}` : r.code;
+            return (
+              <div className={styles.selectedChip} key={r.code}>
+                <span className={styles.regionRank}>{r.rank}순위</span><span title={r.code}>{label}</span>
+                <button type="button" className={styles.regionRemove} aria-label={`${r.rank}순위 ${r.code} 제거`} onClick={() => toggle(r)}>×</button>
+              </div>
+            );
+          })}
+          {regions.length === 0 && <p className={styles.regionEmpty}>아직 선택한 지역이 없어요. 아래에서 지역을 선택해 주세요.</p>}
+        </div>
+        <p className={styles.selectionTip}>{regions.length >= 3 ? '3곳을 모두 선택했어요. 변경하려면 선택한 지역을 해제해 주세요.' : `앞으로 ${3 - regions.length}곳 더 선택할 수 있어요. ×를 눌러 삭제하면 순위가 자동으로 정리돼요.`}</p>
       </div>
-      <div className="chips chips--dense">
-        {provinces.map((p) => (
-          <button type="button" key={p} className={`chip ${p === current ? 'chip--on' : ''}`} onClick={() => setProvince(p)}>
-            {p}
-          </button>
-        ))}
+      <div className={styles.regionPicker}>
+        <div className={styles.regionToolbar}><strong>지역 선택하기</strong><span>시·도를 고른 뒤 시·군·구를 선택해 주세요</span></div>
+        {options.isPending ? <p className={styles.regionEmpty} role="status">지역 목록을 불러오는 중이에요…</p> : options.isError ? (
+          <div className={styles.regionEmpty} role="alert">지역 목록을 불러오지 못했어요. <button type="button" className={styles.regionRetry} onClick={() => void options.refetch()}>다시 시도</button></div>
+        ) : (
+          <div className={styles.regionBrowser}>
+            <div className={styles.provincePanel}>
+              <div className={styles.provinceHeading}>시·도</div>
+              <div className={styles.provinceList} role="group" aria-label="시·도 선택">
+                {provinces.map((p) => (
+                  <button type="button" key={p} className={styles.provinceItem} aria-pressed={p === current} onClick={() => { setProvince(p); setSearch(''); }}>
+                    {p}<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6" /></svg>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className={styles.districtPanel}>
+              <div className={styles.districtHeading}><strong>{current || '선택 가능한 지역이 없어요'}</strong><small>시·군·구 선택</small></div>
+              <label className={styles.districtSearch} htmlFor="district-search">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="11" cy="11" r="7" /><path d="m16.5 16.5 4 4" /></svg>
+                <span className={styles.srOnly}>시·군·구 검색</span>
+                <input id="district-search" type="search" placeholder="시·군·구 검색" autoComplete="off" value={search} aria-invalid={error || undefined} aria-describedby={error ? 'region-error' : undefined} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }} />
+              </label>
+              <div className={styles.districtGrid} role="group" aria-label={`${current} 시·군·구 선택`}>
+                {districts.map((r) => {
+                  const picked = regions.some((x) => x.code === r.key);
+                  return (
+                    <button type="button" key={r.key} className={styles.districtItem} aria-pressed={picked} disabled={!picked && regions.length >= 3} onClick={() => toggle({ code: r.key, name: r.district ?? r.key })}>
+                      <span className={styles.districtName}>{r.district ?? r.key}</span><span className={styles.districtCount}>{r.count}</span>
+                      {picked && <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m3 12 6 6L21 6" /></svg>}
+                    </button>
+                  );
+                })}
+                {districts.length === 0 && <p className={styles.regionEmpty} role="status">{search.trim() ? '검색 결과가 없어요.' : '현재 선택할 수 있는 지역이 없어요.'}</p>}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-      <div className="chips chips--dense">
-        {all
-          .filter((r) => r.province === current && !regions.some((x) => x.code === r.key))
-          .map((r) => (
-            <button
-              type="button"
-              key={r.key}
-              className="chip"
-              disabled={regions.length >= 3}
-              onClick={() => toggle({ code: r.key, name: r.district ?? r.key })}
-            >
-              {r.district ?? r.key} <span className="chip__count">{r.count}</span>
-            </button>
-          ))}
+      <p className={styles.regionFooter}>지금 모집 중인 공고가 있는 지역만 보여요. 숫자는 주택 수예요.</p>
+      {error && <p className={styles.preferenceError} id="region-error" role="alert">관심 지역을 1곳 이상 선택해 주세요.</p>}
+    </section>
+  );
+}
+
+function PreferenceHeading({ id, title, required = false, description, counter }: { id: string; title: string; required?: boolean; description: string; counter?: ReactNode }) {
+  return <div className={styles.preferenceSectionHead}><div><div className={styles.preferenceTitleRow}><h3 id={id}>{title}</h3><span className={styles.requirement}>{required ? '필수' : '선택'}</span></div><p>{description}</p></div>{counter}</div>;
+}
+
+function PreferenceInput({ id, label, unit, placeholder, min = 0, max, step, value, help, invalid, describedBy, onChange }: {
+  id: string; label: string; unit: string; placeholder: string; min?: number; max?: number; step?: number; value?: number | null; help?: string; invalid?: boolean; describedBy?: string; onChange: (value: number | null) => void;
+}) {
+  return (
+    <div className={styles.preferenceField}>
+      <label htmlFor={id}>{label}<span className={styles.srOnly}> ({unit})</span></label>
+      <div className={styles.preferenceInputWrap}>
+        <input className={styles.preferenceControl} id={id} type="number" inputMode={step ? 'decimal' : 'numeric'} min={min} max={max} step={step} placeholder={placeholder} value={value ?? ''} aria-invalid={invalid || undefined} aria-describedby={[describedBy, help ? `${id}-help` : undefined].filter(Boolean).join(' ') || undefined} onChange={(e) => onChange(numOrNull(e.target.value))} />
+        <span className={styles.preferenceUnit} aria-hidden="true">{unit}</span>
       </div>
-      <small className="hint">지금 모집 중인 공고가 있는 지역만 보여요. 숫자는 주택 수예요.</small>
-    </fieldset>
+      {help && <p className={styles.preferenceHint} id={`${id}-help`}>{help}</p>}
+    </div>
   );
 }
 
@@ -473,33 +529,6 @@ function ProfileRadio({ name, label, help, error, value, options, onChange }: {
         <p className={styles.fieldHelp} id={`${name}-help`}>{help}</p>
       </div>
     </div>
-  );
-}
-
-/** 필수 항목 표시 */
-function Req() {
-  return (
-    <span className="req" aria-label="필수" title="필수">
-      *
-    </span>
-  );
-}
-
-function RequiredNote() {
-  return (
-    <p className="required-note">
-      <Req /> 표시만 채우면 다음으로 넘어갈 수 있어요. 나머지는 비워 둬도 되고, 나중에 고칠 수 있어요.
-    </p>
-  );
-}
-
-/** 저장 버튼이 왜 꺼져 있는지 알려 준다 */
-function MissingRequired({ items }: { items: string[] }) {
-  if (items.length === 0) return null;
-  return (
-    <p className="missing-required" role="status">
-      아직 입력하지 않은 필수 항목: {items.join(', ')}
-    </p>
   );
 }
 
