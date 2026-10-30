@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { interestApi } from '../api/interest';
 import InterestButton from '../components/InterestButton';
-import NotificationPanel from '../components/NotificationPanel';
+import DeadlineAlertPrompt from '../components/DeadlineAlertPrompt';
 import { CalendarPanel, KIND_LABEL } from '../features/calendar';
 import { useAuth } from '../hooks/useAuth';
 import { STATUS_LABEL, rentalLabel } from '../utils/format';
@@ -139,7 +139,7 @@ export default function CalendarPage() {
           </nav>
         )}
       </section>
-      <NotificationPanel />
+      <DeadlineAlertPrompt />
     </div>
   );
 }

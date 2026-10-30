@@ -64,7 +64,7 @@ class NotificationClientTest {
     private static NotificationRequest request() {
         NotificationSetting s = NotificationSetting.defaults(1L);
         s.apply(new NotificationSettingRequest(true, "https://hooks.slack.com/services/x", null, null, "3", true), LocalDateTime.now());
-        return NotificationRequest.toUser("NOTICE_DEADLINE_REMINDER", s, s.channels(), Map.of("dDayLabel", "D-3"), "DEADLINE:1:10:3");
+        return NotificationRequest.toUser("NOTICE_DEADLINE_REMINDER", s, s.channels(true), Map.of("dDayLabel", "D-3"), "DEADLINE:1:10:3");
     }
 
     @Test

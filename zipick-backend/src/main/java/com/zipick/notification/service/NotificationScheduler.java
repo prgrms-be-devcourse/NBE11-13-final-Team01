@@ -54,6 +54,7 @@ public class NotificationScheduler {
     private final NoticeSummaryQueryRepository noticeRepository;
     private final NotificationCursorRepository cursorRepository;
     private final RecommendationService recommendationService;
+    private final NotificationChannelPolicy policy;
 
     @Scheduled(fixedDelayString = "${zipick.notification.poll-interval:PT5M}", initialDelayString = "PT30S")
     public void run() {
@@ -61,7 +62,7 @@ public class NotificationScheduler {
         try {
             // 알림이 켜져 있고, 알림센터가 지금 보낼 수 있는 채널의 주소가 하나라도 있는 사용자
             List<NotificationSetting> subscribers = settingRepository.findAllByEnabledTrue().stream()
-                    .filter(s -> !client.usableChannels(s.channels()).isEmpty()).toList();
+                    .filter(s -> !client.usableChannels(s.channels(policy.slackAllowed(s.getUserId()))).isEmpty()).toList();
             int a = enqueueDeadlineReminders(subscribers);
             int b = enqueueNewMatches(subscribers);
             if (a + b > 0) log.info("알림 스케줄러: 마감 {}건, 새 공고 {}건을 알림센터에 요청", a, b);
@@ -93,7 +94,7 @@ public class NotificationScheduler {
                 vars.put("noticeTitle", n.title());
                 vars.put("regionsText", n.regions().isEmpty() ? "" : " (" + String.join(", ", n.regions()) + ")");
                 vars.put("detailUrl", n.detailUrl());
-                client.request(NotificationRequest.toUser(TEMPLATE_DEADLINE, s, client.usableChannels(s.channels()), vars,
+                client.request(NotificationRequest.toUser(TEMPLATE_DEADLINE, s, client.usableChannels(s.channels(policy.slackAllowed(s.getUserId()))), vars,
                         "DEADLINE:" + s.getUserId() + ":" + n.noticeId() + ":" + left), NotificationPriority.NORMAL);
                 count++;
             }
@@ -137,7 +138,7 @@ public class NotificationScheduler {
                 vars.put("region", h.candidate().regionKey());
                 vars.put("deadlineText", n.applyEndAt() == null ? "" : " · 접수 마감 " + n.applyEndAt());
                 vars.put("detailUrl", n.detailUrl());
-                client.request(NotificationRequest.toUser(TEMPLATE_NEW_MATCH, s, client.usableChannels(s.channels()), vars,
+                client.request(NotificationRequest.toUser(TEMPLATE_NEW_MATCH, s, client.usableChannels(s.channels(policy.slackAllowed(s.getUserId()))), vars,
                         "NEW_MATCH:" + s.getUserId() + ":" + nid), NotificationPriority.NORMAL);
                 count++;
             }

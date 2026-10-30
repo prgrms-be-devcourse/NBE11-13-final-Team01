@@ -3,6 +3,12 @@ import { useSyncExternalStore } from 'react';
 export interface AuthUser {
   userId: number;
   email: string;
+  /** 운영자용 항목(슬랙 알림 등)을 보일지만 정한다. 권한 검사는 서버가 한다 */
+  role?: 'ROLE_USER' | 'ROLE_ADMIN';
+}
+
+export function isAdmin(user: AuthUser | null): boolean {
+  return user?.role === 'ROLE_ADMIN';
 }
 
 // Access Token은 메모리에만 둔다. localStorage에 두면 XSS로 그대로 샌다.

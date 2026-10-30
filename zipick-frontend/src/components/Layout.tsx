@@ -77,6 +77,7 @@ export default function Layout() {
           <NavLink to="/calendar">관심 공고·일정</NavLink>
           <NavLink to="/tune">취향 찾기</NavLink>
           <NavLink to="/onboarding">내 조건</NavLink>
+          <NavLink to="/notifications">알림 설정</NavLink>
         </nav>
         <AuthBox />
       </header>

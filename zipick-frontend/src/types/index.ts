@@ -325,6 +325,8 @@ export interface NotificationSetting {
   newMatchEnabled: boolean;
   /** 알림센터에 이메일 발송 설정(SMTP/SES)이 있는지 */
   emailAvailable: boolean;
+  /** 슬랙은 운영자만. false 면 슬랙 입력란을 보이지 않는다 */
+  slackAllowed: boolean;
 }
 
 export interface NotificationSettingRequest {
@@ -334,8 +336,8 @@ export interface NotificationSettingRequest {
   email?: string | null;
   /** null 이면 그대로 */
   marketingConsent?: boolean | null;
-  /** "3,1,0" */
-  deadlineDays: string;
+  /** "3,1,0". null 이면 그대로, "" 이면 마감 알림 끔 */
+  deadlineDays: string | null;
   newMatchEnabled: boolean;
 }
 

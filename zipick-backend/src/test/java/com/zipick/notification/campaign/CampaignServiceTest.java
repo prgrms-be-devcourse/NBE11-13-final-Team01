@@ -37,13 +37,16 @@ class CampaignServiceTest {
     @Mock CampaignRepository campaigns;
     @Mock NotificationSettingRepository settings;
     @Mock NotificationClient client;
+    @Mock com.zipick.notification.service.NotificationChannelPolicy policy;
     CampaignService service;
 
     @BeforeEach
     void setUp() {
-        service = new CampaignService(campaigns, settings, client,
+        service = new CampaignService(campaigns, settings, client, policy,
                 new NotificationProperties(null, "k", Duration.ofMinutes(5), true, false, "https://zipick.example", null, null));
         org.mockito.Mockito.lenient().when(client.usableChannels(any())).thenAnswer(inv -> inv.getArgument(0));
+        // 기존 시나리오는 슬랙 수신자를 포함하므로 운영자(슬랙 허용)로 본다. 일반 사용자 제한은 NotificationChannelPolicyTest 에서
+        org.mockito.Mockito.lenient().when(policy.slackAllowed(any())).thenReturn(true);
     }
 
     private static NotificationSetting consented(long userId, String webhook, String email) {

@@ -10,6 +10,8 @@ import TunePage from './pages/TunePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import AdminCampaignPage from './pages/AdminCampaignPage';
+import NotificationSettingsPage from './pages/NotificationSettingsPage';
+import NotificationWidget from './components/NotificationWidget';
 
 /**
  * 탐색은 지도 한 화면에서 한다. 전체 공고 / 맞춤 추천은 별도 페이지가 아니라 `?mode=` 로 구분되는 두 모드다.
@@ -37,6 +39,9 @@ function RedirectHouseToMap() {
 
 export default function App() {
   return (
+    <>
+    {/* 오른쪽 아래 알림 버튼. 모든 화면에서 알림을 켜고 끈다 (운영자 화면 제외) */}
+    <NotificationWidget />
     <Routes>
       <Route path="/landing" element={<LandingPage />} />
       <Route path="/houses/:houseId" element={<RedirectHouseToMap />} />
@@ -63,6 +68,15 @@ export default function App() {
           element={
             <AccessGate need="LOGIN">
               <CalendarPage />
+            </AccessGate>
+          }
+        />
+        {/* 알림 설정. 관심 공고·일정 화면에 있던 설정 패널을 따로 뺐다 */}
+        <Route
+          path="/notifications"
+          element={
+            <AccessGate need="LOGIN">
+              <NotificationSettingsPage />
             </AccessGate>
           }
         />
@@ -104,5 +118,6 @@ export default function App() {
         />
       </Route>
     </Routes>
+    </>
   );
 }
