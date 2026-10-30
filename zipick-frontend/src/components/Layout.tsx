@@ -62,13 +62,14 @@ function AuthBox() {
 export default function Layout() {
   // 로그인 직후 보류된 관심 공고 저장을 이어서 실행한다. 앱 전체에서 여기 한 곳만 호출한다.
   usePendingInterestRunner();
-  const isMap = useLocation().pathname === '/map';
+  const pathname = useLocation().pathname;
+  const useServiceTheme = pathname === '/map' || pathname === '/calendar';
 
   return (
-    <div className={isMap ? `app zipick-theme ${mapStyles.frame}` : "app"}>
+    <div className={useServiceTheme ? `app zipick-theme ${mapStyles.frame}` : 'app'}>
       <header className="header">
         <NavLink to="/map" className="logo">
-          {isMap ? <MapBrand /> : 'ZIPICK'}
+          {useServiceTheme ? <MapBrand /> : 'ZIPICK'}
         </NavLink>
         {/* 전체 공고와 맞춤 추천은 지도 화면 안에서 전환한다. 독립 메뉴를 두지 않는다. */}
         <nav className="nav">
