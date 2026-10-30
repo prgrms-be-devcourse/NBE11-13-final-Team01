@@ -312,7 +312,7 @@ export default function OnboardingPage() {
                 <RegionEditor regions={pref.regions} onChange={(regions) => setPref({ ...pref, regions })} error={prefSaveAttempted && pref.regions.length === 0} />
 
                 <section className={`${styles.preferenceSection} ${styles.preferenceDivider}`} aria-labelledby="budget-title">
-                  <PreferenceHeading id="budget-title" title="예산" required description="보증금 상한, 월 임대료 상한, 월 예산 중 하나 이상 입력해 주세요." />
+                  <PreferenceHeading id="budget-title" title="예산" required description={<>보증금 상한, 월 임대료 상한, 월 예산 중 하나 이상 입력해 주세요.<br /><span id="budget-help">비워 둔 항목은 상한을 적용하지 않아요. 숫자는 만원 단위로 입력해 주세요.</span></>} />
                   <div className={styles.preferenceGrid}>
                     <PreferenceInput id="depositMax" label="보증금 상한" unit="만원" placeholder="예: 1000" value={pref.depositMax} invalid={prefSaveAttempted && !hasBudget} describedBy={`budget-help${prefSaveAttempted && !hasBudget ? ' budget-error' : ''}`} onChange={(depositMax) => setPref({ ...pref, depositMax })} />
                     <PreferenceInput id="rentMax" label="월 임대료 상한" unit="만원" placeholder="예: 40" value={pref.rentMax} invalid={prefSaveAttempted && !hasBudget} describedBy={`budget-help${prefSaveAttempted && !hasBudget ? ' budget-error' : ''}`} onChange={(rentMax) => setPref({ ...pref, rentMax })} />
@@ -320,7 +320,6 @@ export default function OnboardingPage() {
                       <PreferenceInput id="monthlyBudget" label="월 예산" unit="만원" placeholder="예: 80" value={pref.monthlyBudget} help="보증금을 월세로 환산한 총 월 비용이에요." invalid={prefSaveAttempted && !hasBudget} describedBy={prefSaveAttempted && !hasBudget ? 'budget-error' : undefined} onChange={(monthlyBudget) => setPref({ ...pref, monthlyBudget })} />
                     </div>
                   </div>
-                  <p className={styles.preferenceHelp} id="budget-help">비워 둔 항목은 상한을 적용하지 않아요. 숫자는 만원 단위로 입력해 주세요.</p>
                   {prefSaveAttempted && !hasBudget && <p className={styles.preferenceError} id="budget-error" role="alert">보증금 상한, 월 임대료 상한, 월 예산 중 하나를 0보다 크게 입력해 주세요.</p>}
                 </section>
 
@@ -401,22 +400,18 @@ function RegionEditor({ regions, onChange, error }: { regions: Region[]; onChang
   return (
     <section className={styles.preferenceSection} aria-labelledby="region-title">
       <PreferenceHeading id="region-title" title="관심 지역" required description="최대 3곳까지 선택할 수 있어요. 선택한 순서대로 우선순위가 정해져요." counter={<span className={styles.regionCount} role="status"><strong>{regions.length}</strong> / 3곳</span>} />
-      <div className={styles.selectedPanel} aria-label="선택한 관심 지역">
-        <p className={styles.selectedCaption}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 21s7-5.5 7-12a7 7 0 0 0-14 0c0 6.5 7 12 7 12Z" /><circle cx="12" cy="9" r="2.5" /></svg>선택한 지역 · 순서대로 추천에 반영해요</p>
-        <div className={styles.selectedItems}>
-          {ordered.map((r) => {
-            const option = all.find((option) => option.key === r.code);
-            const label = option ? `${shortProvince(option.province)} · ${r.name}` : r.code;
-            return (
-              <div className={styles.selectedChip} key={r.code}>
-                <span className={styles.regionRank}>{r.rank}순위</span><span title={r.code}>{label}</span>
-                <button type="button" className={styles.regionRemove} aria-label={`${r.rank}순위 ${r.code} 제거`} onClick={() => toggle(r)}>×</button>
-              </div>
-            );
-          })}
-          {regions.length === 0 && <p className={styles.regionEmpty}>아직 선택한 지역이 없어요. 아래에서 지역을 선택해 주세요.</p>}
-        </div>
-        <p className={styles.selectionTip}>{regions.length >= 3 ? '3곳을 모두 선택했어요. 변경하려면 선택한 지역을 해제해 주세요.' : `앞으로 ${3 - regions.length}곳 더 선택할 수 있어요. ×를 눌러 삭제하면 순위가 자동으로 정리돼요.`}</p>
+      <div className={styles.selectedItems} role="group" aria-label="선택한 관심 지역">
+        {ordered.map((r) => {
+          const option = all.find((option) => option.key === r.code);
+          const label = option ? `${shortProvince(option.province)} · ${r.name}` : r.code;
+          return (
+            <div className={styles.selectedChip} key={r.code}>
+              <span className={styles.regionRank}>{r.rank}순위</span><span title={r.code}>{label}</span>
+              <button type="button" className={styles.regionRemove} aria-label={`${r.rank}순위 ${r.code} 제거`} onClick={() => toggle(r)}>×</button>
+            </div>
+          );
+        })}
+        {regions.length === 0 && <p className={styles.regionEmpty}>아직 선택한 지역이 없어요. 아래에서 지역을 선택해 주세요.</p>}
       </div>
       <div className={styles.regionPicker}>
         <div className={styles.regionToolbar}><strong>지역 선택하기</strong><span>시·도를 고른 뒤 시·군·구를 선택해 주세요</span></div>
@@ -463,7 +458,7 @@ function RegionEditor({ regions, onChange, error }: { regions: Region[]; onChang
   );
 }
 
-function PreferenceHeading({ id, title, required = false, description, counter }: { id: string; title: string; required?: boolean; description: string; counter?: ReactNode }) {
+function PreferenceHeading({ id, title, required = false, description, counter }: { id: string; title: string; required?: boolean; description: ReactNode; counter?: ReactNode }) {
   return <div className={styles.preferenceSectionHead}><div><div className={styles.preferenceTitleRow}><h3 id={id}>{title}</h3><span className={`${styles.requirement} ${required ? styles.requiredRequirement : ''}`}>{required ? '필수' : '선택'}</span></div><p>{description}</p></div>{counter}</div>;
 }
 
@@ -516,7 +511,7 @@ function ProfileRadio({ name, label, help, error, value, options, onChange }: {
   onChange: (value: boolean) => void;
 }) {
   return (
-    <div className={styles.fieldRow}>
+    <div className={`${styles.fieldRow} ${styles.radioField}`}>
       <div className={styles.fieldLabel} id={`${name}-label`}>
         <span>{label}</span><span className={`${styles.requirement} ${styles.requiredRequirement}`}>필수</span>
       </div>

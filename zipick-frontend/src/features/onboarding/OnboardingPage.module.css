@@ -17,7 +17,7 @@
 .completedStep .stepNumber { background: #def6e9; color: var(--zipick-green); }
 
 .profileStage, .preferenceStage {
-  width: min(100%, 692px);
+  width: min(100%, 748px);
   margin-inline: auto;
   color: var(--zipick-ink);
   font-family: var(--zipick-font-family);
@@ -34,7 +34,7 @@
   min-width: 0;
   border: 1px solid var(--zipick-line);
   border-radius: var(--zipick-radius-panel);
-  padding: 20px 20px 18px;
+  padding: 20px 26px 18px;
   background: var(--zipick-white);
   box-shadow: var(--zipick-shadow-panel);
   font-size: 14px;
@@ -47,19 +47,20 @@
 .fieldFrame {
   min-inline-size: 0;
   margin: 22px 0 0;
-  padding: 19px 20px 18px;
+  padding: 19px 24px 18px;
   border: 1px solid var(--zipick-line);
   border-radius: 14px;
   background: var(--zipick-white);
 }
 
 .section { display: flex; flex-direction: column; gap: 16px; }
-.sectionHeading { margin-bottom: 0; }
+.sectionHeading { margin-bottom: 7px; }
 .sectionHeading h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 20px; font-weight: 750; line-height: 1.4; letter-spacing: -.02em; }
 .sectionHeading p { margin-top: 6px; color: #65748b; font-size: 12px; line-height: 1.55; }
 .optionalSection { margin-top: 20px; border-top: 1px solid var(--zipick-line); padding-top: 20px; }
 .profileGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px 14px; }
 .fieldRow { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.radioField { gap: 2px; }
 .fieldLabel { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 0; color: var(--zipick-ink); font-size: 16px; font-weight: 650; line-height: 1.5; }
 .requirement { flex-shrink: 0; color: var(--zipick-body); font-size: 12px; font-weight: 600; line-height: 1.4; letter-spacing: normal; }
 .requiredRequirement { color: var(--zipick-blue); }
@@ -80,6 +81,8 @@
   line-height: normal;
 }
 .profileStage .control:disabled { background: var(--zipick-surface); color: var(--zipick-body); }
+.profileStage select.control:focus { border-color: var(--zipick-blue); outline: none; }
+.profileStage select.control:focus-visible { outline: 2px solid var(--zipick-blue); outline-offset: -2px; }
 .unitControl { position: relative; }
 .unitControl .control { padding-right: 50px; }
 .control[type='number'] { appearance: textfield; }
@@ -130,23 +133,19 @@
 .preferenceSection { min-width: 0; margin-top: 20px; }
 .fieldFrame > .preferenceSection:first-of-type { margin-top: 0; }
 .preferenceDivider { border-top: 1px solid var(--zipick-line); padding-top: 20px; }
-.preferenceSectionHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.preferenceSectionHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 23px; }
 .preferenceSectionHead > div { min-width: 0; }
 .preferenceTitleRow { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .preferenceTitleRow h3 { font-size: 20px; font-weight: 750; line-height: 1.4; letter-spacing: -.02em; }
 .preferenceSectionHead p { margin-top: 5px; color: #65748b; font-size: 12px; line-height: 1.55; }
 .regionCount { flex-shrink: 0; margin-top: 2px; border-radius: 8px; padding: 7px 10px; background: #f1f5fd; color: #5b6d89; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .regionCount strong { color: var(--zipick-blue); font-size: 14px; }
-.selectedPanel { margin-bottom: 12px; border: 1px solid #dde8fa; border-radius: 11px; padding: 13px 14px; background: #f8fbff; }
-.selectedCaption { display: flex; align-items: center; gap: 6px; margin-bottom: 9px; color: #4c6283; font-size: 12px; font-weight: 700; }
-.selectedCaption svg { flex-shrink: 0; width: 15px; height: 15px; color: #4b75b7; }
-.selectedItems { display: flex; flex-wrap: wrap; gap: 7px; }
+.selectedItems { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
 .selectedChip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-height: 33px; border: 1px solid #bdd4fb; border-radius: 8px; padding: 5px 8px; background: var(--zipick-white); color: #27446f; font-size: 12.5px; font-weight: 650; }
 .selectedChip > span:not(.regionRank) { min-width: 0; overflow-wrap: anywhere; }
 .regionRank { flex-shrink: 0; border-radius: 5px; padding: 3px 5px; background: var(--zipick-blue); color: var(--zipick-white); font-size: 11px; }
 .regionRemove { display: grid; place-items: center; flex-shrink: 0; width: 19px; height: 19px; border: 0; border-radius: 4px; padding: 0; background: transparent; color: #7892b8; font-size: 18px; line-height: 1; cursor: pointer; }
 .regionRemove:hover:enabled { background: #fff1f1; color: #b63a4b; }
-.selectionTip { margin-top: 9px; color: #65748b; font-size: 11.5px; line-height: 1.5; }
 .regionPicker { overflow: hidden; border: 1px solid var(--zipick-line); border-radius: 12px; background: var(--zipick-white); }
 .regionToolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #edf0f5; padding: 12px 13px; background: #fbfcfe; }
 .regionToolbar strong { font-size: 13.5px; font-weight: 750; }
@@ -209,6 +208,7 @@
 .preferenceFields:disabled button, .preferenceFields:disabled input { cursor: not-allowed; }
 
 @media (max-width: 760px) {
+  .profileStage, .preferenceStage { width: min(100%, 692px); }
   .profilePanel, .preferencePanel { padding: 20px 16px 18px; }
   .fieldFrame { padding: 17px 14px; }
   .profileGrid { grid-template-columns: minmax(0, 1fr); }
@@ -229,7 +229,6 @@
   .districtPanel { padding: 12px; }
   .regionToolbar { padding: 10px 12px; }
   .regionToolbar span { max-width: 65%; font-size: 10.5px; }
-  .selectedPanel { padding: 12px; }
 }
 @media (max-width: 380px) {
   .selectedChip { font-size: 11.5px; }
