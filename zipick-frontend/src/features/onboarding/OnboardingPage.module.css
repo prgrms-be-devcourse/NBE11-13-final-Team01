@@ -34,7 +34,7 @@
   min-width: 0;
   border: 1px solid var(--zipick-line);
   border-radius: var(--zipick-radius-panel);
-  padding: 20px 26px 18px;
+  padding: 28px 26px 18px;
   background: var(--zipick-white);
   box-shadow: var(--zipick-shadow-panel);
   font-size: 14px;
@@ -42,7 +42,7 @@
 }
 
 .heading h2 { font-size: 24px; font-weight: 800; line-height: 1.4; letter-spacing: -.035em; }
-.heading p { margin-top: 8px; color: var(--zipick-body); font-size: 14px; line-height: 1.55; }
+.heading p { margin-top: 4px; color: var(--zipick-body); font-size: 14px; line-height: 1.55; }
 
 .fieldFrame {
   min-inline-size: 0;
@@ -60,7 +60,7 @@
 .optionalSection { margin-top: 20px; border-top: 1px solid var(--zipick-line); padding-top: 20px; }
 .profileGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px 14px; }
 .fieldRow { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
-.radioField { gap: 2px; }
+.radioField { gap: 0; }
 .fieldLabel { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 0; color: var(--zipick-ink); font-size: 16px; font-weight: 650; line-height: 1.5; }
 .requirement { flex-shrink: 0; color: var(--zipick-body); font-size: 12px; font-weight: 600; line-height: 1.4; letter-spacing: normal; }
 .requiredRequirement { color: var(--zipick-blue); }
@@ -96,6 +96,8 @@
 .radioOption { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; margin: 0; font-size: 16px; font-weight: 400; cursor: pointer; }
 .radioOption input { width: 20px; height: 20px; margin: 0; accent-color: var(--zipick-blue); }
 .radioOption input:disabled { cursor: default; }
+.radioField .radioGroup, .radioField .radioOption { min-height: 44px; }
+.radioField .fieldHelp { margin-top: 4px; }
 
 .actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
 .requiredStatus { flex: 1; min-width: 0; color: var(--zipick-body); font-size: 12px; line-height: 1.6; }
@@ -128,7 +130,7 @@
 .preferenceStage :where(button, input):focus-visible { outline: 3px solid #2059d660; outline-offset: 3px; }
 .preferenceStage :global(.error) { font-size: 14px; overflow-wrap: anywhere; }
 .preferenceTitle { font-size: 24px; font-weight: 800; line-height: 1.4; letter-spacing: -.035em; }
-.preferenceDescription { margin-top: 8px; color: var(--zipick-body); font-size: 14px; line-height: 1.55; }
+.preferenceDescription { margin-top: 4px; color: var(--zipick-body); font-size: 14px; line-height: 1.55; }
 .preferenceFields { min-inline-size: 0; }
 .preferenceSection { min-width: 0; margin-top: 20px; }
 .fieldFrame > .preferenceSection:first-of-type { margin-top: 0; }
@@ -209,7 +211,7 @@
 
 @media (max-width: 760px) {
   .profileStage, .preferenceStage { width: min(100%, 692px); }
-  .profilePanel, .preferencePanel { padding: 20px 16px 18px; }
+  .profilePanel, .preferencePanel { padding: 28px 16px 18px; }
   .fieldFrame { padding: 17px 14px; }
   .profileGrid { grid-template-columns: minmax(0, 1fr); }
   .actions, .preferenceActions { flex-direction: column; align-items: stretch; }
