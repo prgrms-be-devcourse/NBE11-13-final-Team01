@@ -65,7 +65,7 @@ export default function Layout() {
   const isMap = useLocation().pathname === '/map';
 
   return (
-    <div className={isMap ? `app zipick-theme ${mapStyles.frame}` : "app"}>
+    <div className={isMap ? `app zipick-theme ${mapStyles.frame}` : 'app'}>
       <header className="header">
         <NavLink to="/map" className="logo">
           {isMap ? <MapBrand /> : 'ZIPICK'}

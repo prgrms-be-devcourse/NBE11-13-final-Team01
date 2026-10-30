@@ -94,9 +94,9 @@
 ## 헤더·내비게이션
 
 - 랜딩: `LandingHeader`, 데스크톱 sticky 헤더 `88px`·모바일 `68px`. 서비스 소개·이용 방법은 섹션 앵커, 지도·로그인·집 찾기는 기존 라우트로 연결한다. 모바일은 소개 메뉴와 로그인 링크를 숨기고 집 찾기는 유지한다.
-- 지도: `Layout`이 정확히 `/map`에서만 `zipick-theme`와 `MapLayout.module.css`를 적용하고 `MapBrand`를 표시한다. 데스크톱 헤더 `72px`, 내비게이션 간격 `28px`, 활성 메뉴 블루 밑줄. 모바일 내비게이션은 두 번째 줄에서 가로 스크롤한다.
+- 지도 서비스 헤더: `Layout`이 `/map`에서 `zipick-theme`와 `MapLayout.module.css`를 적용하고 `MapBrand`를 표시한다. 데스크톱 헤더 `72px`, 내비게이션 간격 `28px`, 활성 메뉴 블루 밑줄. 모바일 내비게이션은 두 번째 줄에서 가로 스크롤한다.
 - 서비스 메뉴는 지도 탐색 / 관심 공고·일정 / 취향 찾기 / 내 조건이다. 인증 영역의 로그인·가입·이메일·로그아웃과 복귀 state를 보존한다.
-- 다른 서비스 페이지는 아직 기존 `Layout` 헤더·본문 스타일을 쓴다. 서비스 전체 공통 헤더 통일은 **후속 계획**이며 이미 적용된 것으로 간주하지 않는다.
+- 주택 상세는 지도 선택 패널에서 표시한다. 기존 `/houses/:houseId` 주소는 `/map?housing={houseId}`로 이동한다. 사진이 없으면 갤러리를 생략하고 값이 없는 선택 정보는 항목 전체를 생략한다. 다른 서비스 페이지는 아직 기존 `Layout` 헤더·본문 스타일을 쓴다. 서비스 전체 공통 헤더 통일은 **후속 계획**이며 이미 적용된 것으로 간주하지 않는다.
 
 ## 지도 기반 서비스의 보존 규칙
 
@@ -128,14 +128,14 @@
 | `zipick-frontend/src/features/landing/` | LandingHeader/Hero/Confidence/Features/Journey/FinalCta/Footer 컴포넌트와 목업 |
 | `zipick-frontend/src/components/Layout.tsx` | 공통 서비스 셸·지도 전용 테마 분기·인증 기능 |
 | `zipick-frontend/src/components/MapBrand.tsx` | 지도 헤더 브랜드 심볼·집픽 표기 |
-| `zipick-frontend/src/components/MapLayout.module.css` | 지도 전용 헤더·본문 폭 |
+| `zipick-frontend/src/components/MapLayout.module.css` | 지도 헤더·본문 폭 |
 | `zipick-frontend/src/pages/MapPage.tsx` | 모드·조회·패널 조합 |
 | `zipick-frontend/src/features/map/MapPage.module.css` | 지도 화면 및 공유 하위 컴포넌트의 범위 제한 스타일 |
 | `zipick-frontend/src/features/map/MapPanel.tsx` | SDK 인스턴스·리사이즈·모드별 카메라 동기화 |
 | `zipick-frontend/src/features/map/camera.ts` | 유효 좌표 기반 개요 범위 맞춤 |
 | `zipick-frontend/src/features/map/clustering.ts` | SDK 핀·클러스터 DOM 생성·표시 동기화 |
 | `zipick-frontend/src/features/map/regionCluster.ts` | 기존 지역별 집계·대표 좌표·탐색 단계 |
-| `zipick-frontend/src/components/HousingDetail.tsx` | 지도·주택 상세가 공유하는 정보 |
+| `zipick-frontend/src/components/HousingDetail.tsx` | 지도 선택 패널의 주택 상세 정보 |
 | `zipick-frontend/src/components/FilterPanel.tsx` | 기존 필터 입력·조회 동작 |
 | `zipick-frontend/src/components/map/RecommendationSidebar.tsx` | 기존 추천 목록·개인화 기능 |
 | `zipick-frontend/src/styles.css` | 아직 여러 페이지가 공유하는 레거시 기본 스타일 |

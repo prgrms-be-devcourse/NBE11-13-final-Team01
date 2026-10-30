@@ -261,7 +261,6 @@ export default function MapPage() {
               {detailQuery.data && (
                 <HousingDetail
                   detail={detailQuery.data}
-                  showPageLink
                   filter={mode === 'all' ? filter : undefined}
                   score={selectedScore ? <SelectedScore house={selectedScore} /> : undefined}
                 />

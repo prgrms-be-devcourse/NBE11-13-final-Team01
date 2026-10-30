@@ -1,9 +1,8 @@
 import LandingPage from './pages/LandingPage';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Layout from './components/Layout';
 import AccessGate from './components/AccessGate';
 import OnboardingPage from './pages/OnboardingPage';
-import HouseDetailPage from './pages/HouseDetailPage';
 import MapPage from './pages/MapPage';
 import CalendarPage from './pages/CalendarPage';
 import ApplicationGuidePage from './pages/ApplicationGuidePage';
@@ -30,18 +29,23 @@ function RedirectToMap({ mode }: { mode?: 'recommended' }) {
   return <Navigate to={query ? `/map?${query}` : '/map'} replace />;
 }
 
+/** 기존 주택 상세 주소는 같은 주택을 선택한 지도 패널로 넘긴다. */
+function RedirectHouseToMap() {
+  const { houseId } = useParams();
+  return <Navigate to={`/map?housing=${encodeURIComponent(houseId ?? '')}`} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/landing" element={<LandingPage />} />
+      <Route path="/houses/:houseId" element={<RedirectHouseToMap />} />
       <Route element={<Layout />}>
         <Route index element={<Navigate to="/landing" replace />} />
 
         {/* 비회원도 볼 수 있는 화면 */}
         <Route path="/map" element={<MapPage />} />
         <Route path="/houses" element={<RedirectToMap />} />
-        {/* 상세는 공개 정보 + 개인화 영역으로 나뉜다. 게이트는 페이지 안에서 점수 영역만 막는다. */}
-        <Route path="/houses/:houseId" element={<HouseDetailPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
 

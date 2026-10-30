@@ -140,15 +140,8 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 .empty h2 { margin-bottom: 6px; }
 .empty p { color: var(--muted); margin: 0 0 14px; }
 
-/* 상세 */
-.detail { max-width: 760px; }
+/* 상세·가이드 복귀 링크 */
 .back { color: var(--muted); display: inline-block; margin-bottom: 12px; }
-.detail__head { margin-bottom: 14px; }
-.score-box { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
-.score-box__score { font-size: 16px; margin-bottom: 8px; display: flex; gap: 10px; align-items: center; }
-.score-box__score strong { font-size: 28px; color: var(--accent); }
-.items { border-collapse: collapse; margin-top: 12px; font-size: 13px; }
-.items th, .items td { text-align: left; padding: 4px 16px 4px 0; border-bottom: 1px solid var(--line); }
 .facts { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
 
 /* 온보딩 */
@@ -282,7 +275,6 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 .housing-photo-gallery { display: flex; overflow-x: auto; height: 220px; background: #111827; scroll-snap-type: x mandatory; }
 .housing-photo-gallery a { flex: 0 0 100%; scroll-snap-align: start; }
 .housing-photo-gallery img { width: 100%; height: 100%; object-fit: contain; }
-.housing-photo-gallery__empty { margin: 0; padding: 9px 12px; background: #f8fafc; color: var(--muted); font-size: 12px; text-align: center; }
 .floor-plan-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .floor-plan-gallery a { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; color: var(--accent); font-size: 11px; text-decoration: none; }
 .floor-plan-gallery img { display: block; width: 100%; height: 130px; object-fit: contain; background: #f8fafc; }
@@ -487,19 +479,6 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
   .auth-box__email { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
 }
 
-/* 공고 상세: 제목 줄과 개인화 영역 안내 */
-.detail__title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.detail__title-row h1 { margin: 0; }
-.detail .facts { margin-bottom: 14px; }
-.detail .facts h2 { margin-bottom: 10px; }
-.score-box__cost { margin-top: 10px; }
-.score-teaser {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius);
-  padding: 14px 16px; margin-bottom: 14px;
-}
-.score-teaser p { margin: 2px 0 0; }
-
 /* 지도 탐색: 툴바 · 모드 전환 · 필터 */
 .map-page { max-width: 1280px; }
 .map-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -547,7 +526,7 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 .rec-item__score { font-weight: 800; color: var(--accent); white-space: nowrap; }
 .rec-item__actions { display: flex; justify-content: flex-end; gap: 6px; padding: 0 12px 10px; }
 
-/* 공고 상세 (지도 패널 · 상세 페이지 공용) */
+/* 공고 상세 (지도 패널) */
 .housing-detail__body { padding: 18px; }
 .housing-detail__head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .housing-detail__head .interest-btn { margin-left: auto; }
@@ -555,17 +534,9 @@ input[type="number"], input[type="text"], input[type="date"], input[type="email"
 .housing-detail__address { margin: 0 0 14px; color: var(--muted); }
 .housing-detail__body h3 { margin: 20px 0 8px; font-size: 15px; }
 .housing-detail__links { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 10px; }
-.detail--housing { max-width: 760px; }
-.detail--housing .housing-detail { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); overflow: hidden; }
 .map-score { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; }
 .map-score__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; margin-bottom: 6px; }
 .map-score__head strong { font-size: 22px; color: var(--accent); }
-.score-teaser {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius);
-  padding: 12px 14px; margin-bottom: 14px;
-}
-.score-teaser p { margin: 2px 0 0; }
 
 @media (max-width: 1000px) {
   .map-aside { max-height: none; }
