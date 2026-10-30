@@ -96,18 +96,18 @@ export default function OnboardingPage() {
   // 여기 없는 항목은 비워도 다음으로 넘어갈 수 있다.
   const missingProfile = [
     !profile.birthDate && '생년월일',
+    !(profile.householdSize >= 1 && profile.householdSize <= 10) && '세대원 수',
     !marriedPicked && '혼인 여부',
     !homelessPicked && '무주택 여부',
-    !(profile.householdSize >= 1 && profile.householdSize <= 10) && '세대원 수',
   ].filter(Boolean) as string[];
   // 기존 필수 판정을 그대로 사용하고, 저장을 시도한 뒤에만 필드별 오류를 보여 준다.
   const profileValidation = {
     birthDate: missingProfile.includes('생년월일') ? '생년월일을 입력해 주세요.' : undefined,
-    married: missingProfile.includes('혼인 여부') ? '혼인 여부를 선택해 주세요.' : undefined,
-    homeless: missingProfile.includes('무주택 여부') ? '무주택 여부를 선택해 주세요.' : undefined,
     householdSize: missingProfile.includes('세대원 수')
       ? profile.householdSize === 0 ? '세대원 수를 입력해 주세요.' : '세대원 수는 1~10명으로 입력해 주세요.'
       : undefined,
+    married: missingProfile.includes('혼인 여부') ? '혼인 여부를 선택해 주세요.' : undefined,
+    homeless: missingProfile.includes('무주택 여부') ? '무주택 여부를 선택해 주세요.' : undefined,
   };
   const profileErrors: Partial<typeof profileValidation> = profileSaveAttempted ? profileValidation : {};
   // 예산이 하나도 없으면 비용 점수를 못 매겨 모든 집이 '정보 부족' 묶음으로 빠진다 (ScoreCalculator.scoreCost)
@@ -169,7 +169,7 @@ export default function OnboardingPage() {
         >
           <div className={styles.heading}>
             <h2 id="profile-title">기본 정보</h2>
-            <p>공고 지원 조건을 확인하기 위한 정보예요.<br />필수 정보만 입력해도 다음으로 진행할 수 있어요.</p>
+            <p>공고 지원 조건을 확인하기 위한 정보예요. 필수 정보만 입력해도 다음으로 진행할 수 있어요.</p>
           </div>
 
           {!profileInitialized ? (
@@ -185,74 +185,78 @@ export default function OnboardingPage() {
                 <legend className={styles.srOnly}>기본 정보 입력</legend>
                 <section className={styles.section} aria-labelledby="required-profile-title">
                   <div className={styles.sectionHeading}>
-                    <h2 id="required-profile-title">필수 정보</h2>
+                    <h3 id="required-profile-title">필수 정보 <span className={`${styles.requirement} ${styles.requiredRequirement}`}>필수</span></h3>
                     <p>지원 조건 확인에 꼭 필요한 정보예요.</p>
                   </div>
-                  <ProfileField id="birthDate" label="생년월일" required error={profileErrors.birthDate}>
-                    <input id="birthDate" className={styles.control} type="date" required aria-invalid={profileErrors.birthDate ? true : undefined} aria-describedby={profileErrors.birthDate ? 'birthDate-error' : undefined} value={profile.birthDate} onChange={(e) => setProfile({ ...profile, birthDate: e.target.value })} />
-                  </ProfileField>
-                  <ProfileRadio
-                    name="married"
-                    label="혼인 여부"
-                    error={profileErrors.married}
-                    options={[{ value: false, label: '미혼' }, { value: true, label: '기혼' }]}
-                    help="혼인 여부에 따라 신청할 수 있는 공급 유형이 달라져요."
-                    value={marriedPicked ? profile.married : null}
-                    onChange={(married) => {
-                      setProfile({ ...profile, married });
-                      setMarriedPicked(true);
-                    }}
-                  />
-                  <ProfileRadio
-                    name="homeless"
-                    label="무주택 여부"
-                    error={profileErrors.homeless}
-                    options={[{ value: true, label: '예' }, { value: false, label: '아니오' }]}
-                    help="본인을 포함한 세대구성원 모두 무주택인지 선택해 주세요."
-                    value={homelessPicked ? profile.homeless : null}
-                    onChange={(homeless) => {
-                      setProfile({ ...profile, homeless });
-                      setHomelessPicked(true);
-                    }}
-                  />
-                  <ProfileField id="householdSize" label="세대원 수" required unit="명" error={profileErrors.householdSize} help="본인 포함 1~10명. 소득·면적 기준을 확인하는 데 사용해요.">
-                    <div className={styles.unitControl}>
-                      <input id="householdSize" className={styles.control} type="number" min={1} max={10} required aria-invalid={profileErrors.householdSize ? true : undefined} aria-describedby={`householdSize-help${profileErrors.householdSize ? ' householdSize-error' : ''}`} value={profile.householdSize || ''} onChange={(e) => setProfile({ ...profile, householdSize: Number(e.target.value) })} />
-                      <span aria-hidden="true">명</span>
-                    </div>
-                  </ProfileField>
+                  <div className={styles.profileGrid}>
+                    <ProfileField id="birthDate" label="생년월일" required error={profileErrors.birthDate}>
+                      <input id="birthDate" className={styles.control} type="date" required aria-invalid={profileErrors.birthDate ? true : undefined} aria-describedby={profileErrors.birthDate ? 'birthDate-error' : undefined} value={profile.birthDate} onChange={(e) => setProfile({ ...profile, birthDate: e.target.value })} />
+                    </ProfileField>
+                    <ProfileField id="householdSize" label="세대원 수" required unit="명" error={profileErrors.householdSize} help="본인 포함 1~10명. 소득·면적 기준을 확인하는 데 사용해요.">
+                      <div className={styles.unitControl}>
+                        <input id="householdSize" className={styles.control} type="number" min={1} max={10} required aria-invalid={profileErrors.householdSize ? true : undefined} aria-describedby={`householdSize-help${profileErrors.householdSize ? ' householdSize-error' : ''}`} value={profile.householdSize || ''} onChange={(e) => setProfile({ ...profile, householdSize: Number(e.target.value) })} />
+                        <span aria-hidden="true">명</span>
+                      </div>
+                    </ProfileField>
+                    <ProfileRadio
+                      name="married"
+                      label="혼인 여부"
+                      error={profileErrors.married}
+                      options={[{ value: false, label: '미혼' }, { value: true, label: '기혼' }]}
+                      help="혼인 여부에 따라 신청할 수 있는 공급 유형이 달라져요."
+                      value={marriedPicked ? profile.married : null}
+                      onChange={(married) => {
+                        setProfile({ ...profile, married });
+                        setMarriedPicked(true);
+                      }}
+                    />
+                    <ProfileRadio
+                      name="homeless"
+                      label="무주택 여부"
+                      error={profileErrors.homeless}
+                      options={[{ value: true, label: '예' }, { value: false, label: '아니오' }]}
+                      help="본인을 포함한 세대구성원 모두 무주택인지 선택해 주세요."
+                      value={homelessPicked ? profile.homeless : null}
+                      onChange={(homeless) => {
+                        setProfile({ ...profile, homeless });
+                        setHomelessPicked(true);
+                      }}
+                    />
+                  </div>
                 </section>
 
                 <section className={`${styles.section} ${styles.optionalSection}`} aria-labelledby="optional-profile-title">
                   <div className={styles.sectionHeading}>
-                    <h2 id="optional-profile-title">선택 정보</h2>
+                    <h3 id="optional-profile-title">선택 정보 <span className={styles.requirement}>선택</span></h3>
                     <p>비워도 진행할 수 있어요. 소득·자산·자동차가액을 비우면 해당 조건은 ‘확인 필요’로 표시돼요.</p>
                   </div>
-                  <ProfileField id="studentStatus" label="대학생·취업준비생" help="대학생은 입학·복학 예정 포함, 취업준비생은 졸업·중퇴 후 2년 이내 미취업인 경우예요. 청년 매입임대 자격 확인에 사용해요.">
+                  <ProfileField id="studentStatus" label="대학생·취업준비생 여부" help="대학생은 입학·복학 예정 포함, 취업준비생은 졸업·중퇴 후 2년 이내 미취업인 경우예요. 청년 매입임대 자격 확인에 사용해요.">
                     <select id="studentStatus" className={styles.control} aria-describedby="studentStatus-help" value={profile.studentStatus} onChange={(e) => setProfile({ ...profile, studentStatus: e.target.value as StudentStatus })}>
                       <option value="NONE">해당 없음</option>
                       <option value="UNIVERSITY">대학생</option>
                       <option value="JOB_SEEKER">취업준비생</option>
                     </select>
                   </ProfileField>
-                  <ProfileField id="monthlyIncome" label="월소득" unit="만 원" help="세전 월평균 소득을 입력해 주세요.">
-                    <div className={styles.unitControl}>
-                      <input id="monthlyIncome" className={styles.control} type="number" min={0} aria-describedby="monthlyIncome-help" value={profile.monthlyIncome ?? ''} onChange={(e) => setProfile({ ...profile, monthlyIncome: numOrNull(e.target.value) })} />
-                      <span aria-hidden="true">만 원</span>
-                    </div>
-                  </ProfileField>
-                  <ProfileField id="totalAssets" label="총자산" unit="만 원" help="부동산 + 자동차 + 금융자산 − 부채 기준이에요.">
-                    <div className={styles.unitControl}>
-                      <input id="totalAssets" className={styles.control} type="number" min={0} aria-describedby="totalAssets-help" value={profile.totalAssets ?? ''} onChange={(e) => setProfile({ ...profile, totalAssets: numOrNull(e.target.value) })} />
-                      <span aria-hidden="true">만 원</span>
-                    </div>
-                  </ProfileField>
-                  <ProfileField id="carValue" label="자동차가액" unit="만 원" help="자동차가 없으면 0을 입력해 주세요.">
-                    <div className={styles.unitControl}>
-                      <input id="carValue" className={styles.control} type="number" min={0} aria-describedby="carValue-help" value={profile.carValue ?? ''} onChange={(e) => setProfile({ ...profile, carValue: numOrNull(e.target.value) })} />
-                      <span aria-hidden="true">만 원</span>
-                    </div>
-                  </ProfileField>
+                  <div className={styles.profileGrid}>
+                    <ProfileField id="monthlyIncome" label="월소득" unit="만 원" help="세전 월평균 소득을 입력해 주세요.">
+                      <div className={styles.unitControl}>
+                        <input id="monthlyIncome" className={styles.control} type="number" min={0} aria-describedby="monthlyIncome-help" value={profile.monthlyIncome ?? ''} onChange={(e) => setProfile({ ...profile, monthlyIncome: numOrNull(e.target.value) })} />
+                        <span aria-hidden="true">만 원</span>
+                      </div>
+                    </ProfileField>
+                    <ProfileField id="totalAssets" label="총자산" unit="만 원" help="부동산 + 자동차 + 금융자산 − 부채 기준이에요.">
+                      <div className={styles.unitControl}>
+                        <input id="totalAssets" className={styles.control} type="number" min={0} aria-describedby="totalAssets-help" value={profile.totalAssets ?? ''} onChange={(e) => setProfile({ ...profile, totalAssets: numOrNull(e.target.value) })} />
+                        <span aria-hidden="true">만 원</span>
+                      </div>
+                    </ProfileField>
+                    <ProfileField id="carValue" label="자동차가액" unit="만 원" help="자동차가 없으면 0을 입력해 주세요.">
+                      <div className={styles.unitControl}>
+                        <input id="carValue" className={styles.control} type="number" min={0} aria-describedby="carValue-help" value={profile.carValue ?? ''} onChange={(e) => setProfile({ ...profile, carValue: numOrNull(e.target.value) })} />
+                        <span aria-hidden="true">만 원</span>
+                      </div>
+                    </ProfileField>
+                  </div>
                 </section>
               </fieldset>
 
@@ -303,7 +307,7 @@ export default function OnboardingPage() {
             ) : <p className={styles.loadState} role="status">희망 조건을 불러오는 중이에요…</p>
           ) : (
             <>
-              <fieldset className={styles.preferenceFields} disabled={savePref.isPending}>
+              <fieldset className={`${styles.preferenceFields} ${styles.fieldFrame}`} disabled={savePref.isPending}>
                 <legend className={styles.srOnly}>희망 주거 조건 입력</legend>
                 <RegionEditor regions={pref.regions} onChange={(regions) => setPref({ ...pref, regions })} error={prefSaveAttempted && pref.regions.length === 0} />
 
@@ -460,7 +464,7 @@ function RegionEditor({ regions, onChange, error }: { regions: Region[]; onChang
 }
 
 function PreferenceHeading({ id, title, required = false, description, counter }: { id: string; title: string; required?: boolean; description: string; counter?: ReactNode }) {
-  return <div className={styles.preferenceSectionHead}><div><div className={styles.preferenceTitleRow}><h3 id={id}>{title}</h3><span className={styles.requirement}>{required ? '필수' : '선택'}</span></div><p>{description}</p></div>{counter}</div>;
+  return <div className={styles.preferenceSectionHead}><div><div className={styles.preferenceTitleRow}><h3 id={id}>{title}</h3><span className={`${styles.requirement} ${required ? styles.requiredRequirement : ''}`}>{required ? '필수' : '선택'}</span></div><p>{description}</p></div>{counter}</div>;
 }
 
 function PreferenceInput({ id, label, unit, placeholder, min = 0, max, step, value, help, invalid, describedBy, onChange }: {
@@ -478,7 +482,7 @@ function PreferenceInput({ id, label, unit, placeholder, min = 0, max, step, val
   );
 }
 
-/** 필수·선택 모두 같은 라벨 열과 컨트롤 열을 사용한다. */
+/** 두 단계 모두 위쪽 라벨과 아래쪽 컨트롤의 같은 위계를 사용한다. */
 function ProfileField({ id, label, required = false, unit, help, error, children }: {
   id: string;
   label: string;
@@ -491,7 +495,7 @@ function ProfileField({ id, label, required = false, unit, help, error, children
   return (
     <div className={styles.fieldRow}>
       <label className={styles.fieldLabel} htmlFor={id}>
-        <span>{label}{unit && <span className={styles.srOnly}> ({unit})</span>}</span><span className={styles.requirement}>{required ? '필수' : '선택'}</span>
+        <span>{label}{unit && <span className={styles.srOnly}> ({unit})</span>}</span><span className={`${styles.requirement} ${required ? styles.requiredRequirement : ''}`}>{required ? '필수' : '선택'}</span>
       </label>
       <div className={styles.fieldBody}>
         {children}
@@ -514,7 +518,7 @@ function ProfileRadio({ name, label, help, error, value, options, onChange }: {
   return (
     <div className={styles.fieldRow}>
       <div className={styles.fieldLabel} id={`${name}-label`}>
-        <span>{label}</span><span className={styles.requirement}>필수</span>
+        <span>{label}</span><span className={`${styles.requirement} ${styles.requiredRequirement}`}>필수</span>
       </div>
       <div className={styles.fieldBody}>
         <div className={styles.radioGroup} role="group" aria-labelledby={`${name}-label`} aria-invalid={error ? true : undefined} aria-describedby={`${name}-help${error ? ` ${name}-error` : ''}`}>
