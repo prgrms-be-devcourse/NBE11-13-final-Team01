@@ -173,3 +173,29 @@ export interface AdminStats {
   ai: { guidesLast7Days: number; guidesLast30Days: number; openDocumentIssues: number; normalizationJobsByStatus: Record<string, number> };
   collection: { runsLast7Days: number; failedLast7Days: number; infraSavedLast7Days: number; createdNoticesLast7Days: number };
 }
+
+// ---- 사용자 행동 (IP·화면 이동·클릭) ----
+export type ActivityType = 'PAGE_VIEW' | 'CLICK' | 'LOGIN';
+export interface ActivityEvent {
+  id: number;
+  userId: number | null;
+  anonymousId: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  eventType: ActivityType;
+  path: string;
+  label: string | null;
+  target: string | null;
+  occurredAt: string;
+}
+export interface ActivityActor {
+  userId: number | null;
+  anonymousId: string | null;
+  lastIp: string | null;
+  lastSeen: string;
+  firstSeen: string;
+  events: number;
+  pageViews: number;
+  clicks: number;
+  lastPath: string | null;
+}

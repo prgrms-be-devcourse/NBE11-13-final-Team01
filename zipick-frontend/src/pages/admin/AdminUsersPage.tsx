@@ -4,6 +4,7 @@ import { adminApi } from '../../api/admin';
 import type { Role } from '../../types/admin';
 import { useAuth } from '../../hooks/useAuth';
 import { Badge, Pager, errText, fmtTime } from './adminUi';
+import { Trail } from './AdminActivityPage';
 
 const ROLE_LABEL: Record<Role, string> = { ROLE_USER: '일반', ROLE_ADMIN: '운영자' };
 
@@ -24,6 +25,7 @@ export default function AdminUsersPage() {
   const users = useQuery({ queryKey: ['admin', 'users', keyword, page], queryFn: () => adminApi.users(keyword, page, 30), retry: false });
   const detail = useQuery({ queryKey: ['admin', 'user', selectedId], queryFn: () => adminApi.user(selectedId!), enabled: selectedId != null, retry: false });
   const verifications = useQuery({ queryKey: ['admin', 'verifications'], queryFn: adminApi.verifications, retry: false });
+  const trail = useQuery({ queryKey: ['admin', 'trail', selectedId], queryFn: () => adminApi.trail({ userId: selectedId!, limit: 100 }), enabled: selectedId != null, retry: false });
 
   const changeRole = useMutation({
     mutationFn: (p: { id: number; role: Role }) => adminApi.changeRole(p.id, p.role),
@@ -116,6 +118,13 @@ export default function AdminUsersPage() {
                       <dt>마감 알림</dt><dd>D-{d.notificationSetting.deadlineDays}</dd>
                     </dl>
                   ) : <p className="muted">설정 없음</p>}
+                  <h3>최근 행동 (IP·화면·클릭)</h3>
+                  {trail.data && trail.data.length > 0 && (
+                    <p className="small" style={{ margin: 0 }}>
+                      마지막 IP <b>{[...trail.data].reverse().find((e) => e.ip)?.ip ?? '-'}</b> · 마지막 활동 {fmtTime(trail.data[trail.data.length - 1].occurredAt)}
+                    </p>
+                  )}
+                  {trail.data && <Trail events={trail.data.slice(-40)} />}
                   <h3>알림 내역 {d.notifications.length > 0 && `(${d.notifications.length})`}</h3>
                   {d.notificationError && <p className="muted small">{d.notificationError}</p>}
                   {d.notifications.length > 0 && (

@@ -58,6 +58,8 @@ public class SecurityConfig {
                                 "/api/auth/login",
                                 "/api/auth/admin/login",
                                 "/api/auth/reissue",
+                                // 화면 진입·클릭 기록. 비로그인도 보낸다 (운영자 화면에서 조회)
+                                "/api/v1/activity",
                                 "/error",
                                 "/actuator/**",
                                 // API 문서

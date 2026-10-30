@@ -12,6 +12,7 @@ const MENU = [
   { to: '/admin/notices', label: '공고·주택' },
   { to: '/admin/users', label: '회원' },
   { to: '/admin/notifications', label: '알림 이력' },
+  { to: '/admin/activity', label: '사용자 행동' },
   { to: '/admin/campaigns', label: '소식 캠페인' },
 ];
 

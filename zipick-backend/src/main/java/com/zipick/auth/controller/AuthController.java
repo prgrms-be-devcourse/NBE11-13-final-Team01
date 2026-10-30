@@ -16,6 +16,8 @@ import com.zipick.auth.userdetails.CustomUserDetails;
 import com.zipick.auth.service.TokenService;
 import com.zipick.global.response.ApiResponse;
 import com.zipick.global.util.CookieUtil;
+import com.zipick.admin.activity.ActivityService;
+import com.zipick.auth.jwt.JwtProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -43,6 +45,8 @@ public class AuthController {
     private final TokenService tokenService;
     private final CookieUtil cookieUtil;
     private final JwtProperties jwtProperties;
+    private final JwtProvider jwtProvider;
+    private final ActivityService activityService;
 
     @Operation(summary = "가입 인증 코드 보내기",
             description = "가입할 이메일로 6자리 인증 코드를 보낸다 (알림센터 AUTH_EMAIL_VERIFY). "
@@ -82,10 +86,13 @@ public class AuthController {
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(
             @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response
     ) {
 
         TokenService.TokenPair tokenPair = authService.login(request);
+        // 운영자 화면의 "마지막 IP·로그인 시각". 실패해도 로그인은 그대로 진행된다
+        activityService.recordLogin(jwtProvider.getUserId(tokenPair.accessToken()), httpRequest, "/login");
 
         // Refresh Token은 HttpOnly 쿠키로, Access Token은 응답 바디로 내려준다.
         cookieUtil.addCookie(
@@ -105,9 +112,11 @@ public class AuthController {
     @PostMapping("/admin/login")
     public ApiResponse<LoginResponse> adminLogin(
             @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response
     ) {
         TokenService.TokenPair tokenPair = authService.adminLogin(request);
+        activityService.recordLogin(jwtProvider.getUserId(tokenPair.accessToken()), httpRequest, "/admin/login");
         cookieUtil.addCookie(
                 response,
                 CookieUtil.REFRESH_TOKEN_COOKIE,

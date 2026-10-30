@@ -4,6 +4,7 @@ import type {
   AdminHousing, AdminNotice, AdminStats, AdminUser, AdminUserDetail, AiDocumentIssue,
   CollectionJobType, CollectionOverview, CollectionRequest, CollectionRun, EmailVerificationRow,
   NormalizationJob, NormalizationStatus, NoticeStatus, PageResponse, Role,
+  ActivityActor, ActivityEvent,
 } from '../types/admin';
 
 const BASE = '/api/v1/admin';
@@ -59,6 +60,14 @@ export const adminApi = {
     unwrap<NotificationEvent[]>(api.get(`${BASE}/notifications`, { params: { source: p.source || undefined, tag: p.tag || undefined, userId: p.userId } })),
   notification: (id: number) => unwrap<NotificationEvent>(api.get(`${BASE}/notifications/${id}`)),
   channels: () => unwrap<Record<string, boolean> | null>(api.get(`${BASE}/notifications/channels`)),
+
+  // 사용자 행동 (IP·화면 이동·클릭)
+  actors: (hours = 24, page = 1, size = 30) =>
+    unwrap<PageResponse<ActivityActor>>(api.get(`${BASE}/activity/actors`, { params: { hours, page, size } })),
+  activityEvents: (p: { userId?: number; anonymousId?: string; ip?: string; type?: string; path?: string; page?: number; size?: number }) =>
+    unwrap<PageResponse<ActivityEvent>>(api.get(`${BASE}/activity/events`, { params: { ...p, page: p.page ?? 1, size: p.size ?? 50 } })),
+  trail: (p: { userId?: number; anonymousId?: string; limit?: number }) =>
+    unwrap<ActivityEvent[]>(api.get(`${BASE}/activity/trail`, { params: p })),
 
   // 지표
   stats: () => unwrap<AdminStats>(api.get(`${BASE}/stats`)),

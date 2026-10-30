@@ -156,6 +156,17 @@
 .content :global(.inline-form) input { width: 92px; min-width: 0; padding: 6px 8px; border: 1px solid var(--zipick-line); border-radius: 8px; }
 .content :global(table.admin-table) td:has(> a) { min-width: 96px; }
 
+/* 이동 경로 (사용자 행동) */
+.content :global(.trail) { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 2px solid var(--zipick-line); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.content :global(.trail__item) { position: relative; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding-left: 8px; }
+.content :global(.trail__item)::before { content: ''; position: absolute; left: -15px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--zipick-line); }
+.content :global(.trail__item--page_view)::before { background: var(--zipick-blue); }
+.content :global(.trail__item--login)::before { background: var(--zipick-green); }
+.content :global(.trail__item--click) { padding-left: 24px; }
+.content :global(.trail__time) { color: var(--zipick-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.content :global(.trail__text) { word-break: break-all; }
+.content :global(.trail__gap) { width: 100%; color: var(--zipick-soft); font-size: 11px; padding: 2px 0; }
+
 /* 기존 캠페인 화면 (AdminCampaignPage) */
 .content :global(.page.admin-campaign) { padding: 0; max-width: none; }
 .content :global(.admin-campaign) > h1 { font-size: 22px; font-weight: 760; margin: 0; }

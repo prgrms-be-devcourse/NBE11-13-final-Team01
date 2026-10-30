@@ -13,6 +13,8 @@ import SignupPage from './pages/SignupPage';
 import AdminCampaignPage from './pages/AdminCampaignPage';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
+import AdminActivityPage from './pages/admin/AdminActivityPage';
+import ActivityTracker from './components/ActivityTracker';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminAiDocumentsPage from './pages/admin/AdminAiDocumentsPage';
 import AdminNoticesPage from './pages/admin/AdminNoticesPage';
@@ -39,6 +41,9 @@ function RedirectToMap({ mode }: { mode?: 'recommended' }) {
 
 export default function App() {
   return (
+    <>
+    {/* 화면 진입·클릭 기록 (운영자 화면 '사용자 행동'). /admin 은 기록하지 않는다 */}
+    <ActivityTracker />
     <Routes>
       <Route path="/landing" element={<LandingPage />} />
       {/*
@@ -52,6 +57,7 @@ export default function App() {
         <Route path="notices" element={<AdminNoticesPage />} />
         <Route path="users" element={<AdminUsersPage />} />
         <Route path="notifications" element={<AdminNotificationsPage />} />
+        <Route path="activity" element={<AdminActivityPage />} />
         <Route path="campaigns" element={<AdminCampaignPage />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
@@ -112,5 +118,6 @@ export default function App() {
         />
       </Route>
     </Routes>
+    </>
   );
 }

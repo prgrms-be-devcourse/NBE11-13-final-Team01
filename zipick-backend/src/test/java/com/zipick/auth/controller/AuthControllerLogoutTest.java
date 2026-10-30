@@ -46,6 +46,11 @@ class AuthControllerLogoutTest {
     private JwtProvider jwtProvider;
 
     @MockitoBean
+
+    private com.zipick.admin.activity.ActivityService activityService;
+
+
+    @MockitoBean
     private AuthService authService;
 
     @MockitoBean
