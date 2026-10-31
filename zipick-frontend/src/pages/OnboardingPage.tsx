@@ -15,6 +15,8 @@ export default function OnboardingPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [ahpSaving, setAhpSaving] = useState(false);
+  const ahpSaveInFlight = useRef(false);
 
   const profileQ = useQuery({ queryKey: ['profile'], queryFn: profileApi.get, retry: false });
   const prefQ = useQuery({ queryKey: ['preference'], queryFn: profileApi.getPreference, retry: false });
@@ -118,7 +120,7 @@ export default function OnboardingPage() {
   const invalidArea = pref.areaMin != null && pref.areaMax != null && pref.areaMax < pref.areaMin;
 
   return (
-    <div className={`${styles.page} ${step === 1 ? styles.profileStage : step === 2 ? styles.preferenceStage : 'onboarding'}`}>
+    <div className={`${styles.page} ${step === 1 ? styles.profileStage : step === 2 ? styles.preferenceStage : styles.priorityStage}`}>
       <header className={styles.intro} aria-labelledby="onboarding-page-title">
         <p className={styles.introEyebrow}>나에게 맞는 집을 찾는 첫걸음</p>
         <h1 className={styles.introTitle} id="onboarding-page-title">내 조건 입력</h1>
@@ -127,21 +129,21 @@ export default function OnboardingPage() {
 
       <ol className={styles.stepper} aria-label="온보딩 진행 단계">
         <li className={`${styles.step} ${step === 1 ? styles.currentStep : profileQ.data ? styles.completedStep : ''}`} aria-current={step === 1 ? 'step' : undefined}>
-          <button type="button" className={styles.stepButton} onClick={() => setStep(1)} disabled={saveProfile.isPending}>
+          <button type="button" className={styles.stepButton} onClick={() => { if (!ahpSaveInFlight.current) setStep(1); }} disabled={saveProfile.isPending || ahpSaving}>
             <span className={styles.stepNumber} aria-hidden="true">1</span>
             <span>기본 정보</span>
             {step !== 1 && profileQ.data && <span className={styles.srOnly}>저장 완료</span>}
           </button>
         </li>
         <li className={`${styles.step} ${step === 2 ? styles.currentStep : prefQ.data ? styles.completedStep : ''}`} aria-current={step === 2 ? 'step' : undefined}>
-          <button type="button" className={styles.stepButton} onClick={() => setStep(2)} disabled={saveProfile.isPending}>
+          <button type="button" className={styles.stepButton} onClick={() => { if (!ahpSaveInFlight.current) setStep(2); }} disabled={saveProfile.isPending || ahpSaving}>
             <span className={styles.stepNumber} aria-hidden="true">2</span>
             <span>희망 주거 조건</span>
             {step !== 2 && prefQ.data && <span className={styles.srOnly}>저장 완료</span>}
           </button>
         </li>
         <li className={`${styles.step} ${step === 3 ? styles.currentStep : ''}`} aria-current={step === 3 ? 'step' : undefined}>
-          <button type="button" className={styles.stepButton} onClick={() => setStep(3)} disabled={!prefQ.data || saveProfile.isPending}>
+          <button type="button" className={styles.stepButton} onClick={() => { if (!ahpSaveInFlight.current) setStep(3); }} disabled={!prefQ.data || saveProfile.isPending || ahpSaving}>
             <span className={styles.stepNumber} aria-hidden="true">3</span>
             <span>우선순위</span>
           </button>
@@ -365,6 +367,11 @@ export default function OnboardingPage() {
 
       {step === 3 && (
         <AhpQuestions
+          onBack={() => setStep(2)}
+          onSavingChange={(saving) => {
+            ahpSaveInFlight.current = saving;
+            setAhpSaving(saving);
+          }}
           onDone={() => {
             qc.invalidateQueries({ queryKey: ['recommendations'] });
             qc.invalidateQueries({ queryKey: ['rec-profiles'] });
