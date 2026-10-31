@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
-import { openGate } from '../hooks/useAuthGate';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { openGate, returnPath } from '../hooks/useAuthGate';
 import { useAuth } from '../hooks/useAuth';
 import { useOnboardingStatus } from '../hooks/useOnboardingStatus';
 import AuthGateIcon from './AuthGateIcon';
@@ -20,6 +21,9 @@ interface Props {
  */
 export default function AccessGate({ need, children }: Props) {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const from = returnPath(location);
   // 로그인만 필요한 화면에서는 온보딩 조회를 아예 하지 않는다.
   const { status, retry } = useOnboardingStatus(need === 'ONBOARDING');
 
@@ -35,8 +39,8 @@ export default function AccessGate({ need, children }: Props) {
         <span className={styles.icon}><AuthGateIcon kind="LOGIN" /></span>
         <h2 className={styles.title}>로그인하면 이용할 수 있어요</h2>
         <p className={styles.description}>로그인하고 관심 공고와 일정, 맞춤 기능을 이용해 보세요.</p>
-        <button type="button" className={styles.action} onClick={() => openGate('LOGIN')}>
-          로그인·회원가입 안내
+        <button type="button" className={styles.action} onClick={() => navigate('/login', { state: from ? { from } : undefined })}>
+          로그인하기
         </button>
       </div>
     );

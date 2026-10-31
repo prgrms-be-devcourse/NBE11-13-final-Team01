@@ -3,14 +3,15 @@ import MapBrand from './MapBrand';
 import styles from '../features/auth/AuthPage.module.css';
 import headerStyles from './Header.module.css';
 import '../design-system/tokens.css';
+import HeaderInner from './HeaderInner';
 
 /** 인증 화면의 시각적 셸. 인증 게이트와 보류 작업은 상위 Layout에서 유지한다. */
 export default function AuthLayout() {
   return (
     <div className={`zipick-theme ${styles.frame}`}>
-      <header className={`${styles.header} ${headerStyles.header}`}>
-        <div className={`${headerStyles.inner} ${styles.headerInner}`}>
-          <Link to="/map" className={styles.headerBrand} aria-label="집픽 지도 탐색으로 이동">
+      <header className={`${styles.header} ${headerStyles.header} ${headerStyles.authentication}`}>
+        <HeaderInner className={styles.headerInner}>
+          <Link to="/landing" className={styles.headerBrand} aria-label="집픽 홈으로 이동">
             <MapBrand />
           </Link>
           <Link to="/map" className={`${styles.mapButton} ${headerStyles.secondary}`}>
@@ -19,7 +20,7 @@ export default function AuthLayout() {
             </svg>
             지도 둘러보기
           </Link>
-        </div>
+        </HeaderInner>
       </header>
       <main className={styles.main}>
         <Outlet />

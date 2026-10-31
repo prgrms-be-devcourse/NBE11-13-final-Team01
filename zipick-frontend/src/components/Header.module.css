@@ -1,4 +1,15 @@
 /* 헤더에만 적용하는 공통 정렬·인터랙션. 본문 컨테이너는 그대로 둔다. */
+.header.header {
+  height: 88px;
+  border-bottom: 1px solid #eff1f5;
+  background: rgba(255, 255, 255, .98);
+  color: var(--zipick-ink);
+  font-family: var(--zipick-font-family);
+  font-size: 15px;
+  line-height: 1.65;
+  letter-spacing: normal;
+  -webkit-font-smoothing: antialiased;
+}
 .inner {
   display: flex;
   align-items: center;
@@ -6,7 +17,42 @@
   max-width: none;
   margin-inline: auto;
 }
-.inner, .legacyHeader:global(.header) { padding-inline: 32px; }
+.inner {
+  --header-padding: 32px;
+  padding-inline-start: var(--header-padding);
+  /* 본문 폭을 바꾸지 않고, 스크롤바 유무와 관계없이 우측 행동을 같은 화면 기준에 맞춘다. */
+  padding-inline-end: max(0px, calc(var(--header-padding) - var(--header-scrollbar-width, 0px)));
+}
+.header .inner { height: 100%; gap: 54px; }
+.header.service { display: block; padding: 0; position: sticky; top: 0; z-index: 30; backdrop-filter: blur(14px); }
+.header.authentication { height: 88px; }
+.header.authentication .inner { min-height: 0; padding-block: 0; }
+.header.service :global(.logo) { display: inline-flex; align-items: center; flex-shrink: 0; }
+.header.service :global(.nav) { display: flex; align-items: center; flex-shrink: 0; gap: 37px; font-size: 15px; font-weight: 550; line-height: 1.65; letter-spacing: normal; }
+.header.service :global(.nav) a { padding: 10px 0 8px; color: #667386; }
+.header.service :global(.nav) a:global(.active) { color: var(--zipick-blue); border-color: var(--zipick-blue); }
+.header.service :global(.auth-box) { flex: 1; min-width: 0; justify-content: flex-end; gap: 22px; }
+.header.service :global(.auth-box__email) { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: var(--zipick-body); font-size: 12px; }
+.header .primary, .header .secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 44px;
+  border: 1px solid var(--zipick-blue);
+  border-radius: var(--zipick-radius-control);
+  padding: 0 20px;
+  background: var(--zipick-blue);
+  color: var(--zipick-white);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.65;
+  letter-spacing: normal;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.header .secondary { border-color: var(--zipick-line); background: var(--zipick-white); color: var(--zipick-body); }
 
 .header :is(a, button) {
   transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
@@ -17,17 +63,32 @@
 }
 .header .secondary:hover:not(:disabled) { background: var(--zipick-blue-light); color: var(--zipick-blue); }
 .header .primary:hover:not(:disabled) { background: var(--zipick-blue-strong); border-color: var(--zipick-blue-strong); }
-.header .navLink:hover { background: var(--zipick-blue-mist); color: var(--zipick-blue); }
+.header .navLink:hover, .header.service :global(.nav) a:hover { background: var(--zipick-blue-mist); color: var(--zipick-blue); }
 .header .navLink:focus-visible { outline-offset: -3px; }
 
 @media (max-width: 980px) {
-  .inner, .legacyHeader:global(.header) { padding-inline: 22px; }
+  .inner { --header-padding: 22px; }
+  .header .inner { gap: 24px; }
+  .header.service :global(.nav) { gap: 24px; }
+  .header.service :global(.auth-box) { gap: 10px; }
 }
 @media (max-width: 720px) {
-  .inner, .legacyHeader:global(.header) { padding-inline: 16px; }
+  .inner { --header-padding: 16px; }
+  .header.header.service { height: auto; }
+  .header.service .inner { height: auto; flex-wrap: wrap; gap: 8px 16px; padding-block: 14px 0; }
+  .header.service :global(.nav) { order: 3; width: 100%; min-width: 0; overflow-x: auto; }
+  .header.service :global(.auth-box__email) { max-width: 100px; }
+  .header.authentication { height: 68px; }
+  .header.authentication .inner { gap: 16px; }
+  .header.service .primary, .header.service .secondary, .header.authentication .secondary { height: 38px; padding-inline: 13px; font-size: 12px; }
+}
+@media (max-width: 680px) {
+  .header.header { height: 68px; }
+  .header .inner { gap: 12px; }
+  .header .primary, .header .secondary { height: 38px; padding-inline: 13px; font-size: 12px; }
 }
 @media (max-width: 420px) {
-  .inner, .legacyHeader:global(.header) { padding-inline: 14px; }
+  .inner { --header-padding: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .header :is(a, button) { transition: none; }

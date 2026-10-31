@@ -104,17 +104,18 @@
 ## 헤더·내비게이션
 
 - 랜딩: `LandingHeader`, 데스크톱 sticky 헤더 `88px`·모바일 `68px`. 서비스 소개·이용 방법은 섹션 앵커, 지도·로그인·집 찾기는 기존 라우트로 연결한다. 모바일은 소개 메뉴와 로그인 링크를 숨기고 집 찾기는 유지한다.
-- 서비스 헤더: `Layout`이 `/map`, `/calendar`, `/onboarding`, `/tune`에서 `zipick-theme`와 `MapLayout.module.css`를 적용하고 `MapBrand`를 표시한다. 데스크톱 헤더 `72px`, 내비게이션 간격 `28px`, 활성 메뉴 블루 밑줄. 모바일 내비게이션은 두 번째 줄에서 가로 스크롤한다.
+- 공통 서비스 헤더: 모든 `Layout` 경로에서 헤더 자체에 ZIPICK 테마와 `Header.module.css`를 적용한다. 랜딩 기준으로 데스크톱 높이 `88px`, 로고–메뉴 간격 `54px`, 메뉴 `15px/550/1.65`·자간 normal·항목 간격 `37px`이다. 980px 이하에서는 두 간격을 `24px`로 줄인다. 활성 메뉴 블루 밑줄·기존 메뉴 링크를 유지하며, 720px 이하에서는 두 번째 줄에 메뉴를 노출하고 가로 스크롤한다. 본문 테마 적용 범위는 계속 `/map`, `/calendar`, `/onboarding`, `/tune`뿐이다.
 - 서비스 메뉴는 지도 탐색 / 관심 공고·일정 / 취향 찾기 / 내 조건이다. 인증 영역의 로그인·가입·이메일·로그아웃과 복귀 state를 보존한다.
-- 랜딩·인증·테마가 적용된 서비스 헤더는 `components/Header.module.css`의 공통 내부 컨테이너를 쓴다. `width:100%`, `max-width:none`으로 전체 너비를 사용하며 고정 폭용 left 보정은 적용하지 않는다. 좌우 패딩은 `32px`, 980px 이하 `22px`, 720px 이하 `16px`, 420px 이하 `14px`다. 기타 공통 Layout 헤더도 테마·구조를 유지한 채 같은 패딩만 적용한다. 본문의 기존 최대 폭·패딩은 변경하지 않는다. 서비스 헤더는 내부 flex 래퍼에 기존 메뉴·인증 영역을 그대로 두며 모바일 메뉴는 기존처럼 두 번째 행에서 가로 스크롤한다.
+- 랜딩·서비스·인증 헤더는 `HeaderInner`와 `Header.module.css`의 공통 내부 컨테이너를 쓴다. `width:100%`, `max-width:none`이며 기본 패딩은 `32px`, 980px 이하 `22px`, 720px 이하 `16px`, 420px 이하 `14px`다. 본문 폭·스크롤 정책은 그대로 두고, ResizeObserver와 resize에서 실제 예약된 스크롤바 너비를 측정해 헤더 우측 패딩에서만 차감한다(최소 0px). 인증 화면의 stable gutter까지 같은 뷰포트 우측 기준에 맞추기 위한 보정이며 고정 폭·left 보정은 사용하지 않는다.
+- Primary·Secondary 버튼은 데스크톱 높이 `44px`, 반경 `10px`, 패딩 `0 20px`, `15px/650/1.65`로 통일한다. 랜딩의 로그인 링크도 흰 Secondary 버튼으로 표시한다. 서비스·인증은 720px 이하, 랜딩은 기존 모바일 정책대로 680px 이하에서 높이 `38px`·패딩 `0 13px`·`12px`를 사용한다. 랜딩·인증 모바일 헤더는 `68px`, 서비스 모바일 헤더는 기존 2행/가로 스크롤에 맞춰 자동 높이다. 인증 본문은 헤더 높이 차감 값만 `88px`/모바일 `68px`로 맞추며 카드와 본문 패딩은 유지한다.
 - 헤더에만 `.15s` 배경·글자·테두리·transform 전환을 적용한다. 보조 행동 hover는 blue-light/blue, 주요 행동은 blue-strong, 내비게이션은 blue-mist/blue이며 활성 밑줄을 보존한다. focus-visible은 `3px solid #2059d660`, offset `3px`이고 스크롤 내비게이션 링크만 `-3px`로 안쪽에 표시한다. prefers-reduced-motion에서는 전환을 끈다. 전역 버튼·링크 규칙은 변경하지 않는다.
-- 랜딩·서비스·인증 헤더의 로고는 `MapBrand`에서 `/brand/zipick-logo-header.png`를 표시한다. 높이는 데스크톱 `40px`, 720px 이하 `36px`이며 폭은 `auto`로 원본 비율을 유지한다. 기존의 낮은 레거시 서비스 헤더에서는 `30px`를 사용한다. 기존 헤더 높이·내비게이션·로고 링크는 유지한다. favicon은 `/favicon.ico?v=2`, `/favicon-32.png?v=2`, `/brand/apple-touch-icon.png`를 `index.html`에서 연결한다.
+- 랜딩·서비스·인증 헤더의 로고는 `MapBrand`에서 `/brand/zipick-logo-header.png`를 표시한다. 모두 데스크톱 `40px`, 720px 이하 `36px`·폭 auto이며 기존 레거시 경로에서도 compact 크기를 사용하지 않는다. 세 헤더의 로고 링크는 `/landing`이다. 서비스·인증은 `Link`와 `집픽 홈으로 이동` 접근성 이름을 사용하며 랜딩의 기존 홈 링크는 유지한다. favicon은 `/favicon.ico?v=2`, `/favicon-32.png?v=2`, `/brand/apple-touch-icon.png`를 `index.html`에서 연결한다.
 - 탭용 favicon은 승인된 `zipick-symbol.png`의 투명 여백만 제거하고 동일 배율의 Lanczos3·premultiplied alpha 리샘플링으로 파생한다. ICO에는 16·32·48px를 포함한다. 세로형 심볼의 비율 보존을 위해 85~90% 목표는 긴 변 기준 `87.5%`로 적용한다. 실제 알파 경계는 16px에서 `12×14px`, 32px에서 `24×28px`로 캔버스 경계 면적의 `65.625%`이며, 알파 가중 실색 면적은 각각 약 `43.12%`, `43.19%`다. 원본 PNG와 다른 브랜드 파생 파일은 수정하지 않는다.
-- 주택 상세는 지도 선택 패널에서 표시한다. 기존 `/houses/:houseId` 주소는 `/map?housing={houseId}`로 이동한다. 사진이 없으면 갤러리를 생략하고 값이 없는 선택 정보는 항목 전체를 생략한다. `/login`, `/signup`은 아래 인증 전용 셸을 사용한다. 그 외 서비스 페이지는 아직 기존 `Layout` 헤더·본문 스타일을 쓴다. 서비스 전체 공통 헤더 통일은 **후속 계획**이며 이미 적용된 것으로 간주하지 않는다.
+- 주택 상세는 지도 선택 패널에서 표시한다. 기존 `/houses/:houseId` 주소는 `/map?housing={houseId}`로 이동한다. 사진이 없으면 갤러리를 생략하고 값이 없는 선택 정보는 항목 전체를 생략한다. `/login`, `/signup`은 아래 인증 전용 셸을 사용한다. 그 외 서비스 페이지의 헤더도 위 공통 규칙을 사용하지만, 본문은 각 페이지의 기존 테마·스타일을 유지한다.
 
 ### 로그인·회원가입
 
-- `/login`, `/signup`은 `design-references/zipick-auth-login-signup-v2.html`의 레이아웃·문구를 따른다. `Layout`의 인증 경로 분기에서 `AuthLayout`을 표시하며, 기존 인증 게이트와 보류된 관심 저장 처리는 상위 `Layout`에 유지한다. 다른 경로의 공통 헤더·라우트는 변경하지 않는다.
+- `/login`, `/signup`은 `design-references/zipick-auth-login-signup-v2.html`의 레이아웃·문구를 따른다. `Layout`의 인증 경로 분기에서 `AuthLayout`을 표시하며, 기존 인증 게이트와 보류된 관심 저장 처리는 상위 `Layout`에 유지한다. 라우트와 인증 기능은 기존 구현을 유지하며 헤더 외형은 위 공통 규칙을 따른다.
 - 헤더는 `MapBrand`의 승인된 header PNG와 `/map`으로 이동하는 `지도 둘러보기`만 표시한다. 카드 내부에는 로고·슬로건을 출력하지 않으며 카드 밖으로 옮기지도 않는다. 첫 주요 요소는 로그인/회원가입 제목이다. 제목 margin은 `0 0 7px`로 설명과의 간격을 유지한다. 기존 full PNG를 포함한 승인 파일은 삭제하거나 변경하지 않는다.
 - 인증 CSS Module의 `html:has(.frame)` 범위에만 `scrollbar-gutter:stable`을 적용해 로그인·회원가입 높이가 달라도 가로 중앙과 헤더 위치를 유지한다. 고정 폭 헤더용 both-edges 예약은 제거했다. 다른 경로에서는 자동 해제되며 전역 styles.css는 수정하지 않는다. 세로 중앙 정렬이나 강제 카드 높이를 사용하지 않고 기존 상단 정렬·메인 패딩을 유지한다.
 - 두 카드 모두 최대 폭 `500px`, 데스크톱 패딩 `36px 42px 32px`, 반경 `20px`이다. 메인 상단 여백은 `58px`, 720px 이하 `24px`, 420px 이하 `18px`이다. 720px 이하 카드 패딩은 `30px 24px 29px`·반경 `18px`, 420px 이하는 `28px 20px 26px`이다. 작은 화면의 메인 좌우 패딩은 `12px`이다.
@@ -183,7 +184,8 @@
 | `zipick-frontend/src/components/Layout.tsx` | 공통 서비스 셸·지도 전용 테마 분기·인증 기능 |
 | `zipick-frontend/src/components/MapBrand.tsx`, `MapBrand.module.css` | 승인된 header PNG·헤더별 표시 크기 |
 | `zipick-frontend/src/components/Header.module.css` | 세 헤더의 내부 폭·패딩·hover/focus·모션 감소 |
-| `zipick-frontend/src/components/MapLayout.module.css` | 지도 헤더·본문 폭 |
+| `zipick-frontend/src/components/HeaderInner.tsx` | 세 헤더의 전체 너비 내부 컨테이너·스크롤바 예약 폭 측정 |
+| `zipick-frontend/src/components/MapLayout.module.css` | 테마 적용 서비스의 본문 폭·기본 폰트/배경 |
 | `zipick-frontend/src/components/AuthLayout.tsx`, `AuthCard.tsx` | 인증 전용 헤더·공통 카드 제목·지도 이동 링크 |
 | `zipick-frontend/src/features/auth/AuthPage.module.css` | 로그인·회원가입 전용 스타일·반응형 |
 | `zipick-frontend/src/pages/MapPage.tsx` | 모드·조회·패널 조합 |

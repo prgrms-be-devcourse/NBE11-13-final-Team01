@@ -11,6 +11,7 @@ import { DEFAULT_LANDING } from '../pages/LoginPage';
 import { usePendingInterestRunner } from '../hooks/useInterest';
 import AuthGateModal from './AuthGateModal';
 import AuthLayout from './AuthLayout';
+import HeaderInner from './HeaderInner';
 
 /**
  * 헤더 우측 인증 영역. 비회원에게는 로그인·회원가입 링크만 두고,
@@ -72,11 +73,11 @@ export default function Layout() {
   }
 
   const headerContent = <>
-    <NavLink to="/map" className="logo">
-      <MapBrand compact={!useServiceTheme} />
-    </NavLink>
+    <Link to="/landing" className="logo" aria-label="집픽 홈으로 이동">
+      <MapBrand />
+    </Link>
     {/* 전체 공고와 맞춤 추천은 지도 화면 안에서 전환한다. 독립 메뉴를 두지 않는다. */}
-    <nav className="nav">
+    <nav className="nav" aria-label="주요 메뉴">
       <NavLink to="/map" className={headerStyles.navLink}>지도 탐색</NavLink>
       <NavLink to="/calendar" className={headerStyles.navLink}>관심 공고·일정</NavLink>
       <NavLink to="/tune" className={headerStyles.navLink}>취향 찾기</NavLink>
@@ -87,8 +88,8 @@ export default function Layout() {
 
   return (
     <div className={useServiceTheme ? `app zipick-theme ${mapStyles.frame}` : 'app'}>
-      <header className={useServiceTheme ? `header ${headerStyles.header}` : `header ${headerStyles.legacyHeader}`}>
-        {useServiceTheme ? <div className={`${headerStyles.inner} ${mapStyles.headerInner}`}>{headerContent}</div> : headerContent}
+      <header className={`header zipick-theme ${headerStyles.header} ${headerStyles.service}`}>
+        <HeaderInner>{headerContent}</HeaderInner>
       </header>
       <main className="main">
         <Outlet />

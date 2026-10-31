@@ -20,7 +20,7 @@
 .headerBrand { font-size: 22px; }
 .mapButton { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--zipick-line); border-radius: var(--zipick-radius-control); padding: 9px 13px; background: var(--zipick-white); color: var(--zipick-body); font-size: 13px; font-weight: 600; white-space: nowrap; }
 .mapButton:hover { background: var(--zipick-blue-light); color: var(--zipick-blue); }
-.main { position: relative; display: flex; align-items: flex-start; justify-content: center; min-height: calc(100dvh - 73px); padding: 58px 20px 56px; }
+.main { position: relative; display: flex; align-items: flex-start; justify-content: center; min-height: calc(100dvh - 88px); padding: 58px 20px 56px; }
 .main::before { position: absolute; inset: 0; content: ''; pointer-events: none; background: radial-gradient(ellipse 470px 330px at calc(50% - 270px) 19%, #eaf1ff 0%, transparent 93%); opacity: .66; }
 
 .panel {
@@ -108,7 +108,7 @@
 @media (max-width: 720px) {
   .headerInner { min-height: 65px; padding-block: 12px; gap: 13px; }
   .headerBrand { font-size: 20px; }
-  .main { min-height: calc(100dvh - 66px); padding: 24px 16px 36px; }
+  .main { min-height: calc(100dvh - 68px); padding: 24px 16px 36px; }
   .panel { border-radius: 18px; padding: 30px 24px 29px; }
 }
 @media (max-width: 420px) {
