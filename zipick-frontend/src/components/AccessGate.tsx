@@ -68,8 +68,8 @@ export default function AccessGate({ need, children }: Props) {
         <span className={styles.icon}><AuthGateIcon kind="ONBOARDING" /></span>
         <h2 className={styles.title}>먼저 내 조건을 입력해 주세요</h2>
         <p className={styles.description}>나이·소득·무주택 여부와 희망 지역·예산을 알려 주시면 맞는 집을 골라 드려요.</p>
-        <button type="button" className={styles.action} onClick={() => openGate('ONBOARDING')}>
-          내 조건 입력 안내 보기
+        <button type="button" className={styles.action} onClick={() => navigate('/onboarding', { state: from ? { from } : undefined })}>
+          내 조건 입력하기
         </button>
       </div>
     );
