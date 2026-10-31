@@ -25,6 +25,16 @@
 
 현재 서비스 전체 본문에 공통 테마가 적용된 것은 아니다. 본문 테마는 `/map`, `/calendar`, `/onboarding`, `/tune`에 적용된다. 헤더는 기타 Layout 경로까지 랜딩 기준의 공통 디자인을 사용하며, `/login`, `/signup`은 메뉴가 없는 인증 전용 구조를 유지한다. 모든 헤더는 전체 너비의 `HeaderInner`·공통 정렬/인터랙션 CSS를 공유하고 로고 클릭 시 `/landing`으로 이동한다. 주택 상세는 지도 선택 패널에서 표시한다. 기존 `/houses/:houseId` 주소는 같은 주택을 선택한 `/map?housing={houseId}`로 이동한다. 공통 React Button/Card 라이브러리도 아직 추출되지 않았다.
 
+## 공통 서비스 헤더 프로필 메뉴 (2026-11-01)
+
+- `feat/account-menu`에서 `design-references/zipick-account-menu-concept-v2.html`을 직접 확인하고 `AccountMenu.tsx`·CSS Module을 추가했다. 서비스 메뉴의 내 조건을 우측 계정 메뉴로 옮겼으며, 이메일·로그아웃은 패널에 한 번만 표시한다. 랜딩·인증 전용 헤더·온보딩 1·2·3단계·본문·공유 CSS·브랜드 파일은 변경하지 않았다.
+- 사용자 표시는 기존 `useAuth`의 `userId`·이메일만 사용한다. 이름/닉네임 필드가 없어 `집픽 사용자`를 표시하며 이메일이 없으면 생략한다. 기존 `GET /api/users/me`로 채워진 상태를 재사용하므로 메뉴 열기 자체에는 API 요청이 없다. 인증 제공자 조건·새로운 개인정보·DB/회원가입 변경은 없다.
+- 내 조건 링크는 기존 `/onboarding`이다. `GET/PUT /api/v1/profiles/me`, `/preferences`와 3단계 AHP 동작은 기존 화면에 그대로 둔다. 로그아웃도 기존 `logout()` → `POST /api/auth/logout` → 세션 정리 → `qc.resetQueries()`·`closeGate()` → `/map` 이동 순서를 유지한다.
+- 조사 결과: 내 계정은 `GET /api/users/me` 조회만 있으며 정보 수정 API/화면은 없다. 알림 설정은 `GET/PUT /api/v1/notifications/settings`, 테스트 `POST /api/v1/notifications/test`, 내역 `GET /api/v1/notifications`와 기존 `/calendar`의 `NotificationPanel`이 존재한다. 광고성 정보 수신 동의와 동의 시각도 알림 설정에 있으나 일반 약관·개인정보 동의 내역/변경 기능은 없다. 이번 범위에서는 세 항목 모두 계정 메뉴에 연결하지 않고 클릭/포커스 없는 `준비 중` 목록으로 표시한다. 알림 설정 안내는 기존 기능 부재로 오해하지 않도록 계정 메뉴 연동이 추후 제공된다고 명시한다.
+- lint/build 통과. Headless Chrome의 대체 인증/API로 30개 검증 묶음을 통과했다. 1440/390/320px 로그인·비로그인 헤더, 실제 상태 이메일·이메일 없음·긴 이메일, 클릭 토글·외부 pointer·ESC·포커스 복귀, Enter/Space·Tab/Shift+Tab·focus-visible, 준비 중 항목의 비활성, 메뉴 선택·페이지/쿼리/해시/뒤로 이동 시 닫힘, 계정 전환, `/onboarding` 저장값 복원·편집 중 입력 유지·2/3단계 표시, 로그아웃 요청 Authorization·토큰 정리·비회원 헤더·기존 목적지·API 실패 후 세션 정리를 확인했다. 320/390/720/721/768/980/1440px에서 긴 이메일과 페이지/패널 가로 넘침이 없으며 320px 높이에서는 내부 스크롤로 로그아웃에 접근한다. 1440/320px 캡처를 직접 확인했고 모션 감소를 확인했다. 런타임 예외는 없었다.
+- 실제 로컬 백엔드에는 인증 없이 `GET /api/users/me`, `GET /api/v1/profiles/me`, `GET /api/v1/notifications/settings`를 요청해 모두 401 차단을 확인했다. 이는 실제 계정 로그인·JWT 재발급·서버 로그아웃/쿠키 만료·온보딩 저장 영속화 검증을 의미하지 않는다. 해당 실인증 흐름·알림 발송·지도 SDK·다른 브라우저는 미검증이다. 백엔드 기능 확인은 소스 조사, 로그인한 UI/로그아웃 상호작용은 대체 API 검증으로 구분한다.
+- 시작 시 브랜치는 `feat/account-menu`이고 작업 트리·index·stash는 비어 있었다. 디자인 레퍼런스는 기존 로컬 ignore 상태를 유지하며 staging/commit/push·브랜치 전환·stash 조작을 하지 않았다. 후속 페이지 작업 범위와 순서는 변경하지 않는다.
+
 ## 로그인·온보딩 공통 안내 UI (2026-10-31)
 
 - `AuthGateModal`과 `AccessGate`에 각각 CSS Module과 자체 테마 범위를 적용했다. 팝업은 최대 400px, 접근 안내는 최대 500px·가로 중앙 정렬이며 ZIPICK 카드·타이포그래피·인증 버튼 규칙을 사용한다. 공통 장식 SVG를 `AuthGateIcon`으로 분리하고 로그인/관심 저장/조건 입력/조회 오류를 구별한다. 로그인 접근 안내의 설명·CTA는 사용자 지정 문구를 적용했다.
