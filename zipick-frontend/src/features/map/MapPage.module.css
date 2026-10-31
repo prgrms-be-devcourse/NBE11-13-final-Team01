@@ -13,12 +13,15 @@
 }
 .page :where(button, input, summary) { font: inherit; }
 .page :global(.map-toolbar) { gap: 16px; margin-bottom: 20px; min-height: 44px; }
-.page :global(.map-modes) { padding: 4px; gap: 4px; background: #eaf0f8; border-radius: 12px; }
-.page :global(.map-modes) :global(.chip) { border: 0; border-radius: 9px; background: transparent; padding: 9px 20px; color: var(--zipick-body); font-size: 14px; font-weight: 650; }
-.page :global(.map-modes) :global(.chip--on) { background: white; color: var(--zipick-blue); box-shadow: 0 2px 6px #1e407410; }
-.page :global(.map-toolbar__count) { font-size: 14px; }
-.page :global(.map-toolbar__count) strong { color: var(--zipick-ink); font-weight: 750; }
-.page :global(.map-toolbar__links) { display: flex; flex-wrap: wrap; gap: 8px; }
+.page :global(.map-modes) { flex: none; padding: 4px; gap: 5px; background: #eaf0f8; border-radius: 12px; }
+.page :global(.map-modes) :global(.chip) { border: 0; border-radius: 9px; background: transparent; padding: 9px 18px; color: var(--zipick-body); font-size: 14px; font-weight: 700; white-space: nowrap; transition: background-color .15s, color .15s, box-shadow .15s; }
+.page :global(.map-modes) :global(.chip):hover { background: var(--zipick-blue-mist); color: var(--zipick-blue); }
+.page :global(.map-modes) :global(.chip--on) { background: var(--zipick-white); color: var(--zipick-blue); box-shadow: 0 1px 5px #213d6a18; }
+.page :global(.map-modes) :global(.chip--on):hover { background: var(--zipick-white); color: var(--zipick-blue-strong); }
+.page :global(.map-toolbar__count) { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; word-break: keep-all; font-synthesis: none; }
+.page :global(.map-toolbar__count) strong { display: inline-block; color: var(--zipick-ink); font-weight: 700; line-height: inherit; letter-spacing: normal; font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; }
+.countGroup { white-space: nowrap; }
+.page :global(.map-toolbar__links) { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; }
 .page :global(.btn) { border-radius: var(--zipick-radius-control); padding: 10px 16px; font-weight: 650; }
 .page :global(.btn--small) { padding: 7px 12px; font-size: 12px; }
 .page :global(.btn--ghost) { background: white; color: var(--zipick-body); }
@@ -30,9 +33,15 @@
 .page :global(.badge--upcoming) { background: var(--zipick-surface); }
 .page :global(.badge--check), .page :global(.badge--soon) { color: #98600d; background: #fff4df; border-color: #f6e4bf; }
 .page :global(.map-filter) { z-index: 20; }
-.page :global(.map-filter) > summary { padding: 10px 20px; border-radius: 10px; font-size: 13px; }
-.page :global(.map-filter__body) { width: 360px; max-width: calc(100vw - 48px); max-height: min(70dvh, 720px); border: 1px solid var(--zipick-line); border-radius: 16px; box-shadow: var(--zipick-shadow-panel); }
-.page :global(.map-filter__body) :global(.panel) { border: 0; padding: 20px; }
+.page :global(.map-filter__trigger) { display: flex; align-items: center; justify-content: center; gap: 8px; width: max-content; margin-left: auto; padding: 10px 20px; border-radius: var(--zipick-radius-control); font-size: 13px; cursor: pointer; }
+.page :global(.map-toolbar__links) > a { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 44px; padding: 0 16px; font-size: 13px; white-space: nowrap; }
+.page :global(.map-toolbar__links) > a svg,
+.page :global(.map-filter__trigger) svg { flex: none; }
+.page :global(.map-toolbar__links) > a,
+.page :global(.map-filter__trigger) { border: 1px solid var(--zipick-line); background: var(--zipick-white); color: var(--zipick-body); font-weight: 650; transition: background-color .15s, color .15s, border-color .15s; }
+.page :global(.map-toolbar__links) > a:hover,
+.page :global(.map-filter__trigger):hover,
+.page :global(.map-filter__trigger)[aria-expanded="true"] { background: var(--zipick-blue-light); color: var(--zipick-blue); border-color: var(--zipick-blue); filter: none; }
 .page :global(.panel__title) { font-size: 16px; margin-bottom: 20px; }
 .page :global(.field) { margin-bottom: 20px; }
 .page :global(.field) legend { font-size: 13px; font-weight: 650; margin-bottom: 10px; color: var(--zipick-ink); }
@@ -64,8 +73,11 @@
 .page :global(.map-detail__facts) dd { font-size: 13px; }
 .page :global(.map-score) { padding: 16px; border-radius: 12px; }
 .page :global(.map-score__head) strong { font-size: 28px; }
-.page :global(.map-controls) { border-radius: 10px; box-shadow: var(--zipick-shadow-panel); }
-.page :global(.map-controls) button { width: 40px; height: 40px; }
+.page :global(.map-controls) { background: var(--zipick-white); border-color: var(--zipick-line); border-radius: var(--zipick-radius-control); box-shadow: var(--zipick-shadow-panel); }
+.page :global(.map-controls) button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; color: var(--zipick-body); border-bottom-color: var(--zipick-line); transition: background-color .15s, color .15s; }
+.page :global(.map-controls) button:hover { background: var(--zipick-blue-light); color: var(--zipick-blue); }
+/* 컨트롤의 overflow 안에서도 키보드 포커스가 잘리지 않게 표시한다. */
+.page :global(.map-controls) button:focus-visible { outline: 3px solid #2059d660; outline-offset: -4px; }
 .page :global(.map-count) { color: var(--zipick-body); border-radius: 9px; box-shadow: var(--zipick-shadow-panel); }
 .page :global(.map-cluster) {
   flex-direction: row;
@@ -106,10 +118,12 @@
 }
 @media (max-width: 680px) {
   .page :global(.map-toolbar) { gap: 12px; }
-  .page :global(.map-modes) :global(.chip) { padding: 9px 14px; }
+  .page :global(.map-modes) :global(.chip) { padding: 9px 12px; font-size: 13px; line-height: calc(14px * 1.65); }
   .page :global(.map-toolbar__count) { font-size: 12px; }
+  .page :global(.map-toolbar__links) > a { height: auto; padding: 7px 12px; font-size: 12px; }
   .page :global(.map-filter) { width: 100%; margin-left: 0; }
-  .page :global(.map-filter__body) { position: static; width: 100%; max-width: none; max-height: 65dvh; margin-top: 10px; }
+  /* 미선택 안내와 좁은 화면에서 겹치지 않도록 컨트롤만 안내 위로 올린다. */
+  .page .workspace:has(> .hint) :global(.map-controls) { bottom: 76px; }
   .page :global(.map-shell), .page :global(.map-workspace) :global(.map-panel) { height: 360px; min-height: 0; }
   .page :global(.map-side), .page :global(.housing-detail__body) { padding: 16px; }
   .page :global(.map-detail__facts) { grid-template-columns: minmax(0, 1fr); }
@@ -117,7 +131,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   /* Do not override the SDK's tile-layer transitions or animation lifecycle. */
-  .page :global(.btn), .page :global(.chip), .page :global(.map-cluster) { transition: none !important; }
+  .page :global(.btn), .page :global(.chip), .page :global(.map-cluster), .page :global(.map-filter__trigger), .page :global(.map-controls) button { transition: none !important; }
 }
 
 /* The desktop overview keeps the same panel width as selected and recommended states. */
