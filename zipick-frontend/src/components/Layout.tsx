@@ -66,6 +66,7 @@ export default function Layout() {
   usePendingInterestRunner();
   const pathname = useLocation().pathname;
   const useServiceTheme = pathname === '/map' || pathname === '/calendar' || pathname === '/onboarding' || pathname === '/tune';
+  const reserveScrollbarGutter = pathname === '/onboarding' || pathname === '/tune';
 
   if (pathname === '/login' || pathname === '/signup') {
     return <><AuthLayout /><AuthGateModal /></>;
@@ -100,7 +101,10 @@ export default function Layout() {
   </>;
 
   return (
-    <div className={useServiceTheme ? `app zipick-theme ${mapStyles.frame}` : 'app'}>
+    <div
+      className={useServiceTheme ? `app zipick-theme ${mapStyles.frame}` : 'app'}
+      data-stable-scrollbar={reserveScrollbarGutter ? 'true' : undefined}
+    >
       <header className={`header zipick-theme ${headerStyles.header} ${headerStyles.service}`}>
         <HeaderInner>{headerContent}</HeaderInner>
       </header>
