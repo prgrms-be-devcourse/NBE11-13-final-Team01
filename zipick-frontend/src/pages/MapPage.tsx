@@ -1,7 +1,7 @@
 import styles from '../features/map/MapPage.module.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { profileApi } from '../api/profile';
 import { getMapHousingDetail, getMapHousings } from '../api/mapHousing';
 import MapFilterDrawer from '../features/map/MapFilterDrawer';
@@ -192,25 +192,6 @@ export default function MapPage() {
             </>
           )}
         </span>
-
-        {mode === 'recommended' && canRecommend && (
-          <span className="map-toolbar__links">
-            <Link to="/onboarding" className="btn btn--ghost btn--small">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M4 7h8m4 0h4M4 17h4m4 0h8" />
-                <circle cx="14" cy="7" r="2" />
-                <circle cx="10" cy="17" r="2" />
-              </svg>
-              내 조건 수정
-            </Link>
-            <Link to="/tune" className="btn btn--ghost btn--small">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 3 9.8 9.8 3 12l6.8 2.2L12 21l2.2-6.8L21 12l-6.8-2.2z" />
-              </svg>
-              취향 찾기
-            </Link>
-          </span>
-        )}
 
         {/* 기본 필터는 전체 공고 모드에만 둔다. 추천 모드는 저장된 내 조건과 우선순위로 조정한다 */}
         {mode === 'all' && (
