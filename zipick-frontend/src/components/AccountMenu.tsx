@@ -19,6 +19,11 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
+// TODO(account-management):
+// 닉네임 변경, 비밀번호 변경/재설정, 회원 탈퇴 기능은 현재 구현 범위에서 제외.
+// 향후 실제 기능 도입 여부가 확정되면 이 메뉴를 연결한다.
+// 해당 기능들을 최종적으로 제공하지 않기로 결정하면
+// "내 정보 관리" 준비 중 항목을 프로필 메뉴에서 제거한다.
 const upcomingItems = [
   { icon: 'user', title: '내 정보 관리', description: '계정 정보 관리 기능은 추후 제공' },
   { icon: 'bell', title: '알림 설정', description: '계정 메뉴 연동은 추후 제공' },
@@ -72,7 +77,17 @@ export default function AccountMenu({ user, onLogout }: { user: AuthUser; onLogo
         <div className={styles.summary}>
           <span className={styles.avatar}><Icon name="user" size={22} /></span>
           <div className={styles.identity}>
-            <div className={styles.name}>집픽 사용자</div>
+            {/*
+              TODO(kakao-login):
+              카카오 로그인 도입 후 실제 인증 provider를 기준으로 가입 유형을 표시한다.
+              LOCAL → "일반 가입자", KAKAO → "카카오 가입자".
+
+              이메일 표시 정책:
+              1. 이메일이 제공되면 로그인 방식과 무관하게 실제 이메일 표시.
+              2. KAKAO 사용자에게 이메일이 없으면 "카카오 계정으로 로그인" 표시.
+              3. provider/email 정보를 임의로 추론하거나 가짜 이메일을 생성하지 않는다.
+            */}
+            <div className={styles.name}>일반 가입자</div>
             {user.email && <div className={styles.email}>{user.email}</div>}
           </div>
         </div>
