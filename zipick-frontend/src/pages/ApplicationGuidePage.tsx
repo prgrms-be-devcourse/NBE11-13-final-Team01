@@ -159,7 +159,7 @@ function GuideLoading() {
   );
 }
 
-/** 만들지 못한 상태. 이때도 원문 링크는 아래 푸터에 그대로 남는다 */
+/** 만들지 못한 상태. 원문 링크와 기존 재시도 정책을 유지한다. */
 function GuideUnavailable({
   data,
   onRetry,
@@ -169,15 +169,16 @@ function GuideUnavailable({
   onRetry: () => void;
   busy: boolean;
 }) {
-  const message =
-    data.reasonMessage ?? (data.reason ? UNAVAILABLE_MESSAGE[data.reason] : '가이드를 만들지 못했어요.');
+  const message = data.reason === 'NO_DOCUMENT'
+    ? '이 공고에서 분석할 수 있는 모집공고 파일을 찾지 못했어요.'
+    : data.reasonMessage ?? (data.reason ? UNAVAILABLE_MESSAGE[data.reason] : '가이드를 만들지 못했어요.');
   // 공고문 자체를 읽을 수 없는 경우는 다시 눌러도 결과가 같다
   // (이미지 문서 / 분석할 파일 없음 / 지원하지 않는 형식)
   const NOT_RETRIABLE = ['SCANNED_DOCUMENT', 'NO_DOCUMENT', 'UNSUPPORTED_DOCUMENT_FORMAT'];
   const retriable = !data.reason || !NOT_RETRIABLE.includes(data.reason);
 
   return (
-    <section className={styles.card} aria-labelledby="guide-failure-title">
+    <section className={`${styles.card} ${styles.failure}`} aria-labelledby="guide-failure-title">
       <div className={`${styles.icon} ${styles.failureIcon}`}>
         <GuideStateIcon kind="failure" size={31} />
       </div>
@@ -185,7 +186,7 @@ function GuideUnavailable({
       <p className={styles.description}>
         {message}
         <br />
-        공고 내용은 원문에서 직접 확인할 수 있습니다.
+        신청 자격과 접수 방법은 공고 원문에서 직접 확인해 주세요.
       </p>
       <div className={styles.actions}>
         {data.noticeDetailUrl && <GuideSourceLink url={data.noticeDetailUrl} primary />}
@@ -195,13 +196,6 @@ function GuideUnavailable({
             다시 시도
           </button>
         )}
-      </div>
-      <div className={styles.failureHelp}>
-        <GuideStateIcon kind="info" size={15} />
-        <div>
-          <strong>왜 생성되지 않았나요?</strong>
-          <p>{message} 신청 자격·접수 방법은 반드시 공고 원문에서 확인해 주세요.</p>
-        </div>
       </div>
     </section>
   );

@@ -153,22 +153,9 @@
 /* 전역 guide-dot 키프레임·지연·모션 감소 규칙은 기존 것을 재사용한다. */
 .page .dots i { width: 7px; height: 7px; background: var(--zipick-blue); }
 .loading .description { max-width: 470px; margin: 12px auto 0; }
-.failureHelp {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  max-width: 470px;
-  margin: 29px auto 0;
-  padding: 15px 18px;
-  border-radius: 11px;
-  background: var(--zipick-surface);
-  text-align: left;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.failureHelp > svg { margin-top: 2px; color: var(--zipick-body); }
-.failureHelp strong { display: block; color: var(--zipick-body); font-weight: 700; }
-.failureHelp p { margin: 5px 0 0; color: var(--zipick-body); line-height: 1.65; }
+.failure { padding: 40px 44px; }
+.failure .icon { margin-bottom: 18px; }
+.failure .description { margin: 10px auto 22px; }
 .footer {
   display: flex;
   align-items: center;
@@ -186,6 +173,7 @@
   :global(.main):has(> .page) { padding: 26px 16px 65px; }
   .page :global(.guide-page__head) h1 { font-size: 20px; }
   .card { padding: 38px 21px; }
+  .failure { padding: 30px 21px; }
   .icon { width: 56px; height: 56px; }
   .page .title { font-size: 20px; }
   .description { font-size: 13px; }
