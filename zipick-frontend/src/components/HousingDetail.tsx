@@ -5,6 +5,7 @@ import type { HouseFilter } from '../types';
 import { hasSupplyConditions, matchesSupplyConditions, sortByMatch } from '../utils/supplyMatch';
 import { HousingInfraSection, RoadviewPanel } from '../features/map';
 import InterestButton from './InterestButton';
+import FloorPlanGallery from './FloorPlanGallery';
 import { useInterest } from '../hooks/useInterest';
 import { STATUS_LABEL, applySchedule, area } from '../utils/format';
 
@@ -32,11 +33,7 @@ function hasDisplayableSupplyFacts(supply: MapHousingSupply) {
 }
 
 function money(value: number) {
-  return `${value.toLocaleString()}원`;
-}
-
-function isImageFile(fileName?: string | null) {
-  return Boolean(fileName?.match(/\.(?:png|jpe?g|gif|webp)$/i));
+  return `${(value / 10000).toLocaleString('ko-KR', { maximumFractionDigits: 4 })}만원`;
 }
 
 export default function HousingDetail({ detail, score, filter }: Props) {
@@ -76,18 +73,18 @@ export default function HousingDetail({ detail, score, filter }: Props) {
       <div className="housing-detail__body">
         <div className="housing-detail__head">
           <span className={`badge badge--${detail.status.toLowerCase()}`}>{STATUS_LABEL[detail.status]}</span>
-          <span className={`badge ${schedule.urgent ? 'badge--soon' : ''}`}>{schedule.label}</span>
-          <InterestButton noticeId={detail.noticeId} compact />
+          {hasText(detail.agencyName) && <span className="badge housing-detail__agency">{detail.agencyName}</span>}
+          <InterestButton noticeId={detail.noticeId} />
         </div>
 
         <h2 className="housing-detail__title">{housingName}</h2>
-        <p className="housing-detail__address">{detail.address}</p>
+        <p className="housing-detail__address"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg><span>{detail.address}</span></p>
 
         <ApplicationGuideLink noticeId={detail.noticeId} />
 
         {score}
 
-        <dl className="map-detail__facts map-detail__facts--base">
+        <section className="housing-detail__supply-info"><h3>공급 정보</h3><dl className="map-detail__facts map-detail__facts--base">
           <div><dt>공급명</dt><dd>{detail.noticeTitle}</dd></div>
           {hasText(detail.agencyName) && <div><dt>공급기관</dt><dd>{detail.agencyName}</dd></div>}
           {hasText(rentalType) && <div><dt>임대유형</dt><dd>{rentalType}</dd></div>}
@@ -96,7 +93,7 @@ export default function HousingDetail({ detail, score, filter }: Props) {
           {detail.buildYear != null && <div><dt>준공</dt><dd>{detail.buildYear}</dd></div>}
           {hasText(detail.heatingMethod) && <div><dt>난방방식</dt><dd>{detail.heatingMethod}</dd></div>}
           {detail.totalHouseholdCount != null && <div><dt>총 세대수</dt><dd>{detail.totalHouseholdCount}세대</dd></div>}
-        </dl>
+        </dl></section>
 
         <HousingInfraSection housingId={detail.housingId} />
 
@@ -122,23 +119,10 @@ export default function HousingDetail({ detail, score, filter }: Props) {
         </section>
 
         {(housingPlans.length > 0 || noticePlans.length > 0) && (
-          <section>
-            <h3>평면도·도면</h3>
-            <div className="floor-plan-gallery">
-              {housingPlans.map((file) => (
-                <a key={`media-${file.mediaId}`} href={file.sourceUrl} target="_blank" rel="noreferrer">
-                  <img src={mediaUrl(file.mediaId)} alt={file.fileName || '평면도'} />
-                  <span>{file.fileName || '평면도 보기'}</span>
-                </a>
-              ))}
-              {noticePlans.map((file) => (
-                <a key={`attachment-${file.attachmentId}`} href={file.sourceUrl} target="_blank" rel="noreferrer">
-                  {isImageFile(file.fileName) && <img src={attachmentUrl(file.attachmentId)} alt={file.fileName || '평면도'} />}
-                  <span>{file.fileName || '평면도 보기'}</span>
-                </a>
-              ))}
-            </div>
-          </section>
+          <FloorPlanGallery key={detail.housingId} files={[
+            ...housingPlans.map((file) => ({ id: `media-${file.mediaId}`, name: file.fileName, sourceUrl: file.sourceUrl, previewUrl: mediaUrl(file.mediaId), type: file.mediaType })),
+            ...noticePlans.map((file) => ({ id: `attachment-${file.attachmentId}`, name: file.fileName, sourceUrl: file.sourceUrl, previewUrl: attachmentUrl(file.attachmentId), type: file.attachmentType })),
+          ]} />
         )}
 
         {detail.detailUrl && (
@@ -169,8 +153,9 @@ function ApplicationGuideLink({ noticeId }: { noticeId: number }) {
 
   if (!isSaved(noticeId)) {
     return (
-      <p className="guide-cta guide-cta--hint muted small">
-        관심 공고로 저장하면 AI 신청 준비 가이드를 이용할 수 있어요.
+      <p className="guide-cta guide-cta--hint housing-detail__guide-hint">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>
+        <span>관심 공고로 저장하면 AI 신청 준비 가이드를 이용할 수 있어요.</span>
       </p>
     );
   }
@@ -187,18 +172,21 @@ function SupplyCard({ supply, matched }: { supply: MapHousingSupply; matched?: b
   const unit = [supply.buildingDong, supply.unitNumber].filter(Boolean).join(' ');
   return (
     <article className={`map-detail__supply ${matched ? 'map-detail__supply--matched' : ''}`}>
-      <strong>
-        {hasText(supply.housingType) ? supply.housingType : hasText(supply.supplyType) ? supply.supplyType : hasText(unit) ? unit : '공급 조건'}
+      <div className="supply-card__heading">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v11H3V10Z"/><path d="M9 21v-8h6v8"/></svg>
+        <strong>{hasText(supply.housingType) ? supply.housingType : hasText(supply.supplyType) ? supply.supplyType : hasText(unit) ? unit : '공급 조건'}</strong>
         {matched && <span className="badge badge--matched">검색 조건 일치</span>}
-      </strong>
-      <dl className="map-detail__facts">
+      </div>
+      {(supply.rentDeposit != null || supply.monthlyRent != null) && <dl className="map-detail__facts supply-card__costs">
         {supply.rentDeposit != null && <div><dt>보증금</dt><dd>{money(supply.rentDeposit)}</dd></div>}
         {supply.monthlyRent != null && <div><dt>월 임대료</dt><dd>{money(supply.monthlyRent)}</dd></div>}
+      </dl>}
+      {(supply.exclusiveArea != null || hasText(unit) || supply.floor != null || supply.roomCount != null) && <dl className="map-detail__facts supply-card__details">
         {supply.exclusiveArea != null && <div><dt>전용면적</dt><dd>{area(supply.exclusiveArea)}</dd></div>}
         {hasText(unit) && <div><dt>동·호</dt><dd>{unit}</dd></div>}
         {supply.floor != null && <div><dt>층</dt><dd>{supply.floor}층</dd></div>}
         {supply.roomCount != null && <div><dt>방</dt><dd>{supply.roomCount}개</dd></div>}
-      </dl>
+      </dl>}
     </article>
   );
 }
