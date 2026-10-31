@@ -76,18 +76,18 @@ export default function HousingDetail({ detail, score, filter }: Props) {
       <div className="housing-detail__body">
         <div className="housing-detail__head">
           <span className={`badge badge--${detail.status.toLowerCase()}`}>{STATUS_LABEL[detail.status]}</span>
-          <span className={`badge ${schedule.urgent ? 'badge--soon' : ''}`}>{schedule.label}</span>
-          <InterestButton noticeId={detail.noticeId} compact />
+          {hasText(detail.agencyName) && <span className="badge housing-detail__agency">{detail.agencyName}</span>}
+          <InterestButton noticeId={detail.noticeId} />
         </div>
 
         <h2 className="housing-detail__title">{housingName}</h2>
-        <p className="housing-detail__address">{detail.address}</p>
+        <p className="housing-detail__address"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg><span>{detail.address}</span></p>
 
         <ApplicationGuideLink noticeId={detail.noticeId} />
 
         {score}
 
-        <dl className="map-detail__facts map-detail__facts--base">
+        <section className="housing-detail__supply-info"><h3>공급 정보</h3><dl className="map-detail__facts map-detail__facts--base">
           <div><dt>공급명</dt><dd>{detail.noticeTitle}</dd></div>
           {hasText(detail.agencyName) && <div><dt>공급기관</dt><dd>{detail.agencyName}</dd></div>}
           {hasText(rentalType) && <div><dt>임대유형</dt><dd>{rentalType}</dd></div>}
@@ -96,7 +96,7 @@ export default function HousingDetail({ detail, score, filter }: Props) {
           {detail.buildYear != null && <div><dt>준공</dt><dd>{detail.buildYear}</dd></div>}
           {hasText(detail.heatingMethod) && <div><dt>난방방식</dt><dd>{detail.heatingMethod}</dd></div>}
           {detail.totalHouseholdCount != null && <div><dt>총 세대수</dt><dd>{detail.totalHouseholdCount}세대</dd></div>}
-        </dl>
+        </dl></section>
 
         <HousingInfraSection housingId={detail.housingId} />
 
@@ -169,8 +169,9 @@ function ApplicationGuideLink({ noticeId }: { noticeId: number }) {
 
   if (!isSaved(noticeId)) {
     return (
-      <p className="guide-cta guide-cta--hint muted small">
-        관심 공고로 저장하면 AI 신청 준비 가이드를 이용할 수 있어요.
+      <p className="guide-cta guide-cta--hint housing-detail__guide-hint">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>
+        <span>관심 공고로 저장하면 AI 신청 준비 가이드를 이용할 수 있어요.</span>
       </p>
     );
   }
