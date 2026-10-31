@@ -176,9 +176,20 @@
 .page :global(.housing-detail__supply-info) :global(.map-detail__facts--base) { border: 1px solid var(--zipick-line); background: white; }
 .page :global(.housing-detail__body) :global(.map-detail__facts) dt { font-size: 11px; color: var(--zipick-soft); font-weight: 600; }
 .page :global(.housing-detail__body) :global(.map-detail__facts) dd { color: var(--zipick-ink); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
-.page :global(.housing-detail__body) :global(.map-detail__supply) { border-color: var(--zipick-line); padding: 14px; }
+.page :global(.housing-detail__body) :global(.map-detail__supply) { margin-top: 8px; padding: 12px; border-color: var(--zipick-line); border-radius: 12px; background: white; }
 .page :global(.housing-detail__body) :global(.map-detail__supply) :global(.map-detail__facts) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .page :global(.housing-detail__body) :global(.map-detail__supply) :global(.map-detail__facts) dd { font-variant-numeric: tabular-nums; }
+.page :global(.housing-detail__body) :global(.map-detail__supply--matched) { border-color: var(--zipick-blue); }
+.page :global(.supply-card__heading) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.page :global(.supply-card__heading) svg { flex: none; width: 18px; height: 18px; color: var(--zipick-blue); }
+.page :global(.supply-card__heading) strong { flex: 1; min-width: 0; margin: 0; font-size: 14px; line-height: 1.5; color: var(--zipick-ink); overflow-wrap: anywhere; }
+.page :global(.supply-card__heading) :global(.badge--matched) { margin: 0; }
+.page :global(.housing-detail__body) :global(.supply-card__costs) { padding: 8px 10px; border-radius: 8px; background: var(--zipick-blue-mist); gap: 8px 12px; }
+.page :global(.housing-detail__body) :global(.supply-card__costs) dt { color: var(--zipick-body); font-size: 11px; }
+.page :global(.housing-detail__body) :global(.supply-card__costs) dd { margin-top: 3px; font-size: 16px; line-height: 1.4; font-weight: 750; color: var(--zipick-blue-strong); }
+.page :global(.housing-detail__body) :global(.supply-card__details) { gap: 8px 12px; }
+.page :global(.supply-card__costs) + :global(.supply-card__details) { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--zipick-line); }
+.page :global(.housing-detail__body) :global(.supply-card__details) dd { margin-top: 2px; font-size: 13px; font-weight: 650; }
 .page :global(.housing-infra__description) { margin: -2px 0 12px; color: var(--zipick-body); font-size: 12px; line-height: 1.55; word-break: keep-all; }
 .page :global(.housing-infra__grid) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .page :global(.housing-infra__card) { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; min-height: 104px; padding: 12px; border: 1px solid var(--zipick-line); border-radius: 11px; }

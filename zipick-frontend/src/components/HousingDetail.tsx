@@ -5,6 +5,7 @@ import type { HouseFilter } from '../types';
 import { hasSupplyConditions, matchesSupplyConditions, sortByMatch } from '../utils/supplyMatch';
 import { HousingInfraSection, RoadviewPanel } from '../features/map';
 import InterestButton from './InterestButton';
+import FloorPlanGallery from './FloorPlanGallery';
 import { useInterest } from '../hooks/useInterest';
 import { STATUS_LABEL, applySchedule, area } from '../utils/format';
 
@@ -32,11 +33,7 @@ function hasDisplayableSupplyFacts(supply: MapHousingSupply) {
 }
 
 function money(value: number) {
-  return `${value.toLocaleString()}원`;
-}
-
-function isImageFile(fileName?: string | null) {
-  return Boolean(fileName?.match(/\.(?:png|jpe?g|gif|webp)$/i));
+  return `${(value / 10000).toLocaleString('ko-KR', { maximumFractionDigits: 4 })}만원`;
 }
 
 export default function HousingDetail({ detail, score, filter }: Props) {
@@ -122,23 +119,10 @@ export default function HousingDetail({ detail, score, filter }: Props) {
         </section>
 
         {(housingPlans.length > 0 || noticePlans.length > 0) && (
-          <section>
-            <h3>평면도·도면</h3>
-            <div className="floor-plan-gallery">
-              {housingPlans.map((file) => (
-                <a key={`media-${file.mediaId}`} href={file.sourceUrl} target="_blank" rel="noreferrer">
-                  <img src={mediaUrl(file.mediaId)} alt={file.fileName || '평면도'} />
-                  <span>{file.fileName || '평면도 보기'}</span>
-                </a>
-              ))}
-              {noticePlans.map((file) => (
-                <a key={`attachment-${file.attachmentId}`} href={file.sourceUrl} target="_blank" rel="noreferrer">
-                  {isImageFile(file.fileName) && <img src={attachmentUrl(file.attachmentId)} alt={file.fileName || '평면도'} />}
-                  <span>{file.fileName || '평면도 보기'}</span>
-                </a>
-              ))}
-            </div>
-          </section>
+          <FloorPlanGallery key={detail.housingId} files={[
+            ...housingPlans.map((file) => ({ id: `media-${file.mediaId}`, name: file.fileName, sourceUrl: file.sourceUrl, previewUrl: mediaUrl(file.mediaId), type: file.mediaType })),
+            ...noticePlans.map((file) => ({ id: `attachment-${file.attachmentId}`, name: file.fileName, sourceUrl: file.sourceUrl, previewUrl: attachmentUrl(file.attachmentId), type: file.attachmentType })),
+          ]} />
         )}
 
         {detail.detailUrl && (
@@ -188,18 +172,21 @@ function SupplyCard({ supply, matched }: { supply: MapHousingSupply; matched?: b
   const unit = [supply.buildingDong, supply.unitNumber].filter(Boolean).join(' ');
   return (
     <article className={`map-detail__supply ${matched ? 'map-detail__supply--matched' : ''}`}>
-      <strong>
-        {hasText(supply.housingType) ? supply.housingType : hasText(supply.supplyType) ? supply.supplyType : hasText(unit) ? unit : '공급 조건'}
+      <div className="supply-card__heading">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v11H3V10Z"/><path d="M9 21v-8h6v8"/></svg>
+        <strong>{hasText(supply.housingType) ? supply.housingType : hasText(supply.supplyType) ? supply.supplyType : hasText(unit) ? unit : '공급 조건'}</strong>
         {matched && <span className="badge badge--matched">검색 조건 일치</span>}
-      </strong>
-      <dl className="map-detail__facts">
+      </div>
+      {(supply.rentDeposit != null || supply.monthlyRent != null) && <dl className="map-detail__facts supply-card__costs">
         {supply.rentDeposit != null && <div><dt>보증금</dt><dd>{money(supply.rentDeposit)}</dd></div>}
         {supply.monthlyRent != null && <div><dt>월 임대료</dt><dd>{money(supply.monthlyRent)}</dd></div>}
+      </dl>}
+      {(supply.exclusiveArea != null || hasText(unit) || supply.floor != null || supply.roomCount != null) && <dl className="map-detail__facts supply-card__details">
         {supply.exclusiveArea != null && <div><dt>전용면적</dt><dd>{area(supply.exclusiveArea)}</dd></div>}
         {hasText(unit) && <div><dt>동·호</dt><dd>{unit}</dd></div>}
         {supply.floor != null && <div><dt>층</dt><dd>{supply.floor}층</dd></div>}
         {supply.roomCount != null && <div><dt>방</dt><dd>{supply.roomCount}개</dd></div>}
-      </dl>
+      </dl>}
     </article>
   );
 }
