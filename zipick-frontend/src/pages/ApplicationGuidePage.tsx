@@ -75,11 +75,11 @@ export default function ApplicationGuidePage() {
   // 생성 직후에는 mutation 결과가 더 최신이다
   const current = generate.data ?? data;
   const generateError = generate.error as ApiError | null;
-  // 성공 화면에는 기존 DOM 클래스와 스타일을 그대로 유지한다.
+  // 생성 전·중·실패와 성공 화면의 스타일 적용 범위를 분리한다.
   const useStateDesign = generate.isPending || current.status !== 'READY' || !current.guide;
 
   return (
-    <div className={useStateDesign ? `detail guide-page zipick-theme ${styles.page}` : 'detail guide-page'}>
+    <div className={useStateDesign ? `detail guide-page zipick-theme ${styles.page}` : `detail guide-page zipick-theme ${styles.success}`}>
       <Link to="/calendar" className="back">
         ← 관심 공고로
       </Link>
@@ -248,7 +248,7 @@ function GuideResultView({ data }: { data: ApplicationGuide }) {
   return (
     <>
       <section className="panel guide-section">
-        <h2 className="panel__title">① 신청 준비 핵심</h2>
+        <h2 className="panel__title"><span className={styles.sectionNumber}>1</span> 신청 준비 핵심</h2>
         <p className="guide-summary">{guide.summary}</p>
         {sourceFile && (
           <p className="guide-source-file">
@@ -259,7 +259,7 @@ function GuideResultView({ data }: { data: ApplicationGuide }) {
 
       {guide.personalChecks.length > 0 && (
         <section className="panel guide-section">
-          <h2 className="panel__title">② 내 정보 기준 확인사항</h2>
+          <h2 className="panel__title"><span className={styles.sectionNumber}>2</span> 내 정보 기준 확인사항</h2>
           <ul className="guide-checks">
             {guide.personalChecks.map((check, index) => (
               <li key={`${check.title}-${index}`} className={`guide-check reason--${CHECK_STATUS_TONE[check.status]}`}>
@@ -280,7 +280,7 @@ function GuideResultView({ data }: { data: ApplicationGuide }) {
 
       {guide.documents.length > 0 && (
         <section className="panel guide-section">
-          <h2 className="panel__title">③ 준비할 서류</h2>
+          <h2 className="panel__title"><span className={styles.sectionNumber}>3</span> 준비할 서류</h2>
           {DOCUMENT_CATEGORY_ORDER.map((category) => {
             const items = guide.documents.filter((document) => document.category === category);
             if (items.length === 0) return null;
@@ -310,10 +310,10 @@ function GuideResultView({ data }: { data: ApplicationGuide }) {
 
       {guide.cautions.length > 0 && (
         <section className="panel guide-section">
-          <h2 className="panel__title">④ 꼭 확인하세요</h2>
+          <h2 className="panel__title"><span className={styles.sectionNumber}>4</span> 꼭 확인하세요</h2>
           <ul className="guide-cautions">
             {guide.cautions.map((caution, index) => (
-              <li key={`${caution.kind}-${index}`} className="guide-caution">
+              <li key={`${caution.kind}-${index}`} className="guide-caution" data-kind={caution.kind}>
                 <span className={`badge badge--${caution.kind === 'MANUAL' ? 'check' : 'notice'}`}>
                   {CAUTION_KIND_LABEL[caution.kind]}
                 </span>
