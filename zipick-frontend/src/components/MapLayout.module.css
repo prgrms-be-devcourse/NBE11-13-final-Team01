@@ -4,19 +4,20 @@
   font-family: var(--zipick-font-family);
 }
 .frame :global(.header) {
+  display: block;
   height: 72px;
-  padding: 0 24px;
-  gap: 40px;
+  padding: 0;
   border-bottom: 1px solid var(--zipick-line);
   background: #fff;
   z-index: 30;
 }
+.headerInner { height: 100%; gap: 40px; }
 .frame :global(.logo) { display: inline-flex; align-items: center; gap: 9px; color: var(--zipick-blue); letter-spacing: -1.3px; }
 .frame :global(.logo) span { color: var(--zipick-ink); font-size: 24px; }
 .frame :global(.nav) { gap: 28px; font-size: 14px; font-weight: 600; }
 .frame :global(.nav) a { color: var(--zipick-body); padding: 9px 0; }
 .frame :global(.nav) a:global(.active) { color: var(--zipick-blue); border-color: var(--zipick-blue); }
-.frame :global(.auth-box) { gap: 10px; }
+.frame :global(.auth-box) { min-width: 0; gap: 10px; }
 .frame :global(.auth-box) :global(.btn) {
   border-radius: var(--zipick-radius-control);
   background: var(--zipick-blue);
@@ -25,12 +26,14 @@
   padding: 10px 18px;
   font-size: 13px;
   font-weight: 650;
+  flex-shrink: 0;
 }
 .frame :global(.auth-box) :global(.btn--ghost) { color: var(--zipick-body); background: white; border-color: var(--zipick-line); }
-.frame :global(.auth-box__email) { color: var(--zipick-body); }
+.frame :global(.auth-box__email) { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: var(--zipick-body); }
 .frame :global(.main) { max-width: 1464px; width: 100%; padding: 32px; }
 @media (max-width: 720px) {
-  .frame :global(.header) { height: auto; min-height: 72px; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px 0; }
+  .frame :global(.header) { height: auto; min-height: 72px; padding: 0; }
+  .headerInner { height: auto; min-height: 71px; flex-wrap: wrap; gap: 8px 16px; padding-block: 12px 0; }
   .frame :global(.nav) { order: 3; width: 100%; overflow-x: auto; gap: 24px; }
   .frame :global(.auth-box) :global(.btn) { padding: 8px 12px; }
   .frame :global(.auth-box__email) { max-width: 100px; }

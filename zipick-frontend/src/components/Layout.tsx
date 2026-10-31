@@ -1,4 +1,5 @@
 import mapStyles from './MapLayout.module.css';
+import headerStyles from './Header.module.css';
 import '../design-system/tokens.css';
 import MapBrand from './MapBrand';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -27,7 +28,7 @@ function AuthBox() {
         <span className="auth-box__email">{user.email}</span>
         <button
           type="button"
-          className="btn btn--small btn--ghost"
+          className={`btn btn--small btn--ghost ${headerStyles.secondary}`}
           onClick={async () => {
             await logout();
             // 다음 사용자에게 이전 사용자의 추천·조건 캐시가 남지 않도록 비우고 다시 불러온다.
@@ -50,10 +51,10 @@ function AuthBox() {
 
   return (
     <div className="auth-box">
-      <Link to="/login" state={state} className="btn btn--small btn--ghost">
+      <Link to="/login" state={state} className={`btn btn--small btn--ghost ${headerStyles.secondary}`}>
         로그인
       </Link>
-      <Link to="/signup" state={state} className="btn btn--small">
+      <Link to="/signup" state={state} className={`btn btn--small ${headerStyles.primary}`}>
         회원가입
       </Link>
     </div>
@@ -70,20 +71,24 @@ export default function Layout() {
     return <><AuthLayout /><AuthGateModal /></>;
   }
 
+  const headerContent = <>
+    <NavLink to="/map" className="logo">
+      <MapBrand compact={!useServiceTheme} />
+    </NavLink>
+    {/* 전체 공고와 맞춤 추천은 지도 화면 안에서 전환한다. 독립 메뉴를 두지 않는다. */}
+    <nav className="nav">
+      <NavLink to="/map" className={headerStyles.navLink}>지도 탐색</NavLink>
+      <NavLink to="/calendar" className={headerStyles.navLink}>관심 공고·일정</NavLink>
+      <NavLink to="/tune" className={headerStyles.navLink}>취향 찾기</NavLink>
+      <NavLink to="/onboarding" className={headerStyles.navLink}>내 조건</NavLink>
+    </nav>
+    <AuthBox />
+  </>;
+
   return (
     <div className={useServiceTheme ? `app zipick-theme ${mapStyles.frame}` : 'app'}>
-      <header className="header">
-        <NavLink to="/map" className="logo">
-          {useServiceTheme ? <MapBrand /> : 'ZIPICK'}
-        </NavLink>
-        {/* 전체 공고와 맞춤 추천은 지도 화면 안에서 전환한다. 독립 메뉴를 두지 않는다. */}
-        <nav className="nav">
-          <NavLink to="/map">지도 탐색</NavLink>
-          <NavLink to="/calendar">관심 공고·일정</NavLink>
-          <NavLink to="/tune">취향 찾기</NavLink>
-          <NavLink to="/onboarding">내 조건</NavLink>
-        </nav>
-        <AuthBox />
+      <header className={useServiceTheme ? `header ${headerStyles.header}` : `header ${headerStyles.legacyHeader}`}>
+        {useServiceTheme ? <div className={`${headerStyles.inner} ${mapStyles.headerInner}`}>{headerContent}</div> : headerContent}
       </header>
       <main className="main">
         <Outlet />

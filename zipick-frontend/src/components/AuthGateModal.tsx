@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { closeGate, returnPath, useAuthGate } from '../hooks/useAuthGate';
+import AuthGateIcon from './AuthGateIcon';
+import styles from './AuthGateModal.module.css';
+import '../design-system/tokens.css';
 
 type Variant = 'LOGIN' | 'LOGIN_INTEREST' | 'ONBOARDING';
 
@@ -18,23 +21,6 @@ const COPY: Record<Variant, { title: string; desc: string }> = {
     desc: '간단한 정보만 입력하고 나에게 맞는 주택을 추천받아보세요.',
   },
 };
-
-function HeartIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" aria-hidden="true">
-      <path d="M12 21s-7.5-4.7-9.4-9A5.2 5.2 0 0 1 12 6.6 5.2 5.2 0 0 1 21.4 12c-1.9 4.3-9.4 9-9.4 9Z" />
-    </svg>
-  );
-}
-
-function DocumentIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M6 3h8l4 4v14H6z" />
-      <path d="M14 3v4h4M9 12h6M9 16h6" />
-    </svg>
-  );
-}
 
 /**
  * 로그인·온보딩 공통 안내 팝업. Layout에서 한 번만 렌더한다.
@@ -69,33 +55,33 @@ export default function AuthGateModal() {
   };
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="auth-gate-title">
-      <button type="button" className="modal__backdrop" aria-label="닫기" onClick={closeGate} />
-      <div className="modal__card">
-        <button type="button" className="modal__close" onClick={closeGate} aria-label="닫기">
-          ×
+    <div className={`zipick-theme ${styles.modal}`} role="dialog" aria-modal="true" aria-labelledby="auth-gate-title" aria-describedby="auth-gate-description">
+      <button type="button" className={styles.backdrop} aria-label="닫기" onClick={closeGate} />
+      <div className={styles.card}>
+        <button type="button" className={styles.close} onClick={closeGate} aria-label="닫기">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
         </button>
-        <span className={`modal__icon modal__icon--${variant === 'ONBOARDING' ? 'info' : 'heart'}`}>
-          {variant === 'ONBOARDING' ? <DocumentIcon /> : <HeartIcon />}
+        <span className={styles.icon}>
+          <AuthGateIcon kind={variant} />
         </span>
-        <h2 id="auth-gate-title">{copy.title}</h2>
-        <p>{copy.desc}</p>
-        <div className="modal__actions">
+        <h2 id="auth-gate-title" className={styles.title}>{copy.title}</h2>
+        <p id="auth-gate-description" className={styles.description}>{copy.desc}</p>
+        <div className={styles.actions}>
           {gate === 'LOGIN' ? (
             <>
-              <button type="button" className="btn" autoFocus onClick={() => go('/login')}>
+              <button type="button" className={styles.primary} autoFocus onClick={() => go('/login')}>
                 로그인하기
               </button>
-              <button type="button" className="btn btn--ghost" onClick={() => go('/signup')}>
+              <button type="button" className={styles.secondary} onClick={() => go('/signup')}>
                 회원가입하기
               </button>
             </>
           ) : (
-            <button type="button" className="btn" autoFocus onClick={() => go('/onboarding')}>
+            <button type="button" className={styles.primary} autoFocus onClick={() => go('/onboarding')}>
               내 조건 입력하기
             </button>
           )}
-          <button type="button" className="modal__later" onClick={closeGate}>
+          <button type="button" className={styles.later} onClick={closeGate}>
             나중에
           </button>
         </div>

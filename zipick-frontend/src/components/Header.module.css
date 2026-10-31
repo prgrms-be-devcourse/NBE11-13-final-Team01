@@ -1,0 +1,34 @@
+/* 헤더에만 적용하는 공통 정렬·인터랙션. 본문 컨테이너는 그대로 둔다. */
+.inner {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: none;
+  margin-inline: auto;
+}
+.inner, .legacyHeader:global(.header) { padding-inline: 32px; }
+
+.header :is(a, button) {
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+}
+.header :is(a, button):focus-visible {
+  outline: 3px solid #2059d660;
+  outline-offset: 3px;
+}
+.header .secondary:hover:not(:disabled) { background: var(--zipick-blue-light); color: var(--zipick-blue); }
+.header .primary:hover:not(:disabled) { background: var(--zipick-blue-strong); border-color: var(--zipick-blue-strong); }
+.header .navLink:hover { background: var(--zipick-blue-mist); color: var(--zipick-blue); }
+.header .navLink:focus-visible { outline-offset: -3px; }
+
+@media (max-width: 980px) {
+  .inner, .legacyHeader:global(.header) { padding-inline: 22px; }
+}
+@media (max-width: 720px) {
+  .inner, .legacyHeader:global(.header) { padding-inline: 16px; }
+}
+@media (max-width: 420px) {
+  .inner, .legacyHeader:global(.header) { padding-inline: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .header :is(a, button) { transition: none; }
+}
