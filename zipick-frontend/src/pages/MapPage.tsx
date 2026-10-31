@@ -1,10 +1,10 @@
 import styles from '../features/map/MapPage.module.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { profileApi } from '../api/profile';
 import { getMapHousingDetail, getMapHousings } from '../api/mapHousing';
-import FilterPanel from '../components/FilterPanel';
+import MapFilterDrawer from '../features/map/MapFilterDrawer';
 import HousingDetail from '../components/HousingDetail';
 import ReasonList from '../components/ReasonList';
 import RecommendationSidebar from '../components/map/RecommendationSidebar';
@@ -15,7 +15,7 @@ import { openGate } from '../hooks/useAuthGate';
 import { useHouseFilter } from '../hooks/useHouseFilter';
 import { useOnboardingStatus } from '../hooks/useOnboardingStatus';
 import { useRecommendationBoard } from '../hooks/useRecommendationBoard';
-import { EMPTY_FILTER, type RecommendedHouse } from '../types';
+import { EMPTY_FILTER, type HouseFilter, type RecommendedHouse } from '../types';
 
 /**
  * 지도 한 화면에서 전체 공고와 맞춤 추천을 전환해 탐색한다.
@@ -55,10 +55,15 @@ function recommendationPins(houses: RecommendedHouse[]): MapPin[] {
 
 export default function MapPage() {
   const [params, setParams] = useSearchParams();
-  const { filter, setFilter } = useHouseFilter();
+  const mode: MapMode = params.get('mode') === 'recommended' ? 'recommended' : 'all';
+  const { filter, setFilter } = useHouseFilter({ omitStatuses: mode === 'all' });
+  const queryClient = useQueryClient();
+  const filterContextRef = useRef(params.toString());
+  const pageActiveRef = useRef(true);
+  filterContextRef.current = params.toString();
+  useEffect(() => { pageActiveRef.current = true; return () => { pageActiveRef.current = false; }; }, []);
   const { user } = useAuth();
 
-  const mode: MapMode = params.get('mode') === 'recommended' ? 'recommended' : 'all';
   const parsed = Number(params.get('housing'));
   const selectedId = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 
@@ -110,7 +115,18 @@ export default function MapPage() {
     queryFn: () => getMapHousings(filter),
     enabled: mode === 'all',
     placeholderData: keepPreviousData,
+    // 적용 전 검증 요청의 캐시를 바로 재사용해 같은 조건을 중복 조회하지 않는다.
+    staleTime: 1000,
   });
+
+  const applyFilter = async (next: HouseFilter) => {
+    const context = filterContextRef.current;
+    // 성공한 결과를 확보한 뒤 URL을 확정한다. 실패하면 기존 필터와 핀을 유지한다.
+    await queryClient.fetchQuery({ queryKey: ['map-housings', next], queryFn: () => getMapHousings(next), staleTime: 0, retry: false });
+    if (!pageActiveRef.current || filterContextRef.current !== context) return false;
+    setFilter(next);
+    return true;
+  };
 
   // 맞춤 추천: 저장된 내 조건과 추천 기준으로만 계산한다.
   // ⚠️ 전체 공고 모드의 탐색 필터(URL 쿼리)를 넘기면 안 된다. 추천 모드에는 필터 UI 가 없어
@@ -165,13 +181,14 @@ export default function MapPage() {
           {loading && '불러오는 중…'}
           {!loading && mode === 'all' && allQuery.data && (
             <>
-              조건에 맞는 집 <strong>{allQuery.data.total}곳</strong>
+              조건에 맞는 집 <strong>{allQuery.data.total.toLocaleString('ko-KR')}곳</strong>
             </>
           )}
           {!loading && mode === 'recommended' && board.query.data && (
             <>
-              추천 <strong>{board.ranked.length}곳</strong>
-              {unmappedRecommendations > 0 && ` · 지도 표시 ${pins.length}곳`}
+              내 조건과 맞는{' '}
+              <span className={styles.countGroup}>추천 주택 <strong>{board.ranked.length.toLocaleString('ko-KR')}곳</strong></span>
+              {unmappedRecommendations > 0 && ` · 지도 표시 ${pins.length.toLocaleString('ko-KR')}곳`}
             </>
           )}
         </span>
@@ -179,9 +196,17 @@ export default function MapPage() {
         {mode === 'recommended' && canRecommend && (
           <span className="map-toolbar__links">
             <Link to="/onboarding" className="btn btn--ghost btn--small">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 7h8m4 0h4M4 17h4m4 0h8" />
+                <circle cx="14" cy="7" r="2" />
+                <circle cx="10" cy="17" r="2" />
+              </svg>
               내 조건 수정
             </Link>
             <Link to="/tune" className="btn btn--ghost btn--small">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3 9.8 9.8 3 12l6.8 2.2L12 21l2.2-6.8L21 12l-6.8-2.2z" />
+              </svg>
               취향 찾기
             </Link>
           </span>
@@ -189,17 +214,7 @@ export default function MapPage() {
 
         {/* 기본 필터는 전체 공고 모드에만 둔다. 추천 모드는 저장된 내 조건과 우선순위로 조정한다 */}
         {mode === 'all' && (
-          <details className="map-filter">
-            <summary>필터</summary>
-            <div className="map-filter__body">
-              <FilterPanel
-                filter={filter}
-                onChange={setFilter}
-                resultCount={allQuery.data?.total ?? 0}
-                regionOptions={pref.data?.regions ?? []}
-              />
-            </div>
-          </details>
+          <MapFilterDrawer filter={filter} contextKey={params.toString()} onApply={applyFilter} regionOptions={pref.data?.regions ?? []} />
         )}
       </div>
 

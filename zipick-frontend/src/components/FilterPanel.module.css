@@ -1,0 +1,57 @@
+.fields { min-width: 0; color: var(--zipick-ink); }
+.section { min-width: 0; border: 0; padding: 0; margin: 0 0 32px; }
+.section:last-child { margin-bottom: 0; }
+.section legend { padding: 0; margin-bottom: 14px; font-size: 17px; font-weight: 750; line-height: 1.4; letter-spacing: -.35px; }
+.sectionHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin: -8px 0 14px; }
+.sectionHead p, .description { margin: 0; color: var(--zipick-body); font-size: 12px; line-height: 1.5; }
+.description { margin: -8px 0 16px; }
+.tag { flex: none; padding: 4px 8px; border-radius: 7px; background: var(--zipick-blue-light); color: var(--zipick-blue); font-size: 12px; font-weight: 650; }
+.selected { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-height: 36px; margin-bottom: 12px; }
+.selected > p { margin: 0; color: var(--zipick-soft); font-size: 12px; }
+.selectedChip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 6px 5px 10px; border: 1px solid var(--zipick-line); border-radius: 8px; background: var(--zipick-blue-light); color: var(--zipick-blue); font-size: 12px; font-weight: 650; overflow-wrap: anywhere; }
+.selectedChip button { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; font-size: 18px; cursor: pointer; }
+.nationwide { margin-bottom: 10px; padding: 6px 12px; border: 1px solid var(--zipick-line); border-radius: 8px; background: var(--zipick-white); color: var(--zipick-body); cursor: pointer; font-size: 12px; }
+.regionPicker { display: grid; grid-template-columns: 142px minmax(0, 1fr); height: 280px; border: 1px solid var(--zipick-line); border-radius: 12px; overflow: hidden; }
+.provinces { overflow: auto; scrollbar-width: thin; background: var(--zipick-surface); border-right: 1px solid var(--zipick-line); }
+.provinces button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; padding: 10px 12px; border: 0; background: transparent; color: var(--zipick-body); text-align: left; font-size: 12px; font-weight: 600; cursor: pointer; word-break: keep-all; }
+.provinces button[aria-pressed="true"] { background: var(--zipick-white); color: var(--zipick-blue); box-shadow: inset 3px 0 var(--zipick-blue); }
+.districtPanel { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 14px; }
+.districtPanel > strong { margin-bottom: 10px; font-size: 13px; font-weight: 700; }
+.search { display: block; margin-bottom: 10px; }
+.search input { width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--zipick-line); border-radius: 8px; background: var(--zipick-white); color: var(--zipick-ink); font: inherit; font-size: 12px; }
+.districts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 7px; flex: 1; min-height: 0; overflow: auto; padding: 3px; scrollbar-width: thin; }
+.district { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; min-height: 38px; padding: 8px; border: 1px solid var(--zipick-line); border-radius: 8px; background: var(--zipick-white); color: var(--zipick-body); font-size: 12px; text-align: left; cursor: pointer; word-break: keep-all; }
+.district:first-child { grid-column: 1 / -1; }
+.quantity { flex: none; margin-left: auto; color: var(--zipick-body); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.district[aria-pressed="true"], .choice[aria-pressed="true"], .nationwide[aria-pressed="true"] { color: var(--zipick-blue); background: var(--zipick-blue-light); border-color: #a2c1f8; }
+[aria-pressed="true"] > .quantity { color: var(--zipick-blue); }
+.district > span:first-child, .choice > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.note { margin: 10px 0 0; font-size: 11px; line-height: 1.6; color: var(--zipick-body); }
+.notice { grid-column: 1 / -1; margin: 10px 0; color: var(--zipick-body); font-size: 12px; line-height: 1.6; }
+.notice button { border: 0; background: transparent; color: var(--zipick-blue); cursor: pointer; text-decoration: underline; }
+.budgets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.budget { min-width: 0; padding: 13px 12px 14px; border: 1px solid var(--zipick-line); border-radius: 11px; }
+.budget:last-child { grid-column: 1 / -1; }
+.budget h3 { margin: 0 0 11px; font-size: 13px; font-weight: 700; }
+.budget small { color: var(--zipick-soft); font-weight: 500; }
+.range, .amount { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.amount { flex: 1; }
+.amount input { width: 100%; min-width: 0; height: 40px; padding: 0 7px; border: 1px solid var(--zipick-line); border-radius: 7px; background: var(--zipick-white); color: var(--zipick-ink); font: inherit; font-size: 12px; }
+.amount > span { color: var(--zipick-soft); }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 39px; padding: 9px 12px; border: 1px solid var(--zipick-line); border-radius: 9px; background: var(--zipick-white); color: var(--zipick-body); font: inherit; font-size: 12px; font-weight: 650; text-align: left; cursor: pointer; }
+.choice:disabled { opacity: .45; cursor: not-allowed; }
+.choice:hover:not(:disabled), .district:hover, .provinces button:hover, .nationwide:hover { background: var(--zipick-blue-mist); color: var(--zipick-blue); }
+.fields :is(button, input):focus-visible { outline: 3px solid #2059d660; outline-offset: 2px; }
+.provinces button:focus-visible { outline-offset: -3px; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 640px) {
+  .section { margin-bottom: 27px; }
+  .section legend { font-size: 16px; }
+  .regionPicker { grid-template-columns: 116px minmax(0, 1fr); height: 300px; }
+  .provinces button { padding: 10px; }
+  .districtPanel { padding: 10px; }
+  .districts { grid-template-columns: minmax(0, 1fr); }
+  .budgets { grid-template-columns: minmax(0, 1fr); }
+  .selectedChip { font-size: 11px; }
+}

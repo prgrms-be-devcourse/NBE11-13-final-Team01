@@ -270,13 +270,19 @@ export default function MapPanel({
       {!error && readyVersion > 0 && (
         <div className="map-controls" role="group" aria-label="지도 조작">
           <button type="button" aria-label="확대" title="확대" onClick={() => stepZoom(-1)}>
-            +
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
           </button>
           <button type="button" aria-label="축소" title="축소" onClick={() => stepZoom(1)}>
-            −
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <path d="M5 12h14" />
+            </svg>
           </button>
           <button type="button" aria-label="전국 보기" title="전국 보기" onClick={resetToNationwide}>
-            ⌂
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" />
+            </svg>
           </button>
         </div>
       )}
