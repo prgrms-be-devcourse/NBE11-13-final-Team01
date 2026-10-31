@@ -63,7 +63,7 @@ export default function Layout() {
   // 로그인 직후 보류된 관심 공고 저장을 이어서 실행한다. 앱 전체에서 여기 한 곳만 호출한다.
   usePendingInterestRunner();
   const pathname = useLocation().pathname;
-  const useServiceTheme = pathname === '/map' || pathname === '/calendar' || pathname === '/onboarding';
+  const useServiceTheme = pathname === '/map' || pathname === '/calendar' || pathname === '/onboarding' || pathname === '/tune';
 
   return (
     <div className={useServiceTheme ? `app zipick-theme ${mapStyles.frame}` : 'app'}>
