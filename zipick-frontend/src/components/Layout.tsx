@@ -77,9 +77,24 @@ export default function Layout() {
     </Link>
     {/* 전체 공고와 맞춤 추천은 지도 화면 안에서 전환한다. 독립 메뉴를 두지 않는다. */}
     <nav className="nav" aria-label="주요 메뉴">
-      <NavLink to="/map" className={headerStyles.navLink}>지도 탐색</NavLink>
-      <NavLink to="/calendar" className={headerStyles.navLink}>관심 공고·일정</NavLink>
-      <NavLink to="/tune" className={headerStyles.navLink}>취향 찾기</NavLink>
+      <NavLink to="/map" className={headerStyles.navLink}>
+        <svg className={headerStyles.navIcon} width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" />
+        </svg>
+        <span>지도 탐색</span>
+      </NavLink>
+      <NavLink to="/calendar" className={headerStyles.navLink}>
+        <svg className={headerStyles.navIcon} width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 11h18M8 15h2M14 15h2" />
+        </svg>
+        <span>관심 공고·일정</span>
+      </NavLink>
+      <NavLink to="/tune" className={headerStyles.navLink}>
+        <svg className={headerStyles.navIcon} width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <path d="M4 6h4m4 0h8M4 12h10m4 0h2M4 18h2m4 0h10" /><circle cx="10" cy="6" r="2" /><circle cx="16" cy="12" r="2" /><circle cx="8" cy="18" r="2" />
+        </svg>
+        <span>취향 찾기</span>
+      </NavLink>
     </nav>
     <AuthBox />
   </>;
