@@ -106,7 +106,16 @@
 - 랜딩: `LandingHeader`, 데스크톱 sticky 헤더 `88px`·모바일 `68px`. 서비스 소개·이용 방법은 섹션 앵커, 지도·로그인·집 찾기는 기존 라우트로 연결한다. 모바일은 소개 메뉴와 로그인 링크를 숨기고 집 찾기는 유지한다.
 - 서비스 헤더: `Layout`이 `/map`, `/calendar`, `/onboarding`, `/tune`에서 `zipick-theme`와 `MapLayout.module.css`를 적용하고 `MapBrand`를 표시한다. 데스크톱 헤더 `72px`, 내비게이션 간격 `28px`, 활성 메뉴 블루 밑줄. 모바일 내비게이션은 두 번째 줄에서 가로 스크롤한다.
 - 서비스 메뉴는 지도 탐색 / 관심 공고·일정 / 취향 찾기 / 내 조건이다. 인증 영역의 로그인·가입·이메일·로그아웃과 복귀 state를 보존한다.
-- 주택 상세는 지도 선택 패널에서 표시한다. 기존 `/houses/:houseId` 주소는 `/map?housing={houseId}`로 이동한다. 사진이 없으면 갤러리를 생략하고 값이 없는 선택 정보는 항목 전체를 생략한다. 위 네 경로를 제외한 서비스 페이지는 아직 기존 `Layout` 헤더·본문 스타일을 쓴다. 서비스 전체 공통 헤더 통일은 **후속 계획**이며 이미 적용된 것으로 간주하지 않는다.
+- 주택 상세는 지도 선택 패널에서 표시한다. 기존 `/houses/:houseId` 주소는 `/map?housing={houseId}`로 이동한다. 사진이 없으면 갤러리를 생략하고 값이 없는 선택 정보는 항목 전체를 생략한다. `/login`, `/signup`은 아래 인증 전용 셸을 사용한다. 그 외 서비스 페이지는 아직 기존 `Layout` 헤더·본문 스타일을 쓴다. 서비스 전체 공통 헤더 통일은 **후속 계획**이며 이미 적용된 것으로 간주하지 않는다.
+
+### 로그인·회원가입
+
+- `/login`, `/signup`은 `design-references/zipick-auth-login-signup-v2.html`의 레이아웃·문구를 따른다. `Layout`의 인증 경로 분기에서 `AuthLayout`을 표시하며, 기존 인증 게이트와 보류된 관심 저장 처리는 상위 `Layout`에 유지한다. 다른 경로의 공통 헤더·라우트는 변경하지 않는다.
+- 헤더는 현재 서비스의 `MapBrand` 아이콘·집픽 표기와 `/map`으로 이동하는 `지도 둘러보기`만 표시한다. 카드 상단에도 같은 브랜드를 재사용한다. 로고 도형·favicon은 교체하지 않는다.
+- 두 카드 모두 최대 폭 `500px`, 데스크톱 패딩 `40px 42px 32px`, 반경 `20px`이다. 메인 상단 여백은 `58px`, 720px 이하 `24px`, 420px 이하 `18px`이다. 720px 이하 카드 패딩은 `32px 24px 29px`·반경 `18px`, 420px 이하는 `29px 20px 26px`이다. 작은 화면의 메인 좌우 패딩은 `12px`이다.
+- 기존 서비스 폰트 스택·브랜드 토큰을 적용한다. 제목 `28px/800/1.38`·자간 `-.055em`(420px 이하 `25px`), 설명 `14px/1.65`(420px 이하 `13px`), 라벨 `14px/700`, 입력 높이 `50px`·반경 `10px`, 주요 버튼 높이 `52px`·`16px/700`·반경 `11px`로 시안의 인증 폼 위계를 따른다. 새 폰트는 추가하지 않는다.
+- 회원가입은 이메일+코드 발송 버튼 → 서버 응답에 따른 인증 코드/인증 완료 → 비밀번호와 실시간 규칙 → 비밀번호 확인 순서다. 유효 시간·재발송 대기·오류·비밀번호 정책은 기존 코드와 API를 그대로 사용한다. 두 카드 하단에 계정 전환과 `지도 탐색으로 이동`을 표시한다.
+- 스타일은 `features/auth/AuthPage.module.css`로 격리한다. 공유 `PasswordField`의 토글 스타일도 인증 카드 안에서만 적용하며 입력·오류·규칙을 접근성 설명으로 연결한다. 전역 CSS·API·토큰 저장·`state.from`·인증 이후 이동 정책은 변경하지 않는다.
 
 ### 취향 찾기
 
@@ -162,6 +171,8 @@
 | `zipick-frontend/src/components/Layout.tsx` | 공통 서비스 셸·지도 전용 테마 분기·인증 기능 |
 | `zipick-frontend/src/components/MapBrand.tsx` | 지도 헤더 브랜드 심볼·집픽 표기 |
 | `zipick-frontend/src/components/MapLayout.module.css` | 지도 헤더·본문 폭 |
+| `zipick-frontend/src/components/AuthLayout.tsx`, `AuthCard.tsx` | 인증 전용 헤더·공통 카드 제목·지도 이동 링크 |
+| `zipick-frontend/src/features/auth/AuthPage.module.css` | 로그인·회원가입 전용 스타일·반응형 |
 | `zipick-frontend/src/pages/MapPage.tsx` | 모드·조회·패널 조합 |
 | `zipick-frontend/src/features/map/MapPage.module.css` | 지도 화면 및 공유 하위 컴포넌트의 범위 제한 스타일 |
 | `zipick-frontend/src/features/map/MapPanel.tsx` | SDK 인스턴스·리사이즈·모드별 카메라 동기화 |

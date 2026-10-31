@@ -9,6 +9,7 @@ import { closeGate, returnPath } from '../hooks/useAuthGate';
 import { DEFAULT_LANDING } from '../pages/LoginPage';
 import { usePendingInterestRunner } from '../hooks/useInterest';
 import AuthGateModal from './AuthGateModal';
+import AuthLayout from './AuthLayout';
 
 /**
  * 헤더 우측 인증 영역. 비회원에게는 로그인·회원가입 링크만 두고,
@@ -64,6 +65,10 @@ export default function Layout() {
   usePendingInterestRunner();
   const pathname = useLocation().pathname;
   const useServiceTheme = pathname === '/map' || pathname === '/calendar' || pathname === '/onboarding' || pathname === '/tune';
+
+  if (pathname === '/login' || pathname === '/signup') {
+    return <><AuthLayout /><AuthGateModal /></>;
+  }
 
   return (
     <div className={useServiceTheme ? `app zipick-theme ${mapStyles.frame}` : 'app'}>
