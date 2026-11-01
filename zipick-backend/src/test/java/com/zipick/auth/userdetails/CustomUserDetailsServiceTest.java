@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
+import com.zipick.user.entity.AuthProvider;
 import com.zipick.user.entity.Role;
 import com.zipick.user.entity.User;
 import com.zipick.user.repository.UserRepository;
@@ -47,5 +48,17 @@ class CustomUserDetailsServiceTest {
 
         assertThatThrownBy(() -> customUserDetailsService.loadUserByUsername(EMAIL))
                 .isInstanceOf(UsernameNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("카카오 계정이면 비밀번호 비교로 넘기지 않고 SocialAccountLoginException을 던진다")
+    void socialAccountCannotUsePasswordLogin() {
+        // 카카오 사용자가 같은 이메일로 비밀번호 로그인을 시도한 상황이다.
+        User kakaoUser = User.of(1L, EMAIL, null, Role.ROLE_USER, AuthProvider.KAKAO, "4071234567");
+        given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(kakaoUser));
+
+        assertThatThrownBy(() -> customUserDetailsService.loadUserByUsername(EMAIL))
+                .isInstanceOf(SocialAccountLoginException.class)
+                .hasFieldOrPropertyWithValue("provider", AuthProvider.KAKAO);
     }
 }

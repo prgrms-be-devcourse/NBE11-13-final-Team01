@@ -7,6 +7,7 @@ import PasswordField from '../components/PasswordField';
 import { useAuth } from '../hooks/useAuth';
 import { closeGate } from '../hooks/useAuthGate';
 import { AuthFooter, AuthHeading } from '../components/AuthCard';
+import KakaoLoginButton from '../components/KakaoLoginButton';
 import styles from '../features/auth/AuthPage.module.css';
 
 /** 로그인 팝업·헤더·가입 화면이 넘겨 주는 값 */
@@ -15,7 +16,7 @@ export interface AuthNavState {
   from?: string;
   /** 가입 직후 자동 로그인만 실패했을 때 이메일을 채워 준다 */
   email?: string;
-  notice?: 'SIGNED_UP';
+  notice?: 'SIGNED_UP' | 'KAKAO_CANCELED';
 }
 
 /** 복귀할 곳이 없으면 비회원도 볼 수 있는 지도 탐색 화면으로 보낸다. */
@@ -67,6 +68,9 @@ export default function LoginPage() {
       {state?.notice === 'SIGNED_UP' && (
         <p className={styles.notice} role="status">가입이 완료됐어요. 방금 만든 계정으로 로그인해 주세요.</p>
       )}
+      {state?.notice === 'KAKAO_CANCELED' && (
+        <p className={styles.notice} role="status">카카오 로그인이 취소됐어요. 다시 시도하거나 이메일로 로그인해 주세요.</p>
+      )}
 
       <div className={styles.fields}>
         <label className={styles.field}>
@@ -100,6 +104,8 @@ export default function LoginPage() {
       <button className={styles.submit} type="submit" disabled={busy}>
         {busy ? '로그인 중…' : '로그인'}
       </button>
+
+      <KakaoLoginButton disabled={busy} />
 
       <p className={styles.alternative}>
         아직 계정이 없으신가요?{' '}

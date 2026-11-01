@@ -2,15 +2,20 @@ package com.zipick.auth.controller;
 
 import com.zipick.auth.dto.request.EmailVerificationConfirmRequest;
 import com.zipick.auth.dto.request.EmailVerificationSendRequest;
+import com.zipick.auth.dto.request.KakaoLoginRequest;
 import com.zipick.auth.dto.request.LoginRequest;
 import com.zipick.auth.dto.request.SignupRequest;
 import com.zipick.auth.dto.response.EmailVerificationConfirmResponse;
 import com.zipick.auth.dto.response.EmailVerificationSendResponse;
+import com.zipick.auth.dto.response.KakaoAuthorizeResponse;
 import com.zipick.auth.dto.response.LoginResponse;
 import com.zipick.auth.dto.response.SignupResponse;
 import com.zipick.auth.dto.response.TokenResponse;
 import com.zipick.auth.jwt.JwtProperties;
+import com.zipick.auth.oauth.KakaoOAuthProperties;
+import com.zipick.auth.oauth.OAuthStateService;
 import com.zipick.auth.service.AuthService;
+import com.zipick.auth.service.KakaoAuthService;
 import com.zipick.auth.service.EmailVerificationService;
 import com.zipick.auth.userdetails.CustomUserDetails;
 import com.zipick.auth.service.TokenService;
@@ -25,6 +30,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,6 +47,9 @@ public class AuthController {
     private final AuthService authService;
     private final EmailVerificationService emailVerificationService;
     private final TokenService tokenService;
+    private final KakaoAuthService kakaoAuthService;
+    private final OAuthStateService oAuthStateService;
+    private final KakaoOAuthProperties kakaoOAuthProperties;
     private final CookieUtil cookieUtil;
     private final JwtProperties jwtProperties;
 
@@ -120,6 +129,59 @@ public class AuthController {
         );
 
         return ApiResponse.ok(new TokenResponse(tokenPair.accessToken()));
+    }
+
+    @Operation(summary = "카카오 로그인 시작",
+            description = "카카오 동의 화면 주소를 돌려주고, CSRF 방지용 state를 HttpOnly 쿠키로 내려준다. "
+                    + "프론트는 받은 authorizeUrl로 그대로 이동하면 된다. "
+                    + "카카오 로그인이 설정되지 않은 서버에서는 503 OAUTH_NOT_CONFIGURED.")
+    @SecurityRequirements   // 비로그인 호출
+    @GetMapping("/kakao/authorize")
+    public ApiResponse<KakaoAuthorizeResponse> kakaoAuthorize(HttpServletResponse response) {
+
+        String state = oAuthStateService.generate();
+
+        // 콜백에서 대조할 수 있도록 서버가 만든 값을 쿠키에 남긴다. JS는 읽지 못한다.
+        cookieUtil.addCookie(
+                response,
+                OAuthStateService.STATE_COOKIE,
+                state,
+                kakaoOAuthProperties.stateTtl()
+        );
+
+        return ApiResponse.ok(new KakaoAuthorizeResponse(kakaoAuthService.authorizeUrl(state)));
+    }
+
+    @Operation(summary = "카카오 로그인 완료",
+            description = "콜백에서 받은 인가 코드와 state를 넘기면 ZIPICK Access Token과 Refresh Token 쿠키를 돌려준다. "
+                    + "응답 형식은 일반 로그인과 같다. 인가 코드와 state는 모두 1회용이라 같은 값으로 두 번 호출하면 실패한다. "
+                    + "state가 맞지 않으면 401 OAUTH_STATE_INVALID, 코드가 만료·재사용이면 400 OAUTH_CODE_INVALID, "
+                    + "카카오 장애면 502 OAUTH_PROVIDER_ERROR, 카카오 이메일이 이미 가입된 이메일이면 409 SOCIAL_EMAIL_ALREADY_REGISTERED.")
+    @SecurityRequirements   // 비로그인 호출
+    @PostMapping("/kakao/login")
+    public ApiResponse<LoginResponse> kakaoLogin(
+            @Valid @RequestBody KakaoLoginRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse response
+    ) {
+
+        String cookieState = cookieUtil.getCookieValue(httpRequest, OAuthStateService.STATE_COOKIE);
+
+        // 성공하든 실패하든 state는 한 번 쓰면 버린다. 같은 state로 다시 시도할 수 없게 한다.
+        cookieUtil.deleteCookie(response, OAuthStateService.STATE_COOKIE);
+
+        oAuthStateService.verify(cookieState, request.state());
+
+        TokenService.TokenPair tokenPair = kakaoAuthService.login(request.code());
+
+        cookieUtil.addCookie(
+                response,
+                CookieUtil.REFRESH_TOKEN_COOKIE,
+                tokenPair.refreshToken(),
+                jwtProperties.refreshTokenExpiration()
+        );
+
+        return ApiResponse.ok(new LoginResponse(tokenPair.accessToken()));
     }
 
     @Operation(summary = "로그아웃",

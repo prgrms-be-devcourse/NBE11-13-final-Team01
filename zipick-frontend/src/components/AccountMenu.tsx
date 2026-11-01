@@ -78,17 +78,12 @@ export default function AccountMenu({ user, onLogout }: { user: AuthUser; onLogo
           <span className={styles.avatar}><Icon name="user" size={22} /></span>
           <div className={styles.identity}>
             {/*
-              TODO(kakao-login):
-              카카오 로그인 도입 후 실제 인증 provider를 기준으로 가입 유형을 표시한다.
-              LOCAL → "일반 가입자", KAKAO → "카카오 가입자".
-
-              이메일 표시 정책:
-              1. 이메일이 제공되면 로그인 방식과 무관하게 실제 이메일 표시.
-              2. KAKAO 사용자에게 이메일이 없으면 "카카오 계정으로 로그인" 표시.
-              3. provider/email 정보를 임의로 추론하거나 가짜 이메일을 생성하지 않는다.
+              가입 유형과 이메일은 서버가 준 provider·email 을 그대로 쓴다.
+              카카오가 검증된 이메일을 주지 않으면 email 이 null 로 내려오며,
+              가짜 이메일을 만들지 않으므로 그 자리를 안내 문구로 채운다.
             */}
-            <div className={styles.name}>일반 가입자</div>
-            {user.email && <div className={styles.email}>{user.email}</div>}
+            <div className={styles.name}>{user.provider === 'KAKAO' ? '카카오 가입자' : '일반 가입자'}</div>
+            <div className={styles.email}>{user.email ?? '카카오 계정으로 로그인'}</div>
           </div>
         </div>
         <div className={styles.divider} />

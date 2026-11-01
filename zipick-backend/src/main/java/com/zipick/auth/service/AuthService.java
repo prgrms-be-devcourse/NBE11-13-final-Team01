@@ -4,6 +4,7 @@ import com.zipick.auth.dto.request.LoginRequest;
 import com.zipick.auth.dto.request.SignupRequest;
 import com.zipick.auth.dto.response.SignupResponse;
 import com.zipick.auth.userdetails.CustomUserDetails;
+import com.zipick.auth.userdetails.SocialAccountLoginException;
 import com.zipick.global.error.BusinessException;
 import com.zipick.global.error.ErrorCode;
 import com.zipick.user.entity.User;
@@ -63,6 +64,12 @@ public class AuthService {
             log.info("[AUTH] 로그인 성공 userId: {}", user.getId());
 
             return tokenPair;
+
+        } catch (SocialAccountLoginException e) {
+            // 카카오로 가입한 계정이다. 비밀번호를 몇 번 다시 입력해도 성공할 수 없으므로 원인을 알린다.
+            // (가입 API가 DUPLICATE_EMAIL로 이미 가입 여부를 알려주고 있어 노출되는 정보가 늘지 않는다)
+            log.info("[AUTH] 소셜 계정의 비밀번호 로그인 시도 provider: {}", e.getProvider());
+            throw new BusinessException(ErrorCode.SOCIAL_ACCOUNT_LOGIN);
 
         } catch (AuthenticationException e) {
             // 이메일이 없는 경우와 비밀번호가 틀린 경우를 구분해 알리지 않는다.

@@ -57,6 +57,9 @@ public class SecurityConfig {
                                 "/api/auth/email-verifications/**",
                                 "/api/auth/login",
                                 "/api/auth/reissue",
+                                // 카카오 로그인 시작·완료. 둘 다 비로그인 상태에서 호출한다
+                                "/api/auth/kakao/authorize",
+                                "/api/auth/kakao/login",
                                 "/error",
                                 "/actuator/**",
                                 // API 문서
