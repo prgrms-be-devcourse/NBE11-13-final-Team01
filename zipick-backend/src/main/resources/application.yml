@@ -59,6 +59,11 @@ kakao:
   oauth:
     # 카카오 디벨로퍼스에 등록한 값과 문자 단위로 같아야 한다.
     redirect-uri: ${KAKAO_OAUTH_REDIRECTURI:http://localhost:5173/oauth/kakao/callback}
+    # 추가로 요청할 동의항목. 비워 두면 카카오 앱 콘솔에 설정된 동의항목을 그대로 쓴다.
+    # ⚠️ 앱에 권한이 없는 항목을 적으면 카카오가 인가 요청 자체를 거부해 로그인이 막힌다.
+    # 카카오계정(이메일) 동의항목 권한을 받은 뒤에 account_email 로 켜면 된다
+    # (이메일은 선택 사항이라 못 받아도 회원번호만으로 가입된다).
+    scope: ${KAKAO_OAUTH_SCOPE:}
     auth-base-url: https://kauth.kakao.com
     api-base-url: https://kapi.kakao.com
     # state 쿠키 수명. 동의 화면에 머무는 시간을 고려하되 너무 길게 두지 않는다.

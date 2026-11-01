@@ -76,7 +76,7 @@ class KakaoSignupConcurrencyIntegrationTest extends PostgresRepositoryTestBase {
         kakaoAuthService = new KakaoAuthService(
                 client,
                 new KakaoOAuthProperties("client-id", "client-secret",
-                        "http://localhost:5173/oauth/kakao/callback", null, null, Duration.ofMinutes(5)),
+                        "http://localhost:5173/oauth/kakao/callback", null, null, null, Duration.ofMinutes(5)),
                 userRepository,
                 tokenService,
                 registrar);

@@ -42,15 +42,20 @@ public class KakaoOAuthClient {
         this.properties = properties;
     }
 
-    /** 사용자를 보낼 카카오 동의 화면 주소. redirect_uri 는 설정값으로 고정한다. */
+    /**
+     * 사용자를 보낼 카카오 동의 화면 주소. redirect_uri 는 설정값으로 고정한다.
+     *
+     * <p>scope 는 설정했을 때만 붙인다. 앱에 권한이 없는 동의항목을 scope 로 요청하면
+     * 카카오가 동의 화면 대신 오류를 돌려주기 때문이다(자세한 설명은 KakaoOAuthProperties#hasScope).
+     */
     public String authorizeUrl(String state) {
-        return properties.authBaseUrl() + "/oauth/authorize"
+        String url = properties.authBaseUrl() + "/oauth/authorize"
                 + "?response_type=code"
                 + "&client_id=" + encode(properties.clientId())
                 + "&redirect_uri=" + encode(properties.redirectUri())
-                + "&state=" + encode(state)
-                // 이메일은 받아 두되 사용자가 거부해도 로그인은 진행한다.
-                + "&scope=account_email";
+                + "&state=" + encode(state);
+
+        return properties.hasScope() ? url + "&scope=" + encode(properties.scope()) : url;
     }
 
     public String exchangeToken(String code) {

@@ -84,7 +84,7 @@ class AuthControllerTest {
         @Bean
         KakaoOAuthProperties kakaoOAuthProperties() {
             return new KakaoOAuthProperties("client-id", "client-secret",
-                    "http://localhost:5173/oauth/kakao/callback", null, null, Duration.ofMinutes(5));
+                    "http://localhost:5173/oauth/kakao/callback", null, null, null, Duration.ofMinutes(5));
         }
 
         @Bean

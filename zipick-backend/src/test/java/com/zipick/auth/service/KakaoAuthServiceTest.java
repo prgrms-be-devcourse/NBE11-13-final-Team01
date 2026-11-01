@@ -55,7 +55,7 @@ class KakaoAuthServiceTest {
     void setUp() {
         // 설정값은 record 라 목으로 만들지 않고 실제 값을 넣는다.
         kakaoAuthService = serviceWith(new KakaoOAuthProperties("client-id", "client-secret",
-                "http://localhost:5173/oauth/kakao/callback", null, null, Duration.ofMinutes(5)));
+                "http://localhost:5173/oauth/kakao/callback", null, null, null, Duration.ofMinutes(5)));
     }
 
     private KakaoAuthService serviceWith(KakaoOAuthProperties properties) {
@@ -186,7 +186,7 @@ class KakaoAuthServiceTest {
     @DisplayName("카카오 키가 없는 서버에서는 503으로 끊는다")
     void notConfigured() {
         KakaoAuthService unconfigured =
-                serviceWith(new KakaoOAuthProperties(null, null, null, null, null, null));
+                serviceWith(new KakaoOAuthProperties(null, null, null, null, null, null, null));
 
         assertThatThrownBy(() -> unconfigured.login(CODE))
                 .isInstanceOf(BusinessException.class)

@@ -19,6 +19,7 @@ public record KakaoOAuthProperties(
         String clientId,
         String clientSecret,
         String redirectUri,
+        String scope,
         String authBaseUrl,
         String apiBaseUrl,
         Duration stateTtl
@@ -36,6 +37,20 @@ public record KakaoOAuthProperties(
     /** 키가 없으면 카카오 로그인만 비활성화된다. 나머지 기능은 그대로 동작한다. */
     public boolean isConfigured() {
         return hasText(clientId) && !clientId.startsWith("YOUR_") && hasText(redirectUri);
+    }
+
+    /**
+     * 인가 요청에 scope 를 붙일지.
+     *
+     * <p>카카오는 <b>앱에 권한이 없는 동의항목을 scope 로 요청하면 인가 요청 자체를 거부</b>한다.
+     * 그래서 기본값은 "요청하지 않음"이다. scope 를 비워 두면 카카오 앱 콘솔에 설정된
+     * 동의항목이 그대로 쓰인다.
+     *
+     * <p>카카오계정(이메일) 동의항목 권한을 받은 뒤에 {@code kakao.oauth.scope: account_email} 을
+     * 켜면 된다. 이메일은 어차피 선택 사항이라, 받지 못해도 회원번호만으로 가입이 진행된다.
+     */
+    public boolean hasScope() {
+        return hasText(scope);
     }
 
     public boolean hasClientSecret() {
