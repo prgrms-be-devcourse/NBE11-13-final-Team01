@@ -1,6 +1,7 @@
 package com.zipick.auth.jwt;
 
 import com.zipick.auth.userdetails.CustomUserDetails;
+import com.zipick.user.entity.AuthProvider;
 import com.zipick.user.entity.Role;
 import com.zipick.user.entity.User;
 import io.jsonwebtoken.Claims;
@@ -29,6 +30,7 @@ public class JwtProvider {
     private static final String CLAIM_ID = "id";
     private static final String CLAIM_ROLE = "role";
     private static final String CLAIM_TOKEN_TYPE = "type";
+    private static final String CLAIM_PROVIDER = "provider";
 
     private final JwtProperties jwtProperties;
 
@@ -78,10 +80,20 @@ public class JwtProvider {
 
         return User.of(
                 claims.get(CLAIM_ID, Long.class),
+                // 소셜 계정은 이메일이 없을 수 있다. 그 경우 sub 클레임 자체가 들어가지 않아 null 이 된다.
                 claims.getSubject(),
                 null,
-                Role.valueOf(claims.get(CLAIM_ROLE, String.class))
+                Role.valueOf(claims.get(CLAIM_ROLE, String.class)),
+                readProvider(claims),
+                null
         );
+    }
+
+    // 카카오 로그인 도입 전에 발급된 토큰에는 provider 클레임이 없다.
+    // 만료(Access 1시간 / Refresh 7일)될 때까지 함께 돌아다니므로 LOCAL 로 보고 넘어간다.
+    private static AuthProvider readProvider(Claims claims) {
+        String provider = claims.get(CLAIM_PROVIDER, String.class);
+        return provider == null ? AuthProvider.LOCAL : AuthProvider.valueOf(provider);
     }
 
     // 인가 판단은 이메일(sub)이 아니라 변하지 않는 식별자로 한다.
@@ -114,6 +126,7 @@ public class JwtProvider {
                 .claim(CLAIM_ID, user.getId())
                 .claim(CLAIM_ROLE, user.getRole().name())
                 .claim(CLAIM_TOKEN_TYPE, tokenType.name())
+                .claim(CLAIM_PROVIDER, user.getProvider().name())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(validity)))
                 .signWith(secretKey, Jwts.SIG.HS256)

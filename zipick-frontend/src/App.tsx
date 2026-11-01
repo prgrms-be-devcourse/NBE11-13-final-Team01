@@ -10,6 +10,7 @@ import TunePage from './pages/TunePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import AdminCampaignPage from './pages/AdminCampaignPage';
+import OAuthCallbackPage from './pages/OAuthCallbackPage';
 
 /**
  * 탐색은 지도 한 화면에서 한다. 전체 공고 / 맞춤 추천은 별도 페이지가 아니라 `?mode=` 로 구분되는 두 모드다.
@@ -39,6 +40,11 @@ export default function App() {
   return (
     <Routes>
       <Route path="/landing" element={<LandingPage />} />
+      {/*
+        카카오 콜백. 헤더·게이트가 필요 없는 경유 화면이라 Layout 바깥에 둔다.
+        인가 코드를 토큰으로 바꾸자마자 replace 로 원래 화면으로 넘어간다.
+      */}
+      <Route path="/oauth/kakao/callback" element={<OAuthCallbackPage />} />
       <Route path="/houses/:houseId" element={<RedirectHouseToMap />} />
       <Route element={<Layout />}>
         <Route index element={<Navigate to="/landing" replace />} />

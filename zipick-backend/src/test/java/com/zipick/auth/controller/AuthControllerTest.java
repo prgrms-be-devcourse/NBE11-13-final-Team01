@@ -1,10 +1,14 @@
 package com.zipick.auth.controller;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -12,11 +16,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.zipick.auth.dto.request.LoginRequest;
 import com.zipick.auth.dto.request.SignupRequest;
+import com.zipick.auth.oauth.OAuthStateService;
 import com.zipick.auth.dto.response.EmailVerificationConfirmResponse;
 import com.zipick.auth.dto.response.EmailVerificationSendResponse;
 import com.zipick.auth.dto.response.SignupResponse;
 import com.zipick.auth.jwt.JwtProperties;
+import com.zipick.auth.oauth.KakaoOAuthProperties;
+import com.zipick.auth.oauth.OAuthStateService;
 import com.zipick.auth.service.AuthService;
+import com.zipick.auth.service.KakaoAuthService;
 import com.zipick.auth.service.EmailVerificationService;
 import com.zipick.auth.service.TokenService;
 import com.zipick.global.config.CookieProperties;
@@ -59,12 +67,24 @@ class AuthControllerTest {
     @MockitoBean
     private TokenService tokenService;
 
+    @MockitoBean
+    private KakaoAuthService kakaoAuthService;
+
+    @MockitoBean
+    private OAuthStateService oAuthStateService;
+
     @TestConfiguration
     static class TestConfig {
 
         @Bean
         CookieProperties cookieProperties() {
             return new CookieProperties(false, "Lax");
+        }
+
+        @Bean
+        KakaoOAuthProperties kakaoOAuthProperties() {
+            return new KakaoOAuthProperties("client-id", "client-secret",
+                    "http://localhost:5173/oauth/kakao/callback", null, null, Duration.ofMinutes(5));
         }
 
         @Bean
@@ -304,6 +324,75 @@ class AuthControllerTest {
                     .andExpect(jsonPath("$.success").value(false))
                     .andExpect(jsonPath("$.error.code").value("INVALID_REFRESH_TOKEN"))
                     .andExpect(header().string(HttpHeaders.SET_COOKIE, not(containsString("refreshToken="))));
+        }
+    }
+
+    @Nested
+    @DisplayName("카카오 로그인")
+    class Kakao {
+
+        @Test
+        @DisplayName("시작하면 동의 화면 주소를 주고 state를 HttpOnly 쿠키로 내려준다")
+        void authorize() throws Exception {
+            given(oAuthStateService.generate()).willReturn("generated-state");
+            given(kakaoAuthService.authorizeUrl("generated-state"))
+                    .willReturn("https://kauth.kakao.com/oauth/authorize?state=generated-state");
+
+            mockMvc.perform(get("/api/auth/kakao/authorize"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.authorizeUrl").value(containsString("kauth.kakao.com")))
+                    .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString(OAuthStateService.STATE_COOKIE)))
+                    .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")));
+        }
+
+        @Test
+        @DisplayName("성공하면 일반 로그인과 같은 형식(Access Token + Refresh 쿠키)으로 응답한다")
+        void login() throws Exception {
+            given(kakaoAuthService.login("auth-code"))
+                    .willReturn(new TokenService.TokenPair("access-token", "refresh-token"));
+
+            mockMvc.perform(post("/api/auth/kakao/login")
+                            .cookie(new Cookie(OAuthStateService.STATE_COOKIE, "state-value"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"code\": \"auth-code\", \"state\": \"state-value\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.accessToken").value("access-token"))
+                    // Set-Cookie 가 두 개 내려간다 (state 폐기 + Refresh Token). 첫 값만 보면 안 된다.
+                    .andExpect(header().stringValues(HttpHeaders.SET_COOKIE,
+                            hasItem(containsString("refreshToken=refresh-token"))))
+                    .andExpect(header().stringValues(HttpHeaders.SET_COOKIE,
+                            hasItem(containsString(OAuthStateService.STATE_COOKIE + "=;"))));
+
+            verify(oAuthStateService).verify("state-value", "state-value");
+        }
+
+        @Test
+        @DisplayName("state는 성공·실패와 관계없이 한 번 쓰면 쿠키에서 지운다")
+        void stateCookieIsAlwaysCleared() throws Exception {
+            willThrow(new BusinessException(ErrorCode.OAUTH_STATE_INVALID))
+                    .given(oAuthStateService).verify(any(), any());
+
+            mockMvc.perform(post("/api/auth/kakao/login")
+                            .cookie(new Cookie(OAuthStateService.STATE_COOKIE, "stale-state"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"code\": \"auth-code\", \"state\": \"attacker-state\"}"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.error.code").value("OAUTH_STATE_INVALID"))
+                    // Max-Age=0 으로 덮어써 같은 state 를 다시 쓸 수 없게 한다
+                    .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")));
+
+            verify(kakaoAuthService, never()).login(any());
+        }
+
+        @Test
+        @DisplayName("state 검증 전에는 카카오를 호출하지 않는다")
+        void codeIsRequired() throws Exception {
+            mockMvc.perform(post("/api/auth/kakao/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"code\": \"\", \"state\": \"state-value\"}"))
+                    .andExpect(status().isBadRequest());
+
+            verify(kakaoAuthService, never()).login(any());
         }
     }
 }

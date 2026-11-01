@@ -90,6 +90,13 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       MYHOME_API_SERVICEKEY: ${MYHOME_API_KEY:-}
       KAKAO_LOCAL_RESTAPIKEY: ${KAKAO_REST_API_KEY:-}
+      # 카카오 로그인(OAuth). 위 KAKAO_LOCAL_RESTAPIKEY(지도·주소 검색)와 용도가 다르다.
+      # 같은 카카오 앱을 쓰면 CLIENTID 는 KAKAO_REST_API_KEY 와 같은 값이다.
+      # 비어 있으면 카카오 로그인만 꺼지고(503) 이메일 로그인은 그대로 동작한다.
+      KAKAO_OAUTH_CLIENTID: ${KAKAO_OAUTH_CLIENT_ID:-}
+      KAKAO_OAUTH_CLIENTSECRET: ${KAKAO_OAUTH_CLIENT_SECRET:-}
+      # 카카오 디벨로퍼스에 등록한 Redirect URI 와 문자 단위로 같아야 한다.
+      KAKAO_OAUTH_REDIRECTURI: ${APP_ORIGIN}/oauth/kakao/callback
       # AI 맞춤 신청 준비 가이드 (Gemini). 키가 비어 있으면 이 기능만 꺼지고 나머지는 정상 동작한다.
       # 키는 공통(gemini.api.key), 모델·호출 상한은 기능 전용 설정이라 이름이 다르다.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}

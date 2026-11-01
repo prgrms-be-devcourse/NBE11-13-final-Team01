@@ -51,6 +51,19 @@ cors:
   allowed-origins:
     - http://localhost:5173
 
+# 카카오 로그인(OAuth 2.0). 지도·장소 검색용 kakao.local.* 과는 다른 설정이다.
+#   client-id = 카카오 앱의 REST API 키 (같은 앱을 쓰면 kakao.local.rest-api-key 와 같은 값)
+# client-id / client-secret 은 여기 적지 않는다.
+# 로컬은 config/application-secret.yml, 운영은 환경 변수(KAKAO_OAUTH_CLIENTID 등)로 넣는다.
+kakao:
+  oauth:
+    # 카카오 디벨로퍼스에 등록한 값과 문자 단위로 같아야 한다.
+    redirect-uri: ${KAKAO_OAUTH_REDIRECTURI:http://localhost:5173/oauth/kakao/callback}
+    auth-base-url: https://kauth.kakao.com
+    api-base-url: https://kapi.kakao.com
+    # state 쿠키 수명. 동의 화면에 머무는 시간을 고려하되 너무 길게 두지 않는다.
+    state-ttl: 5m
+
 cookie:
   # 기본값은 안전한 쪽으로 둔다. 로컬은 HTTP라 application-local.yml에서 false로 내린다.
   secure: true

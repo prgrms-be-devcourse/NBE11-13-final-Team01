@@ -97,6 +97,18 @@
 .errorNotice { border-color: #f6dce0; background: #fff4f5; color: #9d2937; }
 .submit { display: flex; align-items: center; justify-content: center; width: 100%; height: 52px; margin-top: 27px; border: 0; border-radius: 11px; padding: 0 18px; background: var(--zipick-blue); color: var(--zipick-white); font-size: 16px; font-weight: 700; letter-spacing: -.02em; transition: background .15s; }
 .submit:hover:not(:disabled) { background: var(--zipick-blue-strong); }
+
+/* 카카오 로그인. 공식 버튼 가이드의 노란 배경(#FEE500) + 검정 심벌·문구(85% 불투명)를 따른다.
+   브랜드 색이라 서비스 토큰을 쓰지 않는다. 높이·radius 만 .submit 과 맞춰 줄을 세운다. */
+.socialDivider { display: flex; align-items: center; gap: 12px; margin-top: 22px; color: var(--zipick-soft); font-size: 12px; }
+.socialDivider::before, .socialDivider::after { flex: 1; height: 1px; background: var(--zipick-line); content: ''; }
+.kakaoButton { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 52px; margin-top: 14px; border: 0; border-radius: 11px; padding: 0 18px; background: #fee500; color: rgba(0, 0, 0, .85); font-size: 16px; font-weight: 700; letter-spacing: -.02em; transition: filter .15s; }
+.kakaoButton:hover:not(:disabled) { filter: brightness(.96); }
+
+/* 카카오 콜백 경유 화면 */
+.callbackTitle { margin: 0 0 4px; color: var(--zipick-ink); font-size: 20px; font-weight: 800; letter-spacing: -.04em; text-align: center; }
+.callbackStatus { margin: 0; padding: 18px 0; color: var(--zipick-body); font-size: 14px; text-align: center; }
+
 .alternative { margin: 27px 0 0; color: var(--zipick-body); text-align: center; font-size: 13px; }
 .alternative a { margin-left: 6px; color: var(--zipick-blue); font-weight: 750; }
 .alternative a:hover, .footer a:hover { text-decoration: underline; }
@@ -127,5 +139,5 @@
   .verifyBox { padding: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .panel input, .submit { transition: none; }
+  .panel input, .submit, .kakaoButton { transition: none; }
 }

@@ -8,6 +8,7 @@ import { useAuth } from '../hooks/useAuth';
 import { closeGate } from '../hooks/useAuthGate';
 import { DEFAULT_LANDING, type AuthNavState } from './LoginPage';
 import { AuthFooter, AuthHeading } from '../components/AuthCard';
+import KakaoLoginButton from '../components/KakaoLoginButton';
 import styles from '../features/auth/AuthPage.module.css';
 
 // 서버 SignupRequest의 검증 규칙을 그대로 옮겼다. 규칙이 바뀌면 양쪽을 함께 고쳐야 한다.
@@ -288,6 +289,9 @@ export default function SignupPage() {
       <button className={styles.submit} type="submit" disabled={busy}>
         {busy ? '가입 중…' : '회원가입'}
       </button>
+
+      {/* 카카오는 가입·로그인 진입점이 같다. 별도 가입 폼이나 추가 정보 입력 화면을 두지 않는다. */}
+      <KakaoLoginButton disabled={busy} />
       <p className={styles.alternative}>
         이미 계정이 있으신가요?{' '}
         <Link to="/login" state={state?.from ? { from: state.from } : undefined}>로그인</Link>
