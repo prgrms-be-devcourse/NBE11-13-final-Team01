@@ -17,6 +17,17 @@ import static org.mockito.Mockito.when;
 class HousingDetailEnricherTest {
 
     @Test
+    void 호수와_공급수가_확인되지_않으면_임의로_일호를_만들지_않는다() {
+        HousingDetailSource source = mock(HousingDetailSource.class);
+        NoticeResponse notice = notice(List.of());
+        when(source.supports(notice)).thenReturn(true);
+        when(source.extract(notice)).thenReturn(new HousingDetailResult(List.of(unit("u", null, 1, null)), List.of(), Map.of()));
+        var supply = new HousingDetailEnricher(List.of(source)).enrich(notice).houses().getFirst().supplies().getFirst();
+        assertThat(supply.supplyCount()).isNull();
+        assertThat(supply.supplyHouseCount()).isNull();
+    }
+
+    @Test
     void mergesDetailedUnitsMediaConditionsAndAttachmentsByAddress() {
         HousingDetailSource source = mock(HousingDetailSource.class);
         NoticeResponse notice = notice(List.of(new NoticeHousingResponse(
@@ -109,6 +120,7 @@ class HousingDetailEnricherTest {
         assertThat(enriched.houses()).hasSize(1);
         assertThat(enriched.houses().getFirst().complexName()).isNull();
         assertThat(enriched.attachments()).isEmpty();
+        assertThat(enriched.preservesExistingHousings()).isTrue();
     }
 
     private NoticeResponse notice(List<NoticeHousingResponse> housings) {

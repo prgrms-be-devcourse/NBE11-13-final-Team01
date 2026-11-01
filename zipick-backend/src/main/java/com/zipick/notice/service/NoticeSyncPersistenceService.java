@@ -24,6 +24,7 @@ import com.zipick.notice.support.AddressNormalizer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -45,6 +46,8 @@ import java.util.Set;
 
 @Service
 public class NoticeSyncPersistenceService {
+
+    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private static final int MISSING_THRESHOLD = 2;
     private static final int NOTICE_MISSING_THRESHOLD = 1;
@@ -268,9 +271,15 @@ public class NoticeSyncPersistenceService {
             if (!StringUtils.hasText(sourceHousing.fullAddress())) {
                 continue;
             }
-            Housing housing = existingHousings.get(sourceHousing.sourceHousingKey());
+            Housing housing = findHousingByStableAiSupplyKey(notice, sourceHousing);
+            if (housing == null) housing = existingHousings.get(sourceHousing.sourceHousingKey());
             if (housing == null) {
                 housing = findHousingByAddress(existingHousings.values(), sourceHousing);
+            }
+            if (housing == null) {
+                var matches = existingHousings.values().stream().filter(Housing::isActive)
+                        .filter(existing -> sameVerifiedComplex(existing, sourceHousing)).toList();
+                if (matches.size() == 1) housing = matches.getFirst();
             }
             if (housing == null) {
                 housing = new Housing(
@@ -286,7 +295,7 @@ public class NoticeSyncPersistenceService {
                     sourceHousing.complexName(),
                     sourceHousing.provinceName(),
                     sourceHousing.districtName(),
-                    sourceHousing.fullAddress(),
+                    preferSpecificAddress(housing.getAddress(), sourceHousing.fullAddress()),
                     // normalized_address 는 **지오코딩이 확인한 표준 주소**를 담는 칸이다(Housing#enrichAddress).
                     // 수집 단계에는 그런 주소가 없다. 예전에는 중복 비교용 canonicalize() 값을 여기 넣었는데,
                     // 그러면 같은 주택을 다시 수집할 때 "경북 영주시 대동로34번길 23-3" 이
@@ -295,8 +304,8 @@ public class NoticeSyncPersistenceService {
                     // 중복 판정은 addressKeys() 가 그때그때 계산하므로 이 칸을 쓰지 않는다.
                     null,
                     sourceHousing.roadName(),
-                    sourceHousing.lotAddress(),
-                    sourceHousing.roadAddress(),
+                    preferSpecificAddress(housing.getLotAddress(), sourceHousing.lotAddress()),
+                    preferSpecificAddress(housing.getRoadAddress(), sourceHousing.roadAddress()),
                     sourceHousing.legalDongName(),
                     sourceHousing.heatingMethodName(),
                     parseInteger(sourceHousing.totalHouseholdCount()),
@@ -322,6 +331,16 @@ public class NoticeSyncPersistenceService {
         }
     }
 
+    private Housing findHousingByStableAiSupplyKey(Notice notice, NoticeHousingResponse sourceHousing) {
+        String key = sourceHousing.supplies().stream().map(NoticeSupplyResponse::sourceSupplyKey)
+                .filter(value -> value != null && value.startsWith("GEMINI:")).findFirst().orElse(null);
+        if (key == null) return null;
+        var matches = housingSupplyRepository.findAllByHousingNoticeIdAndSourceSupplyKey(notice.getId(), key).stream()
+                .filter(HousingSupply::isActive).map(HousingSupply::getHousing).filter(Housing::isActive).distinct().toList();
+        if (matches.size() > 1) throw new IllegalStateException("동일 AI 공급 키가 여러 활성 주택에 존재합니다: " + key);
+        return matches.isEmpty() ? null : matches.getFirst();
+    }
+
     private Housing findHousingByAddress(
             java.util.Collection<Housing> existingHousings,
             NoticeHousingResponse sourceHousing
@@ -341,6 +360,37 @@ public class NoticeSyncPersistenceService {
             }
         }
         return null;
+    }
+
+    static boolean sameVerifiedComplex(Housing existing, NoticeHousingResponse source) {
+        String a = canonicalComplex(existing.getName());
+        String b = canonicalComplex(source.complexName());
+        if (a.length() < 6 || !a.matches(".*\\d.*") || !a.equals(b)) return false;
+        var regionA = com.zipick.notice.support.RegionNormalizer.normalize(existing.getProvinceName(),
+                existing.getDistrictName(), existing.getAddress(), existing.getNormalizedAddress());
+        var regionB = com.zipick.notice.support.RegionNormalizer.normalize(source.provinceName(),
+                source.districtName(), source.fullAddress(), null);
+        if (!StringUtils.hasText(regionA.province()) || !StringUtils.hasText(regionA.district())
+                || !regionA.equals(regionB)) return false;
+        String oldAddress = existing.getAddress(), newAddress = source.fullAddress();
+        if (HousingGeocodingService.isPreciseAddressQuery(oldAddress)
+                && HousingGeocodingService.isPreciseAddressQuery(newAddress)) {
+            return java.util.Objects.equals(AddressNormalizer.canonicalize(oldAddress), AddressNormalizer.canonicalize(newAddress));
+        }
+        return true;
+    }
+
+    private static String canonicalComplex(String name) {
+        if (!StringUtils.hasText(name)) return "";
+        return name.toUpperCase(java.util.Locale.ROOT).replace("블록", "BL")
+                .replaceAll("[^0-9A-Z가-힣]", "")
+                .replaceFirst("(?:신혼희망타운)?행복주택$", "");
+    }
+
+    private static String preferSpecificAddress(String existing, String incoming) {
+        if (HousingGeocodingService.isPreciseAddressQuery(existing)
+                && !HousingGeocodingService.isPreciseAddressQuery(incoming)) return existing;
+        return incoming;
     }
 
     private Set<String> addressKeys(String... addresses) {
@@ -389,6 +439,14 @@ public class NoticeSyncPersistenceService {
             if (supply == null) {
                 supply = new HousingSupply(housing, sourceSupply.sourceSupplyKey(), sourceSupply.externalHouseId());
             }
+            if (sourceSupply.monthlyRent() == null && sourceSupply.sourceSupplyKey().startsWith("GEMINI:")) {
+                Long fee = verifiedDormitoryFee(sourceSupply.rawPayload());
+                supply.clearMonthlyRentIfEqualTo(fee);
+            }
+            if (sourceSupply.unitNumber() == null && sourceSupply.sourceSupplyKey().startsWith("GEMINI:")
+                    && hasVerifiedNoUnitNumber(sourceSupply.rawPayload())) supply.clearUnitNumber();
+            if (sourceSupply.supplyCount() == null && sourceSupply.sourceSupplyKey().startsWith("GEMINI:")
+                    && hasVerifiedSharedSupplyCount(sourceSupply.rawPayload())) supply.clearSupplyCounts();
             supply.synchronize(
                     sourceSupply.externalHouseId(),
                     sourceSupply.houseTypeName(),
@@ -429,6 +487,43 @@ public class NoticeSyncPersistenceService {
                 counters.inactiveSupplies++;
             }
         }
+    }
+
+    static Long verifiedDormitoryFee(String payload) {
+        if (payload == null || payload.isBlank()) return null;
+        try {
+            var fee = JSON.readTree(payload).path("verifiedDormitoryFee");
+            return fee.path("page").asInt(0) > 0 && !fee.path("evidence").asText("").isBlank()
+                    && fee.path("amount").isNumber() ? fee.path("amount").asLong() : null;
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    static boolean hasVerifiedNoUnitNumber(String payload) {
+        if (payload == null || payload.isBlank()) return false;
+        try { return containsVerifiedNoUnitNumber(JSON.readTree(payload), 0); }
+        catch (RuntimeException exception) { return false; }
+    }
+
+    public static boolean hasVerifiedSharedSupplyCount(String payload) {
+        if (payload == null || payload.isBlank()) return false;
+        try { return containsVerifiedSharedSupplyCount(JSON.readTree(payload), 0); }
+        catch (RuntimeException exception) { return false; }
+    }
+
+    private static boolean containsVerifiedSharedSupplyCount(tools.jackson.databind.JsonNode node, int depth) {
+        if (node == null || depth > 8) return false;
+        return node.path("verifiedSharedSupplyCount").asLong(0) > 0
+                || containsVerifiedSharedSupplyCount(node.path("primary"), depth + 1)
+                || containsVerifiedSharedSupplyCount(node.path("supplement"), depth + 1);
+    }
+
+    private static boolean containsVerifiedNoUnitNumber(tools.jackson.databind.JsonNode node, int depth) {
+        if (node == null || depth > 8) return false;
+        return node.path("verifiedNoUnitNumber").asBoolean(false)
+                || containsVerifiedNoUnitNumber(node.path("primary"), depth + 1)
+                || containsVerifiedNoUnitNumber(node.path("supplement"), depth + 1);
     }
 
     private void synchronizeSupplyConditions(

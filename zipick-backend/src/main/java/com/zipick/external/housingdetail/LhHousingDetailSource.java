@@ -103,10 +103,26 @@ public class LhHousingDetailSource implements HousingDetailSource {
         List<DetailedHousingUnit> embeddedUnits = extractEmbeddedJson(html);
         AttachmentExtraction extracted = extractAttachments(notice, detailUri, attachments);
         List<DetailedHousingUnit> attachmentUnits = extracted.units();
+        boolean ambiguousUnitsExcluded = false;
+        if ((geminiSupport == null || !geminiSupport.enabled()) && !notice.houses().isEmpty() && embeddedUnits.isEmpty()) {
+            int countBefore = attachmentUnits.size();
+            attachmentUnits = attachmentUnits.stream()
+                    .filter(unit -> isTrustedHousingListUnit(unit)
+                            || notice.houses().stream().anyMatch(housing ->
+                                    java.util.Objects.equals(AddressNormalizer.canonicalize(housing.fullAddress()),
+                                            AddressNormalizer.canonicalize(unit.address())))
+                            || (unit.rawPayload() != null && unit.rawPayload().matches(".*(?:건설위치|공급위치|주택단지\\s*위치|소재지).*")))
+                    .toList();
+            ambiguousUnitsExcluded = attachmentUnits.size() < countBefore;
+            if (ambiguousUnitsExcluded) {
+                log.warn("출처가 불명확한 공고문 주소를 제외하고 다음 실행에서 재확인합니다: noticeId={}", notice.noticeId());
+            }
+        }
         List<NoticeAttachmentResponse> planAssets = mergeAttachments(
                 extractAttachmentMetadata(detailUri, attachments),
                 extractPlanAssets(detailUri, html, attachments)
         );
+        planAssets = preserveDocumentAttributes(planAssets, extracted.documentAttributes());
         Map<String, List<DetailedHousingMedia>> mediaByUnitKey = associateMedia(
                 embeddedUnits,
                 extractHousingMedia(detailUri, html)
@@ -115,8 +131,8 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 mergeAttachmentDetails(embeddedUnits, attachmentUnits),
                 planAssets,
                 mediaByUnitKey,
-                extracted.skipped(),
-                extracted.checkpoints()
+                extracted.skipped() || ambiguousUnitsExcluded,
+                ambiguousUnitsExcluded ? List.of() : extracted.checkpoints()
         );
     }
 
@@ -269,23 +285,41 @@ public class LhHousingDetailSource implements HousingDetailSource {
             List<DetailedHousingUnit> attachments
     ) {
         List<DetailedHousingUnit> merged = new ArrayList<>(embedded);
+        Map<String, java.util.Set<Integer>> matchedAiRows = new LinkedHashMap<>();
         for (DetailedHousingUnit attachment : attachments) {
             if (!StringUtils.hasText(attachment.address())) {
                 continue;
             }
             int matchingIndex = findMatchingUnitIndex(merged, attachment);
+            String aiDocument = aiDocumentKey(attachment.sourceUnitKey());
+            if (aiDocument != null && matchingIndex >= 0) {
+                String matchedKey = merged.get(matchingIndex).sourceUnitKey();
+                boolean differentAiRow = aiDocument.equals(aiDocumentKey(matchedKey))
+                        && !java.util.Objects.equals(matchedKey, attachment.sourceUnitKey());
+                if (differentAiRow || matchedAiRows.getOrDefault(aiDocument, java.util.Set.of()).contains(matchingIndex)) {
+                    matchingIndex = -1;
+                }
+            }
             if (matchingIndex < 0) {
                 // 상세페이지 JSON이 이미 주택을 제공하는 경우 일반 공고문에서 정규식으로
                 // 발견한 주소를 별도 주택으로 만들지 않는다. 구조화된 엑셀 또는 명시적인
                 // 주택목록 문서만 JSON에 없는 주택을 추가할 수 있다.
                 if (embedded.isEmpty() || isTrustedHousingListUnit(attachment)) {
                     merged.add(attachment);
+                    if (aiDocument != null) matchedAiRows.computeIfAbsent(aiDocument, ignored -> new java.util.HashSet<>()).add(merged.size() - 1);
                 }
             } else {
                 merged.set(matchingIndex, mergeAttachmentDetail(merged.get(matchingIndex), attachment));
+                if (aiDocument != null) matchedAiRows.computeIfAbsent(aiDocument, ignored -> new java.util.HashSet<>()).add(matchingIndex);
             }
         }
         return merged.stream().map(this::removeInternalTrustMarker).toList();
+    }
+
+    private String aiDocumentKey(String key) {
+        if (!StringUtils.hasText(key) || !key.startsWith("GEMINI:")) return null;
+        int separator = key.lastIndexOf('/');
+        return separator < 0 ? key : key.substring(0, separator);
     }
 
     private boolean isTrustedHousingListUnit(DetailedHousingUnit unit) {
@@ -293,7 +327,8 @@ public class LhHousingDetailSource implements HousingDetailSource {
         return StringUtils.hasText(key)
                 && (key.startsWith("LH_FILE:")
                 || key.startsWith("LH_PDF_LIST:")
-                || key.startsWith("LH_HWP_LIST:"));
+                  || key.startsWith("LH_HWP_LIST:")
+                  || key.startsWith("GEMINI:"));
     }
 
     private DetailedHousingUnit removeInternalTrustMarker(DetailedHousingUnit unit) {
@@ -331,6 +366,22 @@ public class LhHousingDetailSource implements HousingDetailSource {
             }
         }
 
+        // 건물명이나 괄호 뒤의 부가 설명이 달라도 도로명·건물번호와 호수가 같으면 같은 행입니다.
+        String road = roadAddressKey(candidate.address());
+        String unit = normalizeUnitNumber(candidate.unitNumber());
+        if (road != null && !unit.isEmpty()) {
+            List<Integer> matches = new ArrayList<>();
+            for (int index = 0; index < existing.size(); index++) {
+                DetailedHousingUnit current = existing.get(index);
+                if (road.equals(roadAddressKey(current.address()))
+                        && unit.equals(normalizeUnitNumber(current.unitNumber()))
+                        && compatibleBuildingDong(current.buildingDong(), candidate.buildingDong())) {
+                    matches.add(index);
+                }
+            }
+            if (matches.size() == 1) return matches.getFirst();
+        }
+
         String addressKey = AddressNormalizer.canonicalize(candidate.address());
         List<Integer> sameAddress = new ArrayList<>();
         for (int index = 0; index < existing.size(); index++) {
@@ -347,9 +398,27 @@ public class LhHousingDetailSource implements HousingDetailSource {
         return -1;
     }
 
+    private String roadAddressKey(String address) {
+        if (!StringUtils.hasText(address)) return null;
+        Matcher matcher = Pattern.compile("^(.+?(?:대로|로|길)(?:\\s*\\d+번길)?\\s+\\d+(?:-\\d+)?)")
+                .matcher(address.trim());
+        return matcher.find() ? AddressNormalizer.canonicalize(matcher.group(1)) : null;
+    }
+
+    private boolean compatibleBuildingDong(String first, String second) {
+        if (!StringUtils.hasText(first) || !StringUtils.hasText(second)) return true;
+        return first.replaceAll("[\\s동]", "").equalsIgnoreCase(second.replaceAll("[\\s동]", ""));
+    }
+
     private DetailedHousingUnit mergeAttachmentDetail(
             DetailedHousingUnit embedded,
             DetailedHousingUnit attachment
+    ) {
+        return mergeAttachmentDetail(embedded, attachment, false);
+    }
+
+    private DetailedHousingUnit mergeAttachmentDetail(
+            DetailedHousingUnit embedded, DetailedHousingUnit attachment, boolean preferPrimaryConditions
     ) {
         if (attachment == null) {
             return embedded;
@@ -370,7 +439,21 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 firstText(embedded.supplyType(), attachment.supplyType()),
                 firstValue(embedded.rentDeposit(), attachment.rentDeposit()),
                 firstValue(embedded.monthlyRent(), attachment.monthlyRent()),
-                mergeRawPayload(embedded.rawPayload(), attachment.rawPayload())
+                  mergeRawPayload(embedded.rawPayload(), attachment.rawPayload()),
+                  firstText(embedded.lotAddress(), attachment.lotAddress()),
+                  firstText(embedded.roadAddress(), attachment.roadAddress()),
+                  firstValue(embedded.sourceRowNumber(), attachment.sourceRowNumber()),
+                  firstText(embedded.supplyStatus(), attachment.supplyStatus()),
+                  firstText(embedded.nearbySubwayStation(), attachment.nearbySubwayStation()),
+                  firstValue(embedded.subwayWalkDistanceKm(), attachment.subwayWalkDistanceKm()),
+                  firstValue(embedded.elevatorAvailable(), attachment.elevatorAvailable()),
+                  firstValue(embedded.communityFacilityAvailable(), attachment.communityFacilityAvailable()),
+                  firstValue(embedded.totalParkingSpaces(), attachment.totalParkingSpaces()),
+                  firstValue(embedded.mechanicalParkingAvailable(), attachment.mechanicalParkingAvailable()),
+                  firstValue(embedded.mechanicalParkingSpaces(), attachment.mechanicalParkingSpaces()),
+                  firstValue(embedded.supplyCount(), attachment.supplyCount()),
+                  preferPrimaryConditions && !embedded.rentalConditions().isEmpty() ? embedded.rentalConditions()
+                          : !attachment.rentalConditions().isEmpty() ? attachment.rentalConditions() : embedded.rentalConditions()
         );
     }
 
@@ -416,7 +499,11 @@ public class LhHousingDetailSource implements HousingDetailSource {
     }
 
     private record AttachmentExtraction(List<DetailedHousingUnit> units, boolean skipped,
-            List<com.zipick.notice.dto.ParseCheckpoint> checkpoints) { }
+            List<com.zipick.notice.dto.ParseCheckpoint> checkpoints,
+            Map<String, List<Map<String, Object>>> documentAttributes) { }
+    private record ParsedAttachment(List<DetailedHousingUnit> units, boolean aiComplete, List<Map<String, Object>> attributes) {
+        ParsedAttachment(List<DetailedHousingUnit> units, boolean aiComplete) { this(units, aiComplete, List.of()); }
+    }
 
     private AttachmentExtraction extractAttachments(
             NoticeResponse notice,
@@ -425,6 +512,7 @@ public class LhHousingDetailSource implements HousingDetailSource {
     ) {
         List<DetailedHousingUnit> extracted = new ArrayList<>();
         List<com.zipick.notice.dto.ParseCheckpoint> checkpoints = new ArrayList<>();
+        Map<String, List<Map<String, Object>>> documentAttributes = new LinkedHashMap<>();
         boolean skipped = false;
         List<LhAttachment> supported = attachments.stream()
                 .filter(this::isSupportedDocument)
@@ -436,18 +524,32 @@ public class LhHousingDetailSource implements HousingDetailSource {
                     byte[] bytes = documentClient.getBytes(downloadUri);
                     String key = "LH:" + shortHash(notice.noticeId() + ":" + attachment.fileId()) + ":"
                             + DocumentFingerprint.sha256(bytes);
-                    boolean cacheEnabled = historyRepository != null && (geminiSupport == null || !geminiSupport.enabled());
-                    if (cacheEnabled && historyRepository.findByDocumentKeyAndParserVersion(key, "LH_DOCUMENT_V2")
+                    boolean aiEnabled = geminiSupport != null && geminiSupport.enabled();
+                    boolean pdf = attachment.fileName().toLowerCase(Locale.ROOT).endsWith(".pdf");
+                    boolean cacheEnabled = historyRepository != null;
+                    boolean spreadsheet = attachment.fileName().toLowerCase(Locale.ROOT).matches(".*\\.(xlsx|xls)$");
+                    String parserVersion = aiEnabled && pdf ? "LH_" + geminiSupport.parserVersion()
+                            : spreadsheet ? "LH_SPREADSHEET_V3" : "LH_DOCUMENT_V4";
+                    if (!(aiEnabled && com.zipick.external.ai.AiReprocessingScope.includes(notice.noticeId()))
+                            && cacheEnabled && historyRepository.findByDocumentKeyAndParserVersion(key, parserVersion)
                             .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent()) {
                         skipped = true;
                         log.info("LH 변경 없는 첨부 재파싱 생략: fileId={}", attachment.fileId());
                         break;
                     }
-                    List<DetailedHousingUnit> units = parseAttachment(notice, attachment, bytes);
+                    ParsedAttachment parsed = parseAttachment(notice, attachment, bytes);
+                    List<DetailedHousingUnit> units = parsed.units();
+                    if (!parsed.attributes().isEmpty()) documentAttributes.put("LH_FILE:" + attachment.fileId(), parsed.attributes());
+                    if (units.isEmpty() && isPamphlet(attachment.fileName()) && !extracted.isEmpty()) {
+                        preservePamphletAttributes(extracted, parsed.attributes());
+                    }
                     if (!units.isEmpty()) {
-                        extracted.addAll(units);
-                        if (cacheEnabled) checkpoints.add(new com.zipick.notice.dto.ParseCheckpoint(key,
-                                "LH_DOCUMENT_V2", bytes.length, units.size()));
+                        if (isPamphlet(attachment.fileName())) mergePamphletUnits(extracted, units);
+                        else extracted.addAll(units);
+                        if (cacheEnabled && (!aiEnabled || !pdf || parsed.aiComplete())) {
+                            checkpoints.add(new com.zipick.notice.dto.ParseCheckpoint(key,
+                                    parserVersion, bytes.length, units.size()));
+                        }
                         log.info("LH 첨부 주택목록 선택: fileId={}, fileName={}, units={}",
                                 attachment.fileId(), attachment.fileName(), units.size());
                         break;
@@ -459,7 +561,23 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 }
             }
         }
-        return new AttachmentExtraction(List.copyOf(extracted), skipped, List.copyOf(checkpoints));
+        return new AttachmentExtraction(List.copyOf(extracted), skipped, List.copyOf(checkpoints), Map.copyOf(documentAttributes));
+    }
+
+    List<NoticeAttachmentResponse> preserveDocumentAttributes(List<NoticeAttachmentResponse> attachments,
+            Map<String, List<Map<String, Object>>> attributes) {
+        return attachments.stream().map(attachment -> {
+            var values = attributes.get(attachment.sourceKey());
+            if (values == null || values.isEmpty()) return attachment;
+            Map<String, Object> payload = new LinkedHashMap<>();
+            if (StringUtils.hasText(attachment.rawPayload())) {
+                payload.put("previousPayload", JSON_MAPPER.readTree(attachment.rawPayload()));
+            }
+            payload.put("documentAdditionalAttributes", values);
+            String raw = JSON_MAPPER.writeValueAsString(payload);
+            return new NoticeAttachmentResponse(attachment.sourceKey(), attachment.attachmentType(),
+                    attachment.fileName(), attachment.sourceUrl(), raw);
+        }).toList();
     }
 
     private List<NoticeAttachmentResponse> extractPlanAssets(
@@ -622,13 +740,22 @@ public class LhHousingDetailSource implements HousingDetailSource {
 
     private boolean isSupportedDocument(LhAttachment attachment) {
         String name = attachment.fileName().toLowerCase(Locale.ROOT);
+        if (isConsentFormOnly(name)) return false;
         return name.endsWith(".xlsx") || name.endsWith(".xls")
                 || name.endsWith(".pdf") || name.endsWith(".hwp") || name.endsWith(".hwpx");
+    }
+
+    static boolean isConsentFormOnly(String name) {
+        if (name == null) return false;
+        String compact = name.replaceAll("\\s+", "");
+        return compact.contains("동의서") && !compact.contains("공고")
+                && !compact.contains("주택목록") && !compact.contains("공급목록");
     }
 
     private int attachmentPriority(LhAttachment attachment) {
         String name = attachment.fileName().toLowerCase(Locale.ROOT);
         int score = name.contains("상세") ? 30 : 0;
+        if (isPamphlet(name)) score -= 20;
         if (name.endsWith(".xlsx")) {
             return score + 300;
         }
@@ -641,32 +768,71 @@ public class LhHousingDetailSource implements HousingDetailSource {
         return score + 100;
     }
 
-    private List<DetailedHousingUnit> parseAttachment(
+    private boolean isPamphlet(String fileName) {
+        return fileName != null && fileName.matches(".*(?:팸플릿|팜플렛|팸플렛|리플릿|리플렛).*");
+    }
+
+    void preservePamphletAttributes(List<DetailedHousingUnit> units, List<Map<String, Object>> attributes) {
+        if (units.isEmpty() || attributes == null || attributes.isEmpty()) return;
+        var documentAttributes = attributes.stream().filter(value -> "DOCUMENT".equals(value.get("scope"))).toList();
+        if (documentAttributes.isEmpty()) return;
+        DetailedHousingUnit u = units.getFirst();
+        String supplement = JSON_MAPPER.writeValueAsString(Map.of("documentAdditionalAttributes", documentAttributes));
+        units.set(0, new DetailedHousingUnit(u.sourceUnitKey(), u.complexName(), u.provinceName(), u.districtName(),
+                u.address(), u.buildingDong(), u.unitNumber(), u.floor(), u.exclusiveArea(), u.roomCount(),
+                u.housingType(), u.supplyType(), u.rentDeposit(), u.monthlyRent(), mergeRawPayload(u.rawPayload(), supplement),
+                u.lotAddress(), u.roadAddress(), u.sourceRowNumber(), u.supplyStatus(), u.nearbySubwayStation(),
+                u.subwayWalkDistanceKm(), u.elevatorAvailable(), u.communityFacilityAvailable(), u.totalParkingSpaces(),
+                u.mechanicalParkingAvailable(), u.mechanicalParkingSpaces(), u.supplyCount(), u.rentalConditions()));
+    }
+
+    void mergePamphletUnits(List<DetailedHousingUnit> existing, List<DetailedHousingUnit> pamphlet) {
+        for (DetailedHousingUnit unit : pamphlet) {
+            var matches = java.util.stream.IntStream.range(0, existing.size()).filter(index -> {
+                DetailedHousingUnit primary = existing.get(index);
+                return StringUtils.hasText(unit.housingType()) && unit.housingType().equalsIgnoreCase(primary.housingType())
+                        && sameComplex(primary.complexName(), unit.complexName());
+            }).boxed().toList();
+            if (matches.size() == 1) {
+                int index = matches.getFirst();
+                existing.set(index, mergeAttachmentDetail(existing.get(index), unit, true));
+            } else existing.add(unit);
+        }
+    }
+
+    private boolean sameComplex(String first, String second) {
+        if (!StringUtils.hasText(first) || !StringUtils.hasText(second)) return false;
+        String left = first.toLowerCase(Locale.ROOT).replace("블록", "").replace("bl", "").replaceAll("[^가-힣a-z0-9]", "");
+        String right = second.toLowerCase(Locale.ROOT).replace("블록", "").replace("bl", "").replaceAll("[^가-힣a-z0-9]", "");
+        return left.length() >= 6 && right.length() >= 6 && (left.contains(right) || right.contains(left));
+    }
+
+    private ParsedAttachment parseAttachment(
             NoticeResponse notice,
             LhAttachment attachment,
             byte[] bytes
     ) {
         String name = attachment.fileName().toLowerCase(Locale.ROOT);
         if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-            return spreadsheetParser.parse(bytes, attachment);
+            return new ParsedAttachment(spreadsheetParser.parse(bytes, attachment), true);
         }
         boolean housingList = isHousingListDocument(name);
         if (name.endsWith(".pdf")) {
-            List<DetailedHousingUnit> structured = shPdfParser.parse(
-                    bytes, attachment, housingList ? "LH_PDF_LIST" : "LH_PDF"
-            );
-            List<DetailedHousingUnit> fallback = !structured.isEmpty()
-                    ? structured
-                    : pdfParser.parse(bytes, attachment, housingList ? "LH_PDF_LIST" : "LH_PDF");
-            if (geminiSupport == null) return fallback;
-            return geminiSupport.supplement(
-                    bytes, "LH_FILE:" + attachment.fileId(), "LH", notice.title(), attachment.fileName(), fallback
-            );
+            List<DetailedHousingUnit> fallback = com.zipick.external.ai.GeminiPdfStageTiming.measureBasicParser(() -> {
+                List<DetailedHousingUnit> structured = shPdfParser.parse(
+                        bytes, attachment, housingList ? "LH_PDF_LIST" : "LH_PDF");
+                return !structured.isEmpty() ? structured
+                        : pdfParser.parse(bytes, attachment, housingList ? "LH_PDF_LIST" : "LH_PDF");
+            });
+            if (geminiSupport == null || !geminiSupport.enabled()) return new ParsedAttachment(fallback, true);
+            var result = geminiSupport.supplementWithStatus(
+                    bytes, "LH_FILE:" + attachment.fileId(), "LH", notice.title(), attachment.fileName(), fallback);
+            return new ParsedAttachment(result.units(), result.aiApplied() && result.aiComplete(), result.additionalAttributes());
         }
         if (name.endsWith(".hwp") || name.endsWith(".hwpx")) {
-            return hwpParser.parse(bytes, attachment, housingList ? "LH_HWP_LIST" : "LH_HWP");
+            return new ParsedAttachment(hwpParser.parse(bytes, attachment, housingList ? "LH_HWP_LIST" : "LH_HWP"), true);
         }
-        return List.of();
+        return new ParsedAttachment(List.of(), true);
     }
 
     private boolean isHousingListDocument(String fileName) {

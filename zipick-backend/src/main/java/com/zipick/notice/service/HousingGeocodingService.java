@@ -77,7 +77,7 @@ public class HousingGeocodingService {
         int apiCalls = 0;
 
         for (Housing housing : pending) {
-            List<String> queries = createSearchQueries(housing.getAddress(), housing.getRoadName());
+            List<String> queries = createSearchQueriesForHousing(housing);
             if (queries.isEmpty()) {
                 log.info("좌표 검색에서 제외한 잘못된 주소입니다. housingId={}, address={}",
                         housing.getId(), housing.getAddress());
@@ -88,6 +88,8 @@ public class HousingGeocodingService {
             Optional<GeocodedAddress> resolved = Optional.empty();
             boolean apiFailed = false;
             for (String query : queries) {
+                // 구·동 중심점과 블록명은 실제 주택의 정확한 주소 좌표가 아닙니다.
+                if (!isPreciseAddressQuery(query)) continue;
                 Optional<GeocodedAddress> cached;
                 if (cache.containsKey(query)) {
                     cached = cache.get(query);
@@ -109,8 +111,9 @@ public class HousingGeocodingService {
                     break;
                 }
             }
-            if (resolved.isEmpty() && !apiFailed) {
-                String keywordQuery = queries.getFirst();
+            String keywordQuery = queries.stream().filter(HousingGeocodingService::isPreciseAddressQuery)
+                    .findFirst().orElse(null);
+            if (resolved.isEmpty() && !apiFailed && keywordQuery != null) {
                 try {
                     resolved = findUnambiguousHousingKeyword(keywordQuery);
                     apiCalls++;
@@ -139,6 +142,31 @@ public class HousingGeocodingService {
         log.info("주택 주소 좌표 변환 완료: 대상={}, 갱신={}, 미해결={}, 잘못된 주소 제외={}, 카카오 호출={}",
                 result.targets(), result.updated(), result.unresolved(), result.excluded(), result.apiCalls());
         return result;
+    }
+
+    static boolean isPreciseAddressQuery(String value) {
+        if (!StringUtils.hasText(value) || value.contains("일원")) return false;
+        return Pattern.compile("(?:[가-힣0-9]+(?:동|리|가)\\s*(?:산\\s*)?\\d+(?:-\\d+)?(?:번지)?"
+                + "|[가-힣0-9·.]+(?:대로|로|길)(?:\\s*\\d+(?:번길|길))?\\s*\\d+(?:-\\d+)?)")
+                .matcher(value).find();
+    }
+
+    static List<String> createSearchQueriesForHousing(Housing housing) {
+        Set<String> queries = new LinkedHashSet<>();
+        String address = housing.getAddress();
+        if (StringUtils.hasText(address)) {
+            String main = collapseRepeatedSegments(address).replaceAll("\\s+", "");
+            for (String candidate : new String[]{housing.getRoadAddress(), housing.getLotAddress()}) {
+                if (!StringUtils.hasText(candidate) || !candidate.matches(".*\\d.*")) continue;
+                String normalized = collapseRepeatedSegments(candidate).replaceAll("\\s+", "");
+                // 같은 주소의 구체적인 도로명·지번만 사용합니다. 다른 지역을 임의로 대체하지 않습니다.
+                if (main.contains(normalized) && !main.contains("일원") && !normalized.contains("일원")) {
+                    queries.addAll(createSearchQueries(candidate, housing.getRoadName()));
+                }
+            }
+        }
+        queries.addAll(createSearchQueries(address, housing.getRoadName()));
+        return List.copyOf(queries);
     }
 
     static List<String> createSearchQueries(String address, String roadName) {

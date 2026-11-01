@@ -121,7 +121,16 @@ public class GeminiPdfHousingExtractor {
 
     public GeminiPdfExtractionResult extract(List<GeminiPdfDocument> documents) {
         validateConfiguration();
-        List<InspectedDocument> inspected = inspect(documents);
+        long inspectStarted = System.nanoTime();
+        List<InspectedDocument> inspected;
+        try {
+            inspected = inspect(documents);
+        } finally {
+            GeminiPdfStageTiming.inspected(System.nanoTime() - inspectStarted);
+        }
+        log.info("Gemini PDF 문서 검사 시간: documentIds={}, 검사ms={}",
+                documents.stream().map(GeminiPdfDocument::documentId).toList(),
+                (System.nanoTime() - inspectStarted) / 1_000_000);
         String cacheKey = cacheKey(inspected);
         PayloadAccumulator accumulator = new PayloadAccumulator(inspected);
         boolean resumed = false;
@@ -138,20 +147,32 @@ public class GeminiPdfHousingExtractor {
             resumed = true;
             log.warn("기존 Gemini 완료 캐시가 현재 완전성 검증에 실패해 누락 보정을 재개합니다: documents={}, warnings={}",
                     documents.size(), result.warnings());
+            if (accumulator.serverVerifiedComplete()) {
+                accumulator = new PayloadAccumulator(inspected);
+                resumed = false;
+                log.warn("완료 캐시의 행 수가 충돌하여 원문부터 다시 분석합니다: documents={}", documents.size());
+            }
         }
 
         var progress = resumed ? java.util.Optional.<String>empty() : cache.readProgress(cacheKey);
-        progress.ifPresent(value -> accumulator.accept(JSON.readTree(value)));
+        if (progress.isPresent()) accumulator.accept(JSON.readTree(progress.get()));
         resumed = resumed || progress.isPresent();
         if (progress.isPresent() && accumulator.serverVerifiedComplete()) {
-            cache.write(cacheKey, JSON.writeValueAsString(accumulator.toJson()));
-            cache.deleteProgress(cacheKey);
             GeminiPdfExtractionResult result = toResult(
                     accumulator, inspected, 0, true, GeminiTokenUsage.empty(), "PROGRESS_CACHE"
             );
-            log.info("Gemini PDF 부분 캐시가 새 완전성 규칙을 충족해 완료 처리: documents={}, units={}",
-                    documents.size(), result.units().size());
-            return result;
+            if (result.complete()) {
+                cache.write(cacheKey, JSON.writeValueAsString(accumulator.toJson()));
+                cache.deleteProgress(cacheKey);
+                log.info("Gemini PDF 부분 캐시가 새 완전성 규칙을 충족해 완료 처리: documents={}, units={}",
+                        documents.size(), result.units().size());
+                return result;
+            }
+            log.warn("Gemini PDF 부분 캐시의 최종 검증 실패: documents={}, warnings={}",
+                    documents.size(), result.warnings());
+            accumulator = new PayloadAccumulator(inspected);
+            resumed = false;
+            log.warn("부분 캐시의 행 수가 충돌하여 원문부터 다시 분석합니다: documents={}", documents.size());
         }
         GeminiTokenUsage usage = GeminiTokenUsage.empty();
         int calls = 0;
@@ -162,7 +183,8 @@ public class GeminiPdfHousingExtractor {
         boolean needsInitialPass = !resumed
                 || (!accumulator.serverVerifiedComplete() && cachedContinuation.isBlank());
         if (needsInitialPass) {
-            List<PageSlice> slices = pageSlices(inspected, accumulator, false);
+            List<PageSlice> slices = new ArrayList<>(pageSlices(inspected, accumulator, false));
+            int truncatedSplits = 0;
             for (int index = 0; index < slices.size(); index++) {
                 PageSlice slice = slices.get(index);
                 boolean lastSlice = index == slices.size() - 1;
@@ -171,9 +193,30 @@ public class GeminiPdfHousingExtractor {
                         + "extractionIndex로 사용하세요. " + (lastSlice
                         ? "마지막 묶음이므로 전달된 페이지를 모두 확인했다면 complete=true로 반환하세요."
                         : "아직 다른 페이지 묶음이 남아 있으므로 complete=false로 반환하세요.");
-                ParsedApiResponse parsed = executeSlice(
-                        slice, "", chunkDirective, accumulator, index > 0);
-                accumulator.accept(parsed.payload());
+                ParsedApiResponse parsed;
+                try {
+                    parsed = executeSlice(slice, "", chunkDirective, accumulator, index > 0);
+                    if ("MAX_TOKENS".equalsIgnoreCase(parsed.finishReason())
+                            && slice.pages().size() > 1 && truncatedSplits < properties.maxContinuationCalls()) {
+                        throw new TruncatedResponseException(parsed.usage());
+                    }
+                } catch (TruncatedResponseException exception) {
+                    calls++;
+                    usage = usage.plus(exception.usage);
+                    if (slice.pages().size() < 2 || truncatedSplits >= properties.maxContinuationCalls()) throw exception;
+                    List<Integer> pages = new ArrayList<>(new TreeSet<>(slice.pages()));
+                    int middle = pages.size() / 2;
+                    slices.remove(index);
+                    slices.add(index, new PageSlice(slice.document(), Set.copyOf(pages.subList(middle, pages.size())), null, false));
+                    slices.add(index, new PageSlice(slice.document(), Set.copyOf(pages.subList(0, middle)), null, false));
+                    truncatedSplits++;
+                    log.warn("Gemini 응답이 잘려 원문 페이지를 나누어 재분석합니다: documentId={}, pages={}, split={}",
+                            slice.document().document().documentId(), pages.size(), truncatedSplits);
+                    index--;
+                    continue;
+                }
+                accumulator.accept(parsed.payload(), slices.size() > 1);
+                if (slice.textOnly()) accumulator.recordTextOnly(slice.document().document().documentId(), slice.pages().iterator().next());
                 usage = usage.plus(parsed.usage());
                 finishReason = parsed.finishReason();
                 calls++;
@@ -183,6 +226,12 @@ public class GeminiPdfHousingExtractor {
 
         int repairRounds = 0;
         int repairLimit = continuationLimit(inspected, accumulator);
+        // 구체적인 누락 행·페이지 또는 잘린 출력이 있을 때만 소형 문서도 한 번 보정한다.
+        // 추가정보 경고만 있거나 보정 횟수 설정이 0이면 추가 호출하지 않는다.
+        String initialRepair = accumulator.continuationDirective(MAX_MISSING_INDEXES_PER_REPAIR);
+        if (repairLimit == 0 && properties.maxContinuationCalls() > 0 && !initialRepair.isBlank()) {
+            repairLimit = 1;
+        }
         long previousProgress = accumulator.progressScore();
         String continuationDirective = accumulator.continuationDirective(MAX_MISSING_INDEXES_PER_REPAIR);
         while (!accumulator.serverVerifiedComplete()
@@ -192,7 +241,12 @@ public class GeminiPdfHousingExtractor {
             for (PageSlice repair : repairs) {
                 ParsedApiResponse parsed = executeSlice(
                         repair, continuationDirective, "", accumulator, true);
-                accumulator.accept(parsed.payload());
+                if (continuationDirective.contains("missingPricingIndexes=")) {
+                    accumulator.acceptPricingRepair(parsed.payload());
+                } else {
+                    accumulator.accept(parsed.payload());
+                }
+                if (repair.textOnly()) accumulator.recordTextOnly(repair.document().document().documentId(), repair.pages().iterator().next());
                 usage = usage.plus(parsed.usage());
                 finishReason = parsed.finishReason();
                 calls++;
@@ -237,10 +291,25 @@ public class GeminiPdfHousingExtractor {
             PayloadAccumulator accumulator,
             boolean continuation
     ) {
-        String response = generateWithRetry(requestBody(
-                List.of(slice.document()), Map.of(slice.document().document().documentId(), slice.pages()),
-                continuationDirective, accumulator.units.size(), accumulator, chunkDirective
-        ), continuation);
+        long preparationStarted = System.nanoTime();
+        String body;
+        try {
+            body = requestBody(List.of(slice.document()), Map.of(slice.document().document().documentId(), slice.pages()),
+                    continuationDirective, accumulator.units.size(), accumulator, chunkDirective, slice.preparedPdf(), slice.textOnly());
+        } finally {
+            GeminiPdfStageTiming.prepared(System.nanoTime() - preparationStarted);
+        }
+        long preparedAt = System.nanoTime();
+        String response;
+        try {
+            response = generateWithRetry(body, continuation);
+        } finally {
+            GeminiPdfStageTiming.apiWait(System.nanoTime() - preparedAt);
+        }
+        long completedAt = System.nanoTime();
+        log.info("Gemini PDF 구간 시간: documentId={}, 준비ms={}, API대기ms={}, 준비된PDF재사용={}",
+                slice.document().document().documentId(), (preparedAt - preparationStarted) / 1_000_000,
+                (completedAt - preparedAt) / 1_000_000, slice.preparedPdf() != null);
         ParsedApiResponse parsed = parseApiResponse(response);
         log.info("Gemini PDF 호출 완료: documentId={}, pages={}, continuation={}, promptTokens={}, "
                         + "candidateTokens={}, thoughtTokens={}, totalTokens={}, finishReason={}",
@@ -255,21 +324,27 @@ public class GeminiPdfHousingExtractor {
             PayloadAccumulator accumulator,
             boolean repair
     ) {
-        List<PageSlice> result = new ArrayList<>();
-        for (InspectedDocument document : documents) {
-            Set<Integer> pages = repair
-                    ? accumulator.repairPages(document.document().documentId(), document)
-                    : document.relevantPages();
-            for (Set<Integer> slice : splitPagesToLimit(document, pages)) {
-                result.add(new PageSlice(document, slice));
+        long started = System.nanoTime();
+        try {
+            List<PageSlice> result = new ArrayList<>();
+            for (InspectedDocument document : documents) {
+                Set<Integer> pages = repair
+                        ? accumulator.repairPages(document.document().documentId(), document)
+                        : document.relevantPages();
+                result.addAll(splitPagesToLimit(document, pages));
             }
+            log.info("Gemini PDF 페이지 준비 시간: documentIds={}, 분할수={}, 보정={}, 준비ms={}",
+                    documents.stream().map(document -> document.document().documentId()).toList(),
+                    result.size(), repair, (System.nanoTime() - started) / 1_000_000);
+            return List.copyOf(result);
+        } finally {
+            GeminiPdfStageTiming.split(System.nanoTime() - started);
         }
-        return List.copyOf(result);
     }
 
-    private List<Set<Integer>> splitPagesToLimit(InspectedDocument document, Set<Integer> pages) {
+    private List<PageSlice> splitPagesToLimit(InspectedDocument document, Set<Integer> pages) {
         List<Integer> ordered = new ArrayList<>(new TreeSet<>(pages));
-        List<Set<Integer>> result = new ArrayList<>();
+        List<PageSlice> result = new ArrayList<>();
         for (int start = 0; start < ordered.size(); start += properties.maxPagesPerRequest()) {
             int end = Math.min(ordered.size(), start + properties.maxPagesPerRequest());
             splitPagesToLimit(document, ordered.subList(start, end), result);
@@ -280,17 +355,40 @@ public class GeminiPdfHousingExtractor {
     private void splitPagesToLimit(
             InspectedDocument document,
             List<Integer> pages,
-            List<Set<Integer>> target
+            List<PageSlice> target
     ) {
         Set<Integer> pageSet = Set.copyOf(pages);
-        byte[] subset = subsetPdf(document.document().rawBytes(), pageSet, document.document().fileName());
-        if (subset.length <= properties.maxFileBytes()) {
-            target.add(pageSet);
+        // 큰 원본을 통째로 메모리 버퍼에 복제하기 전에 나누어 최대 메모리 사용을 줄입니다.
+        if (pages.size() > 4 && document.document().rawBytes().length > properties.maxFileBytes() * 2) {
+            int middle = pages.size() / 2;
+            splitPagesToLimit(document, pages.subList(0, middle), target);
+            splitPagesToLimit(document, pages.subList(middle, pages.size()), target);
+            return;
+        }
+        byte[] smallSubset = document.document().rawBytes().length <= 5 * 1024 * 1024
+                ? subsetPdf(document.document().rawBytes(), pageSet, document.document().fileName()) : null;
+        long subsetSize = smallSubset != null ? smallSubset.length
+                : subsetPdfSize(document.document().rawBytes(), pageSet, document.document().fileName());
+        if (subsetSize <= properties.maxFileBytes()) {
+            // 작은 묶음만 재사용해 중복 PDF 생성을 줄이고 메모리는 제한한다.
+            long retained = target.stream().mapToLong(slice -> slice.preparedPdf() == null ? 0 : slice.preparedPdf().length).sum();
+            target.add(new PageSlice(document, pageSet,
+                    subsetSize <= 1024 * 1024 && retained + subsetSize <= 4 * 1024 * 1024
+                            ? (smallSubset != null ? smallSubset
+                            : subsetPdf(document.document().rawBytes(), pageSet, document.document().fileName())) : null, false));
             return;
         }
         if (pages.size() == 1) {
-            throw new IllegalArgumentException("단일 페이지 PDF 크기 제한 초과: "
-                    + document.document().fileName() + ", page=" + pages.getFirst());
+            int page = pages.getFirst();
+            String text = document.pageTexts().getOrDefault(page, "");
+            if (text == null || text.isBlank()) {
+                throw new IllegalArgumentException("단일 페이지 PDF 크기 제한 초과 및 추출 가능한 텍스트 없음: "
+                        + document.document().fileName() + ", page=" + page);
+            }
+            log.warn("대형 PDF 페이지를 텍스트만으로 분석합니다. 이미지 미분석: documentId={}, page={}",
+                    document.document().documentId(), page);
+            target.add(new PageSlice(document, pageSet, null, true));
+            return;
         }
         int middle = pages.size() / 2;
         splitPagesToLimit(document, pages.subList(0, middle), target);
@@ -395,18 +493,30 @@ public class GeminiPdfHousingExtractor {
     /** 표의 값을 해석하지 않고 1..N 연번이 빠짐없이 있는지만 확인해 배열 길이 검증에 사용한다. */
     Integer estimateUnitCount(String text) {
         if (text == null || text.isBlank()) return null;
-        if (!hasSupplyTableHeader(text)) return null;
-
-        Set<Integer> numbers = new HashSet<>();
-        Matcher matcher = LEADING_ROW_NUMBER.matcher(text);
-        while (matcher.find()) {
-            int value = Integer.parseInt(matcher.group(1));
-            if (value <= 2_000) numbers.add(value);
+        // 전체 문서의 번호를 합치면 신청 서류 번호와 목차가 공급행으로 오인된다.
+        // 공급표 머리글에 인접하고 연속된 실제 데이터 행만 보수적으로 추정한다.
+        String[] lines = text.split("\\R");
+        int best = 0;
+        for (int start = 0; start < lines.length; start++) {
+            if (!hasSupplyTableHeader(String.join("\n", java.util.Arrays.copyOfRange(
+                    lines, start, Math.min(lines.length, start + 3))))) continue;
+            int next = 1;
+            int gap = 0;
+            for (int index = start + 1; index < lines.length && index <= start + 250; index++) {
+                String line = lines[index].trim();
+                if (line.matches("^\\d{1,3}[.)]\\s+.*")) break;
+                Matcher row = Pattern.compile("^(\\d{1,4})\\s+(.+)$").matcher(line);
+                if (row.matches() && Integer.parseInt(row.group(1)) == next
+                        && row.group(2).matches(".*(?:\\d|특별시|광역시|특별자치|경기도|[시군구]\\s).*")) {
+                    next++;
+                    gap = 0;
+                } else if (++gap > (next > 1 ? 8 : 12)) {
+                    break;
+                }
+            }
+            best = Math.max(best, next - 1);
         }
-        if (!numbers.contains(1)) return null;
-        int consecutive = 1;
-        while (numbers.contains(consecutive + 1)) consecutive++;
-        return consecutive >= 2 ? consecutive : null;
+        return best >= 2 ? best : null;
     }
 
     private boolean hasSupplyTableHeader(String text) {
@@ -424,6 +534,23 @@ public class GeminiPdfHousingExtractor {
     }
 
     private Set<Integer> selectRelevantPages(Map<Integer, String> pageTexts) {
+        Set<Integer> selected = new TreeSet<>(legacyRelevantPages(pageTexts));
+        // 공고문의 공급주택 요약은 표 연번이 없는 앞부분에 자주 있다.
+        for (int page = 1; page <= Math.min(3, pageTexts.size()); page++) selected.add(page);
+        for (Map.Entry<Integer, String> entry : pageTexts.entrySet()) {
+            String compact = entry.getValue() == null ? "" : entry.getValue().replaceAll("\\s+", "");
+            boolean housingAndConditions = (compact.contains("공급주택") || compact.contains("모집대상주택")
+                    || compact.contains("주택단지개요"))
+                    && (compact.contains("임대조건") || compact.contains("임대보증금")
+                    || compact.contains("기본임대"));
+            if (!housingAndConditions) continue;
+            for (int page = Math.max(1, entry.getKey() - 1);
+                 page <= Math.min(pageTexts.size(), entry.getKey() + 1); page++) selected.add(page);
+        }
+        return Set.copyOf(selected);
+    }
+
+    private Set<Integer> legacyRelevantPages(Map<Integer, String> pageTexts) {
         Set<Integer> strongPages = new TreeSet<>();
         for (Map.Entry<Integer, String> entry : pageTexts.entrySet()) {
             String text = entry.getValue() == null ? "" : entry.getValue();
@@ -543,7 +670,9 @@ public class GeminiPdfHousingExtractor {
             String continuationDirective,
             int storedUnitCount,
             PayloadAccumulator accumulator,
-            String chunkDirective
+            String chunkDirective,
+            byte[] preparedPdf,
+            boolean textOnly
     ) {
         List<Map<String, Object>> parts = new ArrayList<>();
         long requestBytes = 0;
@@ -552,11 +681,6 @@ public class GeminiPdfHousingExtractor {
             Set<Integer> requestedPages = pageOverrides.getOrDefault(
                     document.documentId(), inspected.relevantPages());
             if (requestedPages.isEmpty()) requestedPages = inspected.relevantPages();
-            byte[] requestPdf = subsetPdf(document.rawBytes(), requestedPages, document.fileName());
-            requestBytes += requestPdf.length;
-            if (requestBytes > properties.maxFileBytes()) {
-                throw new IllegalArgumentException("선별 페이지 PDF 크기 제한 초과: " + document.fileName());
-            }
             parts.add(Map.of("text", "문서 ID=" + document.documentId()
                     + ", 기관=" + safe(document.agency())
                     + ", 공고명=" + safe(document.noticeTitle())
@@ -567,11 +691,21 @@ public class GeminiPdfHousingExtractor {
                     : ", 필수추가속성후보=" + inspected.requiredAttributes().keySet())
                     + (inspected.expectedUnitCount() == null
                     ? ", 공급행수=서버 사전확인 불가"
-                    : ", 공급행수=" + inspected.expectedUnitCount() + "(서버 사전확인)")));
-            parts.add(Map.of("inlineData", Map.of(
-                    "mimeType", "application/pdf",
-                    "data", Base64.getEncoder().encodeToString(requestPdf)
-            )));
+                    : ", 공급행수=" + inspected.expectedUnitCount() + "(서버가 확인한 최소 후보 수)")));
+            if (textOnly) {
+                int page = requestedPages.iterator().next();
+                parts.add(Map.of("text", "원본 PDF " + page + "페이지의 추출 텍스트입니다. 이 페이지의 이미지와 도면은 제공되지 않았으므로 시각 내용을 추측하지 마세요.\n"
+                        + inspected.pageTexts().getOrDefault(page, "")));
+            } else {
+                byte[] requestPdf = preparedPdf != null ? preparedPdf
+                        : subsetPdf(document.rawBytes(), requestedPages, document.fileName());
+                requestBytes += requestPdf.length;
+                if (requestBytes > properties.maxFileBytes()) {
+                    throw new IllegalArgumentException("선별 페이지 PDF 크기 제한 초과: " + document.fileName());
+                }
+                parts.add(Map.of("inlineData", Map.of("mimeType", "application/pdf",
+                        "data", Base64.getEncoder().encodeToString(requestPdf))));
+            }
         }
         parts.add(Map.of("text", prompt(continuationDirective, storedUnitCount, chunkDirective)));
 
@@ -602,6 +736,25 @@ public class GeminiPdfHousingExtractor {
         }
     }
 
+    private long subsetPdfSize(byte[] sourceBytes, Set<Integer> originalPages, String fileName) {
+        try (PDDocument source = Loader.loadPDF(sourceBytes); PDDocument target = new PDDocument()) {
+            for (int page : new TreeSet<>(originalPages)) {
+                if (page >= 1 && page <= source.getNumberOfPages()) target.importPage(source.getPage(page - 1));
+            }
+            if (target.getNumberOfPages() == 0) return sourceBytes.length;
+            class Counter extends java.io.OutputStream {
+                long size;
+                @Override public void write(int b) { size++; }
+                @Override public void write(byte[] b, int off, int len) { size += len; }
+            }
+            Counter counter = new Counter();
+            target.save(counter);
+            return counter.size;
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Gemini 전달용 PDF 페이지 크기 확인 실패: " + fileName, exception);
+        }
+    }
+
     private String pageMapping(Set<Integer> pages) {
         int requestPage = 1;
         List<String> mapping = new ArrayList<>();
@@ -623,8 +776,8 @@ public class GeminiPdfHousingExtractor {
                 당신은 한국 공공임대 공고 PDF 전문 추출기입니다. %s%s
 
                 [완료 계약]
-                - 문서 메타데이터에 공급행수가 숫자로 주어지면 units 배열은 반드시 정확히 그 개수여야 합니다.
-                - 공급행수는 서버가 PDF 표의 1..N 연번을 사전 검증한 값이므로 다시 줄이거나 대표 행만 선택하지 마세요.
+                - 문서 메타데이터의 공급행수는 서버가 확인한 최소 후보 수입니다. 원문에 더 많은 행이 있다면 모두 추출하고
+                  실제 행 수를 expectedUnitCount에 기록하세요. 힌트에 맞추려고 결과를 자르거나 행을 지어내지 마세요.
                 - 예시 행, 요약 행, 일부 행만 반환하는 것은 실패입니다. 첫 행부터 마지막 행까지 모두 반환하세요.
                 - 응답을 끝내기 전에 expectedUnitCount와 units.length가 같은지 검산하세요.
                 - 각 unit의 sourceTableId에는 같은 표의 행끼리 같은 값(documentId/table-1 형식)을 기록하세요.
@@ -657,6 +810,8 @@ public class GeminiPdfHousingExtractor {
                 unit 값이 건물 공통값보다 우선하며, 원문에 명시되지 않은 불리언 값은 false로 추론하지 말고 생략하세요.
                 동·호 정보가 없는 주소별 또는 면적형별 공급도 하나의 unit으로 기록하고 supplyCount를 채우세요.
                 금액은 원 단위 정수, 면적은 제곱미터, 거리는 km로 정규화하세요. 추론하지 말고 원문에 없는 값은 생략하세요.
+                표의 열마다 단위를 확인하세요. 보증금이 천원 단위이면 1,000을 곱하고 월 임대료가 원 단위이면 그대로 기록하세요.
+                기숙사비·관리비는 월 임대료가 아닙니다. 임대료가 공란 또는 '-'인 경우 monthlyRent를 비우고, 기숙사비는 별도 추가정보로 기록하세요.
                 표에 공용면적과 임대면적 열이 있으면 각 unit의 commonArea와 rentalArea에 숫자로 반드시 기록하세요.
                 주소는 원문의 시·군·구·읍·면·동 계층을 하나도 생략하지 말고 address와 roadAddress에 보존하세요.
                 보증금과 월 임대료는 원문의 콤마 구분 자릿수와 대조해 10배·10분의 1 오류가 없는지 행별로 다시 확인하세요.
@@ -670,10 +825,15 @@ public class GeminiPdfHousingExtractor {
                 각각 독립된 additionalAttributes 항목으로 반드시 기록하세요. 여러 옵션을 임의로 줄이거나 대표 항목만 고르지 마세요.
                 주택 공급표에 성별용도와 주택열람일정 열이 있으면 unit의 genderEligibility와 housingViewingSchedule에
                 각각 기록하세요. supplyStatus에는 모집·공급 상태만 기록하고 열람일정을 넣지 마세요.
-                주택 개별 목록이 없는 공고문은 units를 만들거나 주소를 추측하지 마세요. 대신 원문에 명시된 공급대상 주택 수,
+                supplyCount에는 이번 공고의 모집호수 또는 모집 예비자 수만 기록하세요. 단지 전체 세대수는 공급 수가 아닙니다.
+                개별 동·호 목록이 없어도 원문에 특정 단지의 주소와 모집 주택형 또는 면적별 임대조건이 명시되면
+                건물과 주택형을 연결해 주택형마다 units를 한 행씩 반환하세요. 해당 동·호가 없으면 그 값만 비워두세요.
+                전세임대처럼 입주자가 나중에 직접 주택을 찾거나, 공급주택 정보가 별도 첨부에만 있어
+                이 PDF에서 실제 단지·주택형을 확인할 수 없는 경우에는 units를 만들거나 주소를 추측하지 마세요.
+                그런 공고문에서는 원문에 명시된 공급대상 주택 수,
                 기본 임대기간, 재계약 가능 횟수, 최장 거주기간, 임대조건, 신청 시작·마감, 신청 방식을 DOCUMENT 범위의
                 additionalAttributes로 기록하세요.
-                주차면수·주차대수가 숫자로 명시되면 additionalAttributes뿐 아니라 buildings.totalParkingSpaces에도 숫자로 기록하세요.
+                주차면수·주차대수가 숫자로 명시되면 additionalAttributes뿐 아니라 buildings.totalParkingSpaces에도 숫자로 기록하세요. 주차장 공용면적은 주차 대수가 아니며 면적이 0이라는 이유로 주차 대수를 0으로 기록하지 마세요.
                 additionalAttributes의 scope는 DOCUMENT, BUILDING, UNIT 중 하나를 사용하고 page와 연속 원문 evidence를 반드시 넣으세요.
                 임대조건이 여러 개일 때만 모두 최상위 rentalConditions에 기록하세요. 조건이 하나뿐이면 rentalConditions는 비우고
                 unit의 rentDeposit과 monthlyRent만 기록해 중복 출력을 피하세요. 원문 표에서 첫 번째 또는 기본으로 제시된 조건의
@@ -699,13 +859,22 @@ public class GeminiPdfHousingExtractor {
         JsonNode candidate = candidates.get(0);
         StringBuilder text = new StringBuilder();
         candidate.path("content").path("parts").forEach(part -> text.append(part.path("text").asText()));
-        if (text.isEmpty()) throw new IllegalStateException("Gemini PDF 분석 JSON이 비어 있습니다.");
         JsonNode usage = envelope.path("usageMetadata");
+        GeminiTokenUsage tokenUsage = new GeminiTokenUsage(
+                usage.path("promptTokenCount").asLong(0),
+                usage.path("candidatesTokenCount").asLong(0),
+                usage.path("thoughtsTokenCount").asLong(0),
+                usage.path("totalTokenCount").asLong(0));
         String finishReason = candidate.path("finishReason").asText("");
+        if (text.isEmpty()) {
+            if ("MAX_TOKENS".equalsIgnoreCase(finishReason)) throw new TruncatedResponseException(tokenUsage);
+            throw new IllegalStateException("Gemini PDF 분석 JSON이 비어 있습니다.");
+        }
         JsonNode payload;
         try {
             payload = JSON.readTree(text.toString());
         } catch (RuntimeException exception) {
+            if ("MAX_TOKENS".equalsIgnoreCase(finishReason)) throw new TruncatedResponseException(tokenUsage);
             throw new IllegalStateException(
                     "Gemini PDF 분석 JSON이 잘렸거나 올바르지 않습니다. finishReason=" + finishReason,
                     exception
@@ -713,14 +882,17 @@ public class GeminiPdfHousingExtractor {
         }
         return new ParsedApiResponse(
                 payload,
-                new GeminiTokenUsage(
-                        usage.path("promptTokenCount").asLong(0),
-                        usage.path("candidatesTokenCount").asLong(0),
-                        usage.path("thoughtsTokenCount").asLong(0),
-                        usage.path("totalTokenCount").asLong(0)
-                ),
+                tokenUsage,
                 finishReason
         );
+    }
+
+    private static final class TruncatedResponseException extends IllegalStateException {
+        private final GeminiTokenUsage usage;
+        private TruncatedResponseException(GeminiTokenUsage usage) {
+            super("Gemini PDF 분석 JSON이 잘렸거나 출력 토큰 한도를 초과했습니다. finishReason=MAX_TOKENS");
+            this.usage = usage;
+        }
     }
 
     private GeminiPdfExtractionResult toResult(
@@ -757,7 +929,7 @@ public class GeminiPdfHousingExtractor {
                     accumulator.attributesFor("UNIT", node.path("unitId").asText()),
                     accumulator.conditionsFor(node.path("unitId").asText()),
                     accumulator.acceptedVerifiedNullFields(node),
-                    documents, ++index
+                    documents, List.copyOf(accumulator.units.values()), ++index
             );
             if (!unitKeys.add(unit.sourceUnitKey())) {
                 warnings.add("중복 주택 키: " + unit.sourceUnitKey());
@@ -786,6 +958,9 @@ public class GeminiPdfHousingExtractor {
                 : expected == units.size();
         if (!countMatches) warnings.add("예상 행 수 불일치: expected=" + expected + ", extracted=" + units.size());
         boolean sequenceComplete = validateSequences(accumulator.documents, documents, indexesByDocument, warnings);
+        boolean areaRowsComplete = validateAreaVariants(accumulator, documents, warnings);
+        Map<String, List<Integer>> missingPages = accumulator.missingSourcePages();
+        if (!missingPages.isEmpty()) warnings.add("공급표 원문 페이지 누락: " + missingPages);
         Map<String, List<String>> inconsistentFields = accumulator.inconsistentFieldRows();
         if (!inconsistentFields.isEmpty()) {
             warnings.add("선택 필드 일부 누락(결과는 사용): " + inconsistentFields);
@@ -794,9 +969,14 @@ public class GeminiPdfHousingExtractor {
         if (!missingAttributes.isEmpty()) {
             warnings.add("추가정보 일부 누락(결과는 사용): " + missingAttributes);
         }
+        Map<String, List<Integer>> missingPricing = accumulator.missingPricing();
+        if (!missingPricing.isEmpty()) warnings.add("원문 임대금액 표가 있으나 금액이 추출되지 않았습니다: " + missingPricing);
         boolean tokenCut = "MAX_TOKENS".equalsIgnoreCase(finishReason);
         if (tokenCut) warnings.add("출력 토큰 한도에 도달했습니다.");
-        boolean complete = accumulator.serverVerifiedComplete() && countMatches && sequenceComplete && !tokenCut;
+        if (!accumulator.serverVerifiedComplete() && warnings.isEmpty()) {
+            warnings.add("문서 완료 여부를 확인하지 못했습니다.");
+        }
+        boolean complete = accumulator.serverVerifiedComplete() && countMatches && sequenceComplete && areaRowsComplete && !tokenCut;
         if (!complete && calls >= 1 + properties.maxContinuationCalls()) {
             warnings.add("허용된 후속 호출 횟수 안에 추출을 완료하지 못했습니다.");
         }
@@ -804,6 +984,67 @@ public class GeminiPdfHousingExtractor {
                 units, complete, accumulator.nextCursor, expected, calls, fromCache, usage,
                 accumulator.relevantPages(), accumulator.allAttributes(), warnings
         );
+    }
+
+    private boolean validateAreaVariants(PayloadAccumulator accumulator, List<InspectedDocument> documents, List<String> warnings) {
+        boolean valid = true;
+        for (InspectedDocument document : documents) {
+            String id = document.document().documentId();
+            List<AreaVariant> reported = accumulator.units.values().stream()
+                    .filter(unit -> unit.path("sourceTableId").asText("").startsWith(id + "/"))
+                    .map(unit -> new AreaVariant(nullableDecimal(unit, "exclusiveArea"),
+                            nullableDecimal(unit, "commonArea"), nullableDecimal(unit, "rentalArea")))
+                    .filter(value -> value.exclusive() != null && value.common() != null && value.total() != null)
+                    .toList();
+            if (reported.isEmpty()) continue;
+            for (String page : document.pageTexts().values()) {
+                List<AreaVariant> missing = missingAreaVariants(page, reported);
+                if (!missing.isEmpty()) {
+                    valid = false;
+                    warnings.add("원문 공급표에 추출되지 않은 면적 행이 있습니다: documentId=" + id + ", rows=" + missing);
+                }
+            }
+        }
+        return valid;
+    }
+
+    record AreaVariant(BigDecimal exclusive, BigDecimal common, BigDecimal total) { }
+
+    static List<AreaVariant> missingAreaVariants(String pageText, List<AreaVariant> reported) {
+        if (pageText == null || reported == null || reported.isEmpty()) return List.of();
+        Matcher heading = Pattern.compile("형별\\s*공급계획").matcher(pageText);
+        if (!heading.find()) return List.of();
+        int end = pageText.indexOf('※', heading.start());
+        String table = pageText.substring(heading.start(), end < 0 ? Math.min(pageText.length(), heading.start() + 5000) : end);
+        String header = table.replaceAll("\\s+", "");
+        if (!header.contains("전용") || !header.contains("공용") || !header.contains("합계")) return List.of();
+        Matcher pairs = Pattern.compile("(?=(?<![\\d.])(\\d{1,3}\\.\\d{2,4})(?:\\s+(?:[-–—]\\s+)*)+(\\d{1,3}\\.\\d{2,4})(?![\\d.]))").matcher(table);
+        List<AreaVariant> found = new ArrayList<>();
+        Set<BigDecimal> areas = reported.stream().map(AreaVariant::exclusive).collect(java.util.stream.Collectors.toSet());
+        while (pairs.find()) {
+            BigDecimal common = new BigDecimal(pairs.group(1));
+            BigDecimal total = new BigDecimal(pairs.group(2));
+            for (BigDecimal area : areas) {
+                if (area.add(common).subtract(total).abs().compareTo(new BigDecimal("0.02")) <= 0) {
+                    found.add(new AreaVariant(area, common, total));
+                }
+            }
+        }
+        List<AreaVariant> missing = new ArrayList<>();
+        for (BigDecimal area : areas) {
+            boolean anchored = found.stream().anyMatch(candidate -> reported.stream().anyMatch(value -> sameAreaVariant(candidate, value)) && candidate.exclusive().compareTo(area) == 0);
+            if (!anchored) continue;
+            found.stream().filter(candidate -> candidate.exclusive().compareTo(area) == 0)
+                    .filter(candidate -> reported.stream().noneMatch(value -> sameAreaVariant(candidate, value)))
+                    .filter(candidate -> missing.stream().noneMatch(value -> sameAreaVariant(candidate, value)))
+                    .forEach(missing::add);
+        }
+        return List.copyOf(missing);
+    }
+
+    private static boolean sameAreaVariant(AreaVariant a, AreaVariant b) {
+        return a.exclusive().compareTo(b.exclusive()) == 0 && a.common().compareTo(b.common()) == 0
+                && a.total().compareTo(b.total()) == 0;
     }
 
     private DetailedHousingUnit toUnit(
@@ -817,6 +1058,7 @@ public class GeminiPdfHousingExtractor {
             List<JsonNode> flatConditions,
             Set<String> verifiedNullFields,
             List<InspectedDocument> documents,
+            List<JsonNode> allUnits,
             int index
     ) {
         String hash = documents.stream()
@@ -828,6 +1070,7 @@ public class GeminiPdfHousingExtractor {
         raw.put("parser", PROMPT_VERSION);
         raw.put("documentId", documentId);
         raw.put("sourceTableId", unit.path("sourceTableId").asText(""));
+        raw.put("sourceRowLabel", unit.path("sourceRowLabel").asText(""));
         raw.put("buildingId", unit.path("buildingId").asText(""));
         raw.put("verifiedNullFields", verifiedNullFields);
         String modelEvidence = unit.path("evidence").asText("");
@@ -835,6 +1078,25 @@ public class GeminiPdfHousingExtractor {
                 documentId, modelEvidence, unit.path("page").asInt(0), documents);
         String evidence = verifiedEvidence.text();
         int evidencePage = verifiedEvidence.page();
+        boolean textOnlyPage = documentAttributes.stream().anyMatch(attribute ->
+                "이미지 미분석 페이지".equals(attribute.path("name").asText())
+                        && (attribute.path("page").asInt() == evidencePage
+                        || attribute.path("page").asInt() == unit.path("page").asInt()));
+        BigDecimal extractedArea = nullableDecimal(unit, "exclusiveArea");
+        Long extractedSupplyCount = nullableLong(unit, "supplyCount");
+        String gender = text(unit, "genderEligibility", null);
+        boolean pamphlet = documentMetadata != null && documentMetadata.path("documentType").asText("").contains("팸플릿");
+        if (pamphlet && extractedSupplyCount != null
+                && (evidence == null || !evidence.matches("(?s).*(?:모집|공급호수|공급세대).*"))) {
+            raw.put("unverifiedPamphletHouseholdCount", extractedSupplyCount);
+            extractedSupplyCount = null;
+        }
+        if (textOnlyPage) {
+            if (!explicitAreaInEvidence(evidence, extractedArea)) extractedArea = null;
+            if (evidence == null || !evidence.matches("(?s).*(?:모집|공급호수|공급세대).*")) extractedSupplyCount = null;
+            if (gender != null && !gender.matches(".*(?:남성|여성|남자|여자|혼성).*")) gender = null;
+            raw.put("textOnlyFieldValidation", "원문 근거가 부족한 면적·모집수·성별은 저장하지 않음");
+        }
         raw.put("page", evidencePage);
         raw.put("evidence", evidence);
         raw.put("documentAdditionalAttributes", mergeAttributes(
@@ -845,7 +1107,7 @@ public class GeminiPdfHousingExtractor {
                 evidencePage, evidence);
         appendAreaAttribute(normalizedUnitAttributes, "임대면적", nullableDecimal(unit, "rentalArea"),
                 evidencePage, evidence);
-        appendTextAttribute(normalizedUnitAttributes, "성별용도", text(unit, "genderEligibility", null),
+        appendTextAttribute(normalizedUnitAttributes, "성별용도", gender,
                 evidencePage, evidence);
         appendTextAttribute(normalizedUnitAttributes, "주택열람일정",
                 firstNonBlank(text(unit, "housingViewingSchedule", null),
@@ -879,6 +1141,23 @@ public class GeminiPdfHousingExtractor {
                     conditionMonthlyRent, evidencePage, evidence);
         }
         String complexName = firstNonBlank(text(unit, "complexName", null), text(building, "complexName", null));
+        Long modelDeposit = firstNonNull(nullableLong(unit, "rentDeposit"), firstConditionDeposit(conditions));
+        Long modelRent = firstNonNull(nullableLong(unit, "monthlyRent"), firstConditionMonthlyRent(conditions));
+        Long correctedDeposit = verifiedThousandWonDeposit(modelEvidence, modelDeposit, modelRent, documents.stream()
+                .filter(value -> value.document().documentId().equals(documentId))
+                .map(InspectedDocument::pageTexts).findFirst().orElse(Map.of()));
+        if (conditions.isEmpty()) {
+            conditions.addAll(verifiedConversionConditionsForBase(text(unit, "housingType", null), modelDeposit, modelRent, documents.stream()
+                    .filter(value -> value.document().documentId().equals(documentId))
+                    .map(InspectedDocument::pageTexts).findFirst().orElse(Map.of())));
+        }
+        DormitoryFee dormitoryFee = verifiedDormitoryFee(complexName, documents.stream()
+                .filter(value -> value.document().documentId().equals(documentId))
+                .map(InspectedDocument::pageTexts).findFirst().orElse(Map.of()));
+        if (dormitoryFee != null) {
+            appendLongAttribute(normalizedUnitAttributes, "기숙사비", dormitoryFee.amount(), dormitoryFee.page(), dormitoryFee.evidence());
+            raw.put("verifiedDormitoryFee", Map.of("amount", dormitoryFee.amount(), "page", dormitoryFee.page(), "evidence", dormitoryFee.evidence()));
+        }
         String provinceName = firstNonBlank(text(unit, "provinceName", null), text(building, "provinceName", null));
         String districtName = firstNonBlank(text(unit, "districtName", null), text(building, "districtName", null));
         String lotAddress = longestNonBlank(text(unit, "lotAddress", null), text(building, "lotAddress", null));
@@ -887,19 +1166,38 @@ public class GeminiPdfHousingExtractor {
         roadAddress = completeRoadAddress(districtName, roadAddress, generalAddress, evidence);
         roadAddress = sanitizeRoadAddress(roadAddress, complexName);
         generalAddress = sanitizeRoadAddress(generalAddress, complexName);
+        String buildingDong = text(unit, "buildingDong", null);
+        String unitNumber = text(unit, "unitNumber", null);
+        String pageText = documents.stream().filter(value -> value.document().documentId().equals(documentId))
+                .map(value -> value.pageTexts().getOrDefault(unit.path("page").asInt(0), ""))
+                .findFirst().orElse("");
+        Long sharedCount = verifiedSharedSupplyCount(unit, allUnits, pageText);
+        if (sharedCount != null) {
+            raw.put("verifiedSharedSupplyCount", sharedCount);
+            appendLongAttribute(normalizedUnitAttributes, "주택형 공통 예비자 모집수", sharedCount, evidencePage, evidence);
+        }
+        if ((unitNumber == null || unitNumber.isBlank()) && isBuildingOnlySupplyTable(pageText)) {
+            raw.put("verifiedNoUnitNumber", true);
+        }
+        if ((buildingDong == null || buildingDong.isBlank()) && belongsToBuildingColumn(pageText, unitNumber, modelEvidence)) {
+            buildingDong = unitNumber;
+            unitNumber = null;
+            raw.put("verifiedNoUnitNumber", true);
+        }
         // 일반 주소 뒤에 지번 주소가 함께 붙은 경우에도 좌표 변환에는 완전한 도로명주소만 사용합니다.
         String address = firstNonBlank(roadAddress, generalAddress, lotAddress);
         return new DetailedHousingUnit(
                 "GEMINI:" + hash.substring(0, Math.min(16, hash.length())) + ":" + unitId,
                 complexName,
                 provinceName, districtName, address,
-                text(unit, "buildingDong", null), text(unit, "unitNumber", null), nullableInt(unit, "floor"),
-                nullableDecimal(unit, "exclusiveArea"), nullableInt(unit, "roomCount"),
+                buildingDong, unitNumber, nullableInt(unit, "floor"),
+                extractedArea, nullableInt(unit, "roomCount"),
                 firstNonBlank(text(unit, "housingType", null), text(building, "housingType", null),
                         text(unit, "supplyType", null)),
                 text(unit, "supplyType", null),
-                firstNonNull(nullableLong(unit, "rentDeposit"), firstConditionDeposit(conditions)),
-                firstNonNull(nullableLong(unit, "monthlyRent"), firstConditionMonthlyRent(conditions)),
+                correctedDeposit != null ? correctedDeposit : modelDeposit,
+                dormitoryFee != null && dormitoryFee.amount().equals(firstNonNull(nullableLong(unit, "monthlyRent"), firstConditionMonthlyRent(conditions)))
+                        ? null : firstNonNull(nullableLong(unit, "monthlyRent"), firstConditionMonthlyRent(conditions)),
                 JSON.writeValueAsString(raw),
                 lotAddress, roadAddress,
                 extractionIndex, text(unit, "supplyStatus", null),
@@ -909,11 +1207,168 @@ public class GeminiPdfHousingExtractor {
                 firstNonNull(nullableBoolean(unit, "elevatorAvailable"), nullableBoolean(building, "elevatorAvailable")),
                 firstNonNull(nullableBoolean(unit, "communityFacilityAvailable"),
                         nullableBoolean(building, "communityFacilityAvailable")),
-                firstNonNull(nullableInt(building, "totalParkingSpaces"),
-                        integerFromAttributes(buildingAttributes, "주차")),
+                verifiedParkingCount(firstNonNull(nullableInt(building, "totalParkingSpaces"),
+                        integerFromAttributes(buildingAttributes, "주차")), buildingAttributes),
                 nullableBoolean(building, "mechanicalParkingAvailable"),
-                nullableInt(building, "mechanicalParkingSpaces"), nullableLong(unit, "supplyCount"), conditions
+                nullableInt(building, "mechanicalParkingSpaces"), sharedCount != null ? null : extractedSupplyCount, conditions
         );
+    }
+
+    static boolean explicitAreaInEvidence(String evidence, BigDecimal area) {
+        if (evidence == null || area == null) return false;
+        String number = Pattern.quote(area.stripTrailingZeros().toPlainString());
+        return Pattern.compile("(?<![0-9.])" + number + "(?:\\.0+)?\\s*(?:㎡|m²|m2|제곱미터)",
+                Pattern.CASE_INSENSITIVE).matcher(evidence).find();
+    }
+
+    static Integer verifiedParkingCount(Integer count, List<JsonNode> attributes) {
+        if (count == null || count != 0) return count;
+        // 주차장 면적 0㎡와 주차 가능 대수 0대를 혼동하지 않도록 명시된 단위가 필요합니다.
+        return attributes.stream().filter(attribute -> attribute.path("name").asText("").contains("주차"))
+                .anyMatch(attribute -> (attribute.path("value").asText("") + " "
+                        + attribute.path("evidence").asText(""))
+                        .matches("(?s).*0\\s*(?:대|면)(?:\\s|[.,)）]|$).*")) ? count : null;
+    }
+
+    static Long verifiedSharedSupplyCount(JsonNode unit, List<JsonNode> allUnits, String pageText) {
+        if (!isBuildingOnlySupplyTable(pageText)) return null;
+        BigDecimal area = nullableDecimal(unit, "exclusiveArea");
+        String tableId = unit.path("sourceTableId").asText("");
+        if (area == null || tableId.isBlank()) return null;
+        var siblings = allUnits.stream().filter(other -> tableId.equals(other.path("sourceTableId").asText("")))
+                .filter(other -> { var a = nullableDecimal(other, "exclusiveArea"); return a != null && a.compareTo(area) == 0; }).toList();
+        if (siblings.size() < 2) return null;
+        var counts = siblings.stream().map(other -> nullableLong(other, "supplyCount"))
+                .filter(java.util.Objects::nonNull).filter(count -> count > 0).distinct().toList();
+        if (counts.size() != 1) return null;
+        Matcher heading = Pattern.compile("형별\\s*공급계획").matcher(pageText);
+        if (!heading.find()) return null;
+        int end = pageText.indexOf('※', heading.start());
+        String table = pageText.substring(heading.start(), end < 0 ? Math.min(pageText.length(), heading.start() + 5000) : end).replace(",", "");
+        Matcher count = Pattern.compile("(?<![\\d.])" + counts.getFirst() + "(?![\\d.])").matcher(table);
+        return count.find() && !count.find() ? counts.getFirst() : null;
+    }
+
+    record DormitoryFee(Long amount, int page, String evidence) { }
+
+    static List<DetailedRentalCondition> verifiedConversionConditionsForBase(
+            String housingType, Long baseDeposit, Long baseRent, Map<Integer, String> pages) {
+        if (housingType == null || baseDeposit == null || baseRent == null || baseDeposit % 1000 != 0) return List.of();
+        Pattern type = Pattern.compile("^\\s*" + Pattern.quote(housingType) + "(?:\\s|$).*");
+        for (var entry : pages.entrySet()) {
+            String page = entry.getValue();
+            String header = page.replaceAll("\\s+", "");
+            if (!header.contains("임대보증금(천원)") || !header.contains("최대전환시") || !header.contains("월임대료")) continue;
+            String[] lines = page.split("\\R");
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i];
+                if (!type.matcher(line).matches()) continue;
+                String normalized = line.replace(",", "");
+                if (!Pattern.compile("(?<!\\d)" + (baseDeposit / 1000) + "(?!\\d)").matcher(normalized).find()
+                        || !Pattern.compile("(?<!\\d)" + baseRent + "(?!\\d)").matcher(normalized).find()) continue;
+                String surrounding = String.join("\n", java.util.Arrays.copyOfRange(lines,
+                        Math.max(0, i - 1), Math.min(lines.length, i + 3)));
+                return verifiedConversionConditions(housingType, Map.of(entry.getKey(),
+                        "임대보증금(천원) 최대전환시 월임대료\n" + surrounding));
+            }
+        }
+        return List.of();
+    }
+
+    static List<DetailedRentalCondition> verifiedConversionConditions(String housingType, Map<Integer, String> pages) {
+        if (housingType == null || !housingType.matches("[0-9]{1,3}[A-Za-z](?:-[A-Za-z0-9]+)?")) return List.of();
+        Pattern type = Pattern.compile("^\\s*" + Pattern.quote(housingType) + "(?:\\s|$).*");
+        Pattern conversion = Pattern.compile("\\(([+-])\\)\\s*[0-9,]+\\s+([0-9,]+)\\s+([0-9,]+)");
+        for (var entry : pages.entrySet()) {
+            String page = entry.getValue(), header = page.replaceAll("\\s+", "");
+            if (!header.contains("임대보증금(천원)") || !header.contains("최대전환시") || !header.contains("월임대료")) continue;
+            String[] lines = page.split("\\R");
+            for (int i = 0; i < lines.length; i++) {
+                if (!type.matcher(lines[i]).matches()) continue;
+                List<DetailedRentalCondition> found = new ArrayList<>();
+                for (int j = Math.max(0, i - 1); j <= Math.min(lines.length - 1, i + 2); j++) {
+                    Matcher m = conversion.matcher(lines[j]);
+                    if (!m.find()) continue;
+                    if ((j < i && !"+".equals(m.group(1))) || (j > i && !"-".equals(m.group(1)))) continue;
+                    try {
+                        long deposit = Math.multiplyExact(Long.parseLong(m.group(2).replace(",", "")), 1000);
+                        long rent = Long.parseLong(m.group(3).replace(",", ""));
+                        boolean up = "+".equals(m.group(1));
+                        found.add(new DetailedRentalCondition(up ? "MAX_CONVERSION" : "MIN_CONVERSION",
+                                up ? "최대 보증금 전환" : "최소 보증금 전환", deposit, rent,
+                                JSON.writeValueAsString(Map.of("page", entry.getKey(), "evidence", lines[j].trim()))));
+                    } catch (ArithmeticException | NumberFormatException ignored) { return List.of(); }
+                }
+                if (found.size() == 2 && !found.get(0).conditionCode().equals(found.get(1).conditionCode())) return List.copyOf(found);
+            }
+        }
+        return List.of();
+    }
+
+    static Long verifiedThousandWonDeposit(String evidence, Long deposit, Long rent, Map<Integer, String> pages) {
+        if (evidence == null || deposit == null || rent == null || deposit > Long.MAX_VALUE / 1000) return null;
+        Matcher type = Pattern.compile("(?<![A-Za-z0-9])(\\d{1,3}[A-Za-z](?:-[A-Za-z0-9]+)?)(?![A-Za-z0-9])").matcher(evidence);
+        if (!type.find()) return null;
+        String unitType = type.group(1);
+        for (String page : pages.values()) {
+            String compact = page.replaceAll("\\s+", "");
+            if (!compact.contains("임대보증금(천원)") || !compact.contains("월임대료")) continue;
+            for (String line : page.split("\\R")) {
+                String clean = line.trim().replace(",", "");
+                if (!clean.matches("^" + Pattern.quote(unitType) + "\\s+.*")) continue;
+                String[] cells = clean.split("\\s+");
+                if (cells.length >= 5 && cells[1].equals(deposit.toString()) && cells[4].equals(rent.toString())) {
+                    return deposit * 1000;
+                }
+            }
+        }
+        return null;
+    }
+
+    static DormitoryFee verifiedDormitoryFee(String complexName, Map<Integer, String> pages) {
+        if (complexName == null || complexName.isBlank()) return null;
+        String name = complexName.replaceAll("\\s+", "");
+        if (!name.contains("기숙사")) return null;
+        for (var entry : pages.entrySet()) {
+            String page = entry.getValue();
+            if (!page.contains("기숙사비") || !page.contains("임대보증금") || !page.contains("임대료")) continue;
+            for (String line : page.split("\\R")) {
+                String compact = line.replaceAll("\\s+", "");
+                if (!compact.startsWith(name)) continue;
+                Matcher row = Pattern.compile("[-–—][-–—]([0-9,]+)원?").matcher(compact);
+                if (row.find()) {
+                    try { return new DormitoryFee(Long.parseLong(row.group(1).replace(",", "")), entry.getKey(), line.trim()); }
+                    catch (NumberFormatException ignored) { return null; }
+                }
+            }
+        }
+        return null;
+    }
+
+    static boolean belongsToBuildingColumn(String pageText, String number, String evidence) {
+        if (pageText == null || number == null || evidence == null || !number.matches("\\d{1,5}")) return false;
+        if (!isBuildingOnlySupplyTable(pageText)) return false;
+        Matcher heading = Pattern.compile("형별\\s*공급계획").matcher(pageText);
+        if (!heading.find()) return false;
+        int start = heading.start();
+        int end = pageText.indexOf('※', start);
+        String rawTable = pageText.substring(start, end < 0 ? Math.min(pageText.length(), start + 5000) : end);
+        String table = rawTable.replaceAll("\\s+", "");
+        if (!table.contains("해당동") || table.matches(".*(?:동호|호실|해당호|호번호|호별|주택호수|세대호수).*")) return false;
+        // 예비입주자 유형별 표의 '공가 호수'는 개별 호실을 뜻하지 않습니다.
+        if (!table.matches(".*공급.{0,100}형별.*") || !table.matches(".*금회모집.{0,100}예비자.*")) return false;
+        Pattern exactNumber = Pattern.compile("(?<!\\d)" + Pattern.quote(number) + "(?!\\d)");
+        return exactNumber.matcher(rawTable).find() && exactNumber.matcher(evidence).find();
+    }
+
+    static boolean isBuildingOnlySupplyTable(String pageText) {
+        if (pageText == null) return false;
+        Matcher heading = Pattern.compile("형별\\s*공급계획").matcher(pageText);
+        if (!heading.find()) return false;
+        int end = pageText.indexOf('※', heading.start());
+        String table = pageText.substring(heading.start(), end < 0 ? Math.min(pageText.length(), heading.start() + 5000) : end).replaceAll("\\s+", "");
+        return table.contains("해당동") && !table.matches(".*(?:동호|호실|해당호|호번호|호별|주택호수|세대호수).*")
+                && table.matches(".*공급.{0,100}형별.*") && table.matches(".*금회모집.{0,100}예비자.*");
     }
 
     private String completeRoadAddress(
@@ -1169,9 +1624,14 @@ public class GeminiPdfHousingExtractor {
 
     private String cacheKey(List<InspectedDocument> documents) {
         StringBuilder source = new StringBuilder(PROMPT_VERSION).append('|').append(properties.model());
-        documents.forEach(value -> source.append('|').append(value.document().documentId())
-                .append(':').append(value.sha256())
-                .append(':').append(value.expectedUnitCount() == null ? "UNKNOWN" : value.expectedUnitCount()));
+        documents.forEach(value -> {
+            source.append('|').append(value.document().documentId())
+                    .append(':').append(value.sha256())
+                    .append(':').append(value.expectedUnitCount() == null ? "UNKNOWN" : value.expectedUnitCount());
+            if (!value.relevantPages().equals(legacyRelevantPages(value.pageTexts()))) {
+                source.append(":PAGES_V2:").append(new TreeSet<>(value.relevantPages()));
+            }
+        });
         return sha256(source.toString().getBytes(StandardCharsets.UTF_8));
     }
 
@@ -1192,10 +1652,10 @@ public class GeminiPdfHousingExtractor {
     private Integer nullableInt(JsonNode node, String field) {
         return node.has(field) && node.get(field).isNumber() ? node.get(field).asInt() : null;
     }
-    private Long nullableLong(JsonNode node, String field) {
+    private static Long nullableLong(JsonNode node, String field) {
         return node.has(field) && node.get(field).isNumber() ? node.get(field).asLong() : null;
     }
-    private BigDecimal nullableDecimal(JsonNode node, String field) {
+    private static BigDecimal nullableDecimal(JsonNode node, String field) {
         return node.has(field) && node.get(field).isNumber() ? node.get(field).decimalValue() : null;
     }
     private Boolean nullableBoolean(JsonNode node, String field) {
@@ -1279,7 +1739,7 @@ public class GeminiPdfHousingExtractor {
     ) { }
     private record ParsedApiResponse(JsonNode payload, GeminiTokenUsage usage, String finishReason) { }
     private record VerifiedEvidence(int page, String text) { }
-    private record PageSlice(InspectedDocument document, Set<Integer> pages) { }
+    private record PageSlice(InspectedDocument document, Set<Integer> pages, byte[] preparedPdf, boolean textOnly) { }
 
     private static final class PayloadAccumulator {
         private final Map<String, JsonNode> documents = new LinkedHashMap<>();
@@ -1292,8 +1752,22 @@ public class GeminiPdfHousingExtractor {
         private final Map<String, Set<Integer>> requiredSourcePagesByDocument = new LinkedHashMap<>();
         private final Map<String, Map<String, Set<Integer>>> requiredAttributesByDocument = new LinkedHashMap<>();
         private final Map<String, Set<String>> detectedColumnsByDocument = new LinkedHashMap<>();
+        private final Map<String, Set<Integer>> pricingPagesByDocument = new LinkedHashMap<>();
         private boolean complete;
         private String nextCursor = "";
+
+        void recordTextOnly(String documentId, int page) {
+            String warning = "이미지 미분석: documentId=" + documentId + ", page=" + page + " (텍스트만 분석)";
+            if (!warnings.contains(warning)) warnings.add(warning);
+            ObjectNode attribute = JSON.createObjectNode();
+            attribute.put("scope", "DOCUMENT");
+            attribute.put("documentId", documentId);
+            attribute.put("name", "이미지 미분석 페이지");
+            attribute.put("value", Integer.toString(page));
+            attribute.put("page", page);
+            attribute.put("evidence", "크기 제한으로 PDF 추출 텍스트만 분석");
+            additionalAttributes.put("DOCUMENT:" + documentId + ":이미지 미분석 페이지:" + page, attribute);
+        }
 
         PayloadAccumulator(List<InspectedDocument> inspectedDocuments) {
             for (InspectedDocument inspected : inspectedDocuments) {
@@ -1307,11 +1781,35 @@ public class GeminiPdfHousingExtractor {
                         inspected.document().documentId(), inspected.requiredAttributes());
                 detectedColumnsByDocument.put(
                         inspected.document().documentId(), inspected.detectedTableColumns());
+                Set<Integer> pricingPages = new TreeSet<>();
+                inspected.pageTexts().forEach((page, text) -> {
+                    String compact = text == null ? "" : text.replaceAll("\\s+", "");
+                    // 전환 예시 금액과 실제 주택별 임대조건은 다르다.
+                    boolean separatelyAnnounced = Pattern.compile("주택별임대조건.{0,50}개별안내").matcher(compact).find();
+                    if (!separatelyAnnounced && compact.contains("임대보증금")
+                            && (compact.contains("월임대료") || compact.contains("월세"))
+                            && text.lines().filter(line -> !line.contains("예시"))
+                            .anyMatch(line -> Pattern.compile("(?<!\\d)(?:\\d{1,3}(?:,\\d{3})+|\\d{5,})(?!\\d)")
+                                    .matcher(line).find())) {
+                        pricingPages.add(page);
+                    }
+                });
+                pricingPagesByDocument.put(inspected.document().documentId(), pricingPages);
             }
         }
 
-        void accept(JsonNode root) {
-            root.path("documents").forEach(value -> documents.put(value.path("documentId").asText(), value));
+        void accept(JsonNode root) { accept(root, false); }
+
+        void accept(JsonNode root, boolean separatePages) {
+            root.path("documents").forEach(value -> {
+                String id = value.path("documentId").asText();
+                JsonNode previous = documents.get(id);
+                if (separatePages && previous != null && previous.path("expectedUnitCount").asInt() > value.path("expectedUnitCount").asInt()) {
+                    ObjectNode merged = (ObjectNode) value.deepCopy();
+                    merged.put("expectedUnitCount", previous.path("expectedUnitCount").asInt());
+                    documents.put(id, merged);
+                } else documents.put(id, value);
+            });
             Map<String, String> buildingAliases = new LinkedHashMap<>();
             root.path("buildings").forEach(value -> {
                 String responseId = value.path("buildingId").asText();
@@ -1343,8 +1841,27 @@ public class GeminiPdfHousingExtractor {
                     normalized.put("extractionIndex", sourceIndex);
                     normalized.put("unitId", documentId + "/item-" + sourceIndex);
                 }
+                String key = documentId + ":" + normalized.path("extractionIndex").asInt();
+                JsonNode metadata = documents.get(documentId);
+                if (separatePages && metadata != null && metadata.path("documentType").asText().contains("팸플릿")) {
+                    String equivalent = units.entrySet().stream()
+                            .filter(entry -> entry.getKey().startsWith(documentId + ":"))
+                            .filter(entry -> samePamphletType(entry.getValue(), normalized))
+                            .map(Map.Entry::getKey).findFirst().orElse(null);
+                    if (equivalent != null) {
+                        JsonNode prior = units.get(equivalent);
+                        normalized.put("extractionIndex", prior.path("extractionIndex").asInt());
+                        normalized.put("unitId", prior.path("unitId").asText());
+                        key = equivalent;
+                    } else if (units.containsKey(key)) {
+                        int next = indexes(documentId).stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+                        normalized.put("extractionIndex", next);
+                        normalized.put("unitId", documentId + "/item-" + next);
+                        key = documentId + ":" + next;
+                    }
+                }
                 unitAliases.put(value.path("unitId").asText(), normalized.path("unitId").asText());
-                units.put(documentId + ":" + normalized.path("extractionIndex").asInt(), normalized);
+                units.put(key, normalized);
             });
             root.path("rentalConditions").forEach(value -> {
                 ObjectNode normalized = (ObjectNode) value.deepCopy();
@@ -1366,9 +1883,109 @@ public class GeminiPdfHousingExtractor {
                 additionalAttributes.put(normalized.path("scope").asText() + ":" + attributeTarget(normalized) + ":"
                         + normalized.path("name").asText() + ":" + normalized.path("value").asText(), normalized);
             });
-            root.path("warnings").forEach(value -> warnings.add(value.asText()));
+            root.path("warnings").forEach(value -> {
+                if (!warnings.contains(value.asText())) warnings.add(value.asText());
+            });
             complete = root.path("complete").asBoolean(false);
             nextCursor = root.path("nextCursor").asText("");
+        }
+
+        private boolean samePamphletType(JsonNode a, JsonNode b) {
+            String typeA = a.path("housingType").asText("").replaceAll("\\s+|\\([^)]*\\)", "");
+            String typeB = b.path("housingType").asText("").replaceAll("\\s+|\\([^)]*\\)", "");
+            if (!typeA.matches("(?i)\\d{1,3}[a-z](?:-[a-z0-9]+)?") || !typeA.equalsIgnoreCase(typeB)) return false;
+            String buildingA = a.path("buildingId").asText("");
+            String buildingB = b.path("buildingId").asText("");
+            if (!buildingA.equals(buildingB)) {
+                JsonNode one = buildings.get(buildingA), two = buildings.get(buildingB);
+                if (one == null || two == null) return false;
+                String nameA = firstIdentity(one, "complexName"), nameB = firstIdentity(two, "complexName");
+                String addressA = firstIdentity(one, "roadAddress", "lotAddress", "address");
+                String addressB = firstIdentity(two, "roadAddress", "lotAddress", "address");
+                if (nameA.isBlank() || !nameA.equals(nameB)
+                        || (!addressA.isBlank() && !addressB.isBlank() && !addressA.equals(addressB))) return false;
+            }
+            String supplyA = a.path("supplyType").asText("").replaceAll("\\s+", "");
+            String supplyB = b.path("supplyType").asText("").replaceAll("\\s+", "");
+            if (!supplyA.equals(supplyB) && !supplyA.isBlank() && !supplyB.isBlank()
+                    && !"행복주택".equals(supplyA) && !"행복주택".equals(supplyB)) return false;
+            for (String field : List.of("buildingDong", "unitNumber")) {
+                if (!a.path(field).asText("").replaceAll("\\s+", "")
+                        .equals(b.path(field).asText("").replaceAll("\\s+", ""))) return false;
+            }
+            // 같은 페이지의 별도 행은 주택형이 같더라도 합치지 않습니다.
+            return a.path("page").asInt() != b.path("page").asInt();
+        }
+
+        // 보정 응답의 순번은 다른 표의 순번일 수 있으므로 기존 행의 식별값을 확인한다.
+        void acceptPricingRepair(JsonNode root) {
+            Map<String, List<Integer>> missing = missingPricing();
+            Map<String, JsonNode> matches = new LinkedHashMap<>();
+            Map<String, String> aliases = new LinkedHashMap<>();
+            for (JsonNode candidate : root.path("units")) {
+                int index = candidate.path("extractionIndex").asInt();
+                for (Map.Entry<String, List<Integer>> entry : missing.entrySet()) {
+                    if (!entry.getValue().contains(index)) continue;
+                    String key = entry.getKey() + ":" + index;
+                    JsonNode previous = units.get(key);
+                    long equivalentRows = units.entrySet().stream()
+                            .filter(row -> row.getKey().startsWith(entry.getKey() + ":"))
+                            .filter(row -> samePricingIdentity(row.getValue(), candidate)).count();
+                    if (previous != null && equivalentRows == 1 && samePricingIdentity(previous, candidate)
+                            && !matches.containsKey(key)) {
+                        matches.put(key, candidate);
+                        aliases.put(candidate.path("unitId").asText(), previous.path("unitId").asText());
+                    }
+                }
+            }
+            int expected = missing.values().stream().mapToInt(List::size).sum();
+            if (matches.size() != expected || matches.values().stream().anyMatch(candidate ->
+                    !hasConcreteFieldValue(candidate, "rentDeposit")
+                            && !hasConcreteFieldValue(candidate, "monthlyRent")
+                            && !hasPricingCondition(root, candidate.path("unitId").asText()))) {
+                warnings.add("임대금액 보정 행을 기존 주택과 확실히 연결하지 못해 적용하지 않았습니다.");
+                return;
+            }
+            matches.forEach((key, candidate) -> {
+                ObjectNode previous = (ObjectNode) units.get(key).deepCopy();
+                for (String field : List.of("rentDeposit", "monthlyRent")) {
+                    if (hasConcreteFieldValue(candidate, field)) previous.set(field, candidate.get(field));
+                }
+                units.put(key, previous);
+            });
+            root.path("rentalConditions").forEach(condition -> {
+                String mapped = aliases.get(condition.path("unitId").asText());
+                if (mapped == null) return;
+                ObjectNode normalized = (ObjectNode) condition.deepCopy();
+                normalized.put("unitId", mapped);
+                rentalConditions.put(rentalConditionKey(normalized), normalized);
+            });
+        }
+
+        private boolean hasPricingCondition(JsonNode root, String unitId) {
+            for (JsonNode condition : root.path("rentalConditions")) {
+                if (unitId.equals(condition.path("unitId").asText())
+                        && (hasConcreteFieldValue(condition, "rentDeposit")
+                        || hasConcreteFieldValue(condition, "monthlyRent"))) return true;
+            }
+            return false;
+        }
+
+        private boolean samePricingIdentity(JsonNode previous, JsonNode candidate) {
+            boolean identified = false;
+            String oldLabel = previous.path("sourceRowLabel").asText("").replaceAll("\\s+", "");
+            String newLabel = candidate.path("sourceRowLabel").asText("").replaceAll("\\s+", "");
+            if (!oldLabel.isBlank() && !newLabel.isBlank()) {
+                if (!oldLabel.equals(newLabel)) return false;
+            }
+            for (String field : List.of("unitNumber", "buildingDong", "housingType", "supplyType", "exclusiveArea")) {
+                String oldValue = previous.path(field).asText("").replaceAll("\\s+", "");
+                String newValue = candidate.path(field).asText("").replaceAll("\\s+", "");
+                if (oldValue.isBlank() || "null".equals(oldValue)) continue;
+                if (newValue.isBlank() || "null".equals(newValue) || !oldValue.equals(newValue)) return false;
+                identified = true;
+            }
+            return identified;
         }
 
         private Integer sourceRowIndex(String label) {
@@ -1381,7 +1998,8 @@ public class GeminiPdfHousingExtractor {
         private void normalizeShiftedUnitColumns(ObjectNode unit) {
             String unitNumber = unit.path("unitNumber").asText("");
             String buildingDong = unit.path("buildingDong").asText("");
-            if (!isPlausibleUnitNumber(unitNumber) && isPlausibleUnitNumber(buildingDong)) {
+            if (!isPlausibleUnitNumber(unitNumber) && isPlausibleUnitNumber(buildingDong)
+                    && buildingDong.trim().endsWith("호")) {
                 unit.put("unitNumber", buildingDong);
                 unit.putNull("buildingDong");
             }
@@ -1495,7 +2113,7 @@ public class GeminiPdfHousingExtractor {
             boolean rowsComplete = hasPositiveExpectedCount || complete;
             // DB 반영을 막는 기준은 공급행 누락과 공급표 페이지 누락으로 한정한다.
             // 추가정보나 선택 열의 일부 누락은 경고로 남기되 정상 행 전체를 폐기하지 않는다.
-            return rowsComplete && missingSourcePages().isEmpty();
+            return rowsComplete && missingSourcePages().isEmpty() && missingPricing().isEmpty();
         }
 
         String continuationDirective(int limit) {
@@ -1525,6 +2143,20 @@ public class GeminiPdfHousingExtractor {
                         .map(entry -> "documentId=" + entry.getKey() + ", missingSourcePages=" + entry.getValue())
                         .collect(java.util.stream.Collectors.joining("\n"));
             }
+            Map<String, List<Integer>> pricing = missingPricing();
+            if (!pricing.isEmpty()) {
+                return "다음 문서에는 원문 임대보증금·월임대료 표가 있지만 반환된 주택에 금액이 없습니다. "
+                        + "금액 표와 공급형을 직접 확인해 이미 추출한 각 행의 extractionIndex를 유지하고 "
+                        + "아래 기존 행의 호수, 주택형, 전용면적 등 식별값을 빠짐없이 그대로 반환하세요. "
+                        + "해당하는 원문 보증금과 월임대료, 대상별 rentalConditions를 반환하세요. "
+                        + "천원 단위는 원으로 변환하고 원문에 없는 값은 만들지 마세요.\n"
+                        + pricing.entrySet().stream().map(entry -> "documentId=" + entry.getKey()
+                        + ", missingPricingIndexes=" + entry.getValue() + ", 기존 행="
+                        + entry.getValue().stream().map(index -> units.get(entry.getKey() + ":" + index))
+                        .filter(java.util.Objects::nonNull).map(JsonNode::toString)
+                        .collect(java.util.stream.Collectors.joining("; ")))
+                        .collect(java.util.stream.Collectors.joining("\n"));
+            }
             if (!complete && !nextCursor.isBlank()) {
                 return "AI nextCursor=" + nextCursor + " 바로 다음 원문 행부터 반환하세요.";
             }
@@ -1540,6 +2172,26 @@ public class GeminiPdfHousingExtractor {
                     + rentalConditions.size() * 100L
                     + additionalAttributes.size() * 10L
                     + populatedFields;
+        }
+
+        private Map<String, List<Integer>> missingPricing() {
+            Map<String, List<Integer>> result = new LinkedHashMap<>();
+            pricingPagesByDocument.forEach((documentId, pages) -> {
+                if (pages.isEmpty()) return;
+                String prefix = documentId + ":";
+                List<JsonNode> documentUnits = units.entrySet().stream()
+                        .filter(entry -> entry.getKey().startsWith(prefix)).map(Map.Entry::getValue).toList();
+                if (documentUnits.isEmpty()) return;
+                boolean hasPrice = documentUnits.stream().anyMatch(unit ->
+                        hasConcreteFieldValue(unit, "rentDeposit") || hasConcreteFieldValue(unit, "monthlyRent")
+                        || rentalConditions.values().stream().anyMatch(condition ->
+                                unit.path("unitId").asText().equals(condition.path("unitId").asText())
+                                        && (hasConcreteFieldValue(condition, "rentDeposit")
+                                        || hasConcreteFieldValue(condition, "monthlyRent"))));
+                if (!hasPrice) result.put(documentId, documentUnits.stream()
+                        .map(unit -> unit.path("extractionIndex").asInt()).filter(index -> index > 0).sorted().toList());
+            });
+            return result;
         }
 
         int maximumExpectedCount() {
@@ -1558,7 +2210,9 @@ public class GeminiPdfHousingExtractor {
 
         private Set<Integer> requiredSourcePages(InspectedDocument inspected) {
             int expected = inspected.expectedUnitCount() == null ? 0 : inspected.expectedUnitCount();
-            if (expected <= 0) return Set.of();
+            // 기존 파서의 단일 주택 힌트만으로는 문서의 모든 '1'이 표 행임을 증명할 수 없다.
+            // 단일 주택 공고의 신청 안내 번호를 누락 페이지로 오인하지 않는다.
+            if (expected <= 1) return Set.of();
             Set<Integer> result = new TreeSet<>();
             inspected.pageTexts().forEach((page, text) -> {
                 if (!inspected.relevantPages().contains(page) || text == null || text.isBlank()) return;
@@ -1811,6 +2465,11 @@ public class GeminiPdfHousingExtractor {
 
             for (int missingPage : missingSourcePages().getOrDefault(documentId, List.of())) {
                 addPageWithNeighbors(pages, missingPage, inspected.pages());
+            }
+            if (missingPricing().containsKey(documentId)) {
+                for (int page : pricingPagesByDocument.getOrDefault(documentId, Set.of())) {
+                    addPageWithNeighbors(pages, page, inspected.pages());
+                }
             }
 
             Set<String> incompleteUnitIds = inconsistentFieldRows().keySet();

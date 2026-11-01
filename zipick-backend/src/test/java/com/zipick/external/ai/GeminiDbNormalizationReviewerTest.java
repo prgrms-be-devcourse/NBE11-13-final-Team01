@@ -24,6 +24,21 @@ class GeminiDbNormalizationReviewerTest {
     Path temporary;
 
     @Test
+    void 원문에_있는_제목을_근거로_없는_주소를_만들면_제외한다() {
+        GeminiApiTransport transport = request -> envelope(Map.of("valid", false, "corrections", List.of(Map.ofEntries(
+                Map.entry("documentId", "doc-1"), Map.entry("sourceHousingKey", "housing-1"),
+                Map.entry("sourceSupplyKey", ""), Map.entry("target", "HOUSING"), Map.entry("field", "provinceName"),
+                Map.entry("stringValue", "광주광역시"), Map.entry("integerValue", 0), Map.entry("decimalValue", ""),
+                Map.entry("booleanValue", false), Map.entry("attributeName", ""), Map.entry("attributeValue", ""),
+                Map.entry("evidence", "광주두암2 영구임대주택"), Map.entry("reason", "주소 수정"))), "warnings", List.of()));
+        Path cachePath=temporary.resolve("unsupported-address");
+        var reviewer=new GeminiDbNormalizationReviewer(pdfProperties(), properties(true,100_000,200_000,16), transport,
+                new GeminiPdfExtractionCache(cachePath),new GeminiDailyCallBudget(cachePath,20,4));
+        var result=reviewer.review(List.of(document("doc-1", "광주두암2 영구임대주택")));
+        assertThat(result.corrections()).isEmpty();
+    }
+
+    @Test
     void 일시_오류_후_재시도_성공은_최종_호출_실패로_기록하지_않는다() {
         AtomicInteger calls = new AtomicInteger();
         GeminiApiTransport transport = request -> {
