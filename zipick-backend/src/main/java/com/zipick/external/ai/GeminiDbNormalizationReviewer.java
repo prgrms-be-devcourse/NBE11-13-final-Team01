@@ -247,6 +247,14 @@ public class GeminiDbNormalizationReviewer {
                         + correction.documentId() + "/" + correction.field());
                 continue;
             }
+            if ("HOUSING".equals(correction.target())
+                    && correction.field() != null
+                    && java.util.Set.of("provinceName", "districtName", "fullAddress", "roadAddress", "lotAddress").contains(correction.field())
+                    && (correction.stringValue() == null || correction.stringValue().isBlank()
+                    || !compact(correction.evidence()).contains(compact(correction.stringValue())))) {
+                warnings.add("주소 수정값이 제시된 원문 근거에 없어 제외했습니다: " + correction.documentId() + "/" + correction.field());
+                continue;
+            }
             if (("SUPPLY".equals(correction.target()) || "ATTRIBUTE".equals(correction.target()))
                     && (correction.sourceSupplyKey() == null || correction.sourceSupplyKey().isBlank()
                     || !raw.contains(correction.sourceSupplyKey()))) {

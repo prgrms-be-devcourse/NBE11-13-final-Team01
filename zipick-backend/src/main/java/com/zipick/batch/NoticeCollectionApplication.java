@@ -37,7 +37,6 @@ public final class NoticeCollectionApplication {
             MyHomeSyncService syncService = context.getBean(MyHomeSyncService.class);
             NoticeSyncResponse result = syncService.synchronize();
             // elapsedSeconds 는 synchronize() 전체(수집 → 저장 → 정규화 → 좌표 보완) 시간이다.
-            // 인프라 수집의 catch-up-window 를 이 수치에 맞춰 잡으므로, 스케줄을 조정할 때마다 다시 본다.
             log.info(
                     "공고 수집 완료: 원본 행={}, 신규 공고={}, 갱신 공고={}, 주택={}, 공급정보={}, 목록 소실 마감 공고={}, 비활성 주택={}, 비활성 공급정보={}, elapsedSeconds={}",
                     result.collectedRows(),

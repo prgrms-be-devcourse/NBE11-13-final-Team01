@@ -12,6 +12,64 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GhHousingDetailSourceTest {
 
     @Test
+    void GH_AI_성공한_PDF와_HTML이_모두_변경없을때만_건너뛴다() {
+        String html = "<a href='/selectFileDown?id=1'>공급주택목록.pdf</a><div id='tab1'></div>";
+        byte[] bytes = {1, 2, 3};
+        ExternalDocumentClient client = new ExternalDocumentClient() {
+            @Override public String getText(URI uri) { return html; }
+            @Override public byte[] getBytes(URI uri) { return bytes; }
+        };
+        var source = new GhHousingDetailSource(client);
+        var history = org.mockito.Mockito.mock(com.zipick.notice.repository.DocumentParseHistoryRepository.class);
+        var ai = org.mockito.Mockito.mock(com.zipick.external.ai.GeminiPdfHousingDetailSupport.class);
+        source.setHistoryRepository(history); source.setGeminiSupport(ai);
+        org.mockito.Mockito.when(ai.enabled()).thenReturn(true);
+        org.mockito.Mockito.when(ai.parserVersion()).thenReturn("TEST");
+        var housing = new com.zipick.external.housingdetail.DetailedHousingUnit("u", null, null, null,
+                "경기도 수원시 1", null, null, null, null, null, null, null, null, null, null);
+        org.mockito.Mockito.when(ai.supplementWithStatus(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList()))
+                .thenReturn(new com.zipick.external.ai.GeminiPdfHousingDetailSupport.SupplementResult(List.of(housing), true, true));
+        var n = notice("GH", "https://apply.gh.or.kr/detail");
+        var first = source.extract(n);
+        assertThat(first.parseCheckpoints()).hasSize(1);
+        var cp = first.parseCheckpoints().getFirst();
+        var success = new com.zipick.notice.domain.DocumentParseHistory(cp.documentKey(), cp.parserVersion());
+        success.markSuccess(cp.size(), cp.unitCount());
+        org.mockito.Mockito.when(history.findByDocumentKeyAndParserVersion(cp.documentKey(), cp.parserVersion()))
+                .thenReturn(java.util.Optional.of(success));
+        assertThat(source.extract(n).preservesExistingHousings()).isTrue();
+        org.mockito.Mockito.verify(ai, org.mockito.Mockito.times(1)).supplementWithStatus(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList());
+        bytes[0] = 9;
+        assertThat(source.extract(n).parseCheckpoints()).hasSize(1);
+    }
+
+    @Test
+    void GH_AI_실패하면_성공이력을_남기지_않는다() {
+        String html = "<a href='/selectFileDown?id=1'>공급주택목록.pdf</a><div id='tab1'></div>";
+        ExternalDocumentClient client = new ExternalDocumentClient() {
+            @Override public String getText(URI uri) { return html; }
+            @Override public byte[] getBytes(URI uri) { return new byte[]{1, 2}; }
+        };
+        var source = new GhHousingDetailSource(client);
+        var history = org.mockito.Mockito.mock(com.zipick.notice.repository.DocumentParseHistoryRepository.class);
+        var ai = org.mockito.Mockito.mock(com.zipick.external.ai.GeminiPdfHousingDetailSupport.class);
+        source.setHistoryRepository(history); source.setGeminiSupport(ai);
+        org.mockito.Mockito.when(ai.enabled()).thenReturn(true);
+        org.mockito.Mockito.when(ai.parserVersion()).thenReturn("TEST");
+        var housing = new com.zipick.external.housingdetail.DetailedHousingUnit("u", null, null, null,
+                "경기도 수원시 1", null, null, null, null, null, null, null, null, null, null);
+        org.mockito.Mockito.when(ai.supplementWithStatus(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList()))
+                .thenReturn(new com.zipick.external.ai.GeminiPdfHousingDetailSupport.SupplementResult(List.of(housing), false, false));
+        assertThat(source.extract(notice("GH", "https://apply.gh.or.kr/detail")).parseCheckpoints()).isEmpty();
+    }
+
+    @Test
     void supportsGhSourceAndOfficialHostOnly() {
         GhHousingDetailSource source = new GhHousingDetailSource(null);
         assertThat(source.supports(notice("GH", null))).isTrue();

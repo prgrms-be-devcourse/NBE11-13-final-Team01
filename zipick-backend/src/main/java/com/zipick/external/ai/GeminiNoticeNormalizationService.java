@@ -54,8 +54,8 @@ public class GeminiNoticeNormalizationService {
     }
 
     /** 이번 수집에서 Lite 추출이 끝난 문서를 정규화 대기열에 등록합니다. */
-    public void enqueue(List<NoticeSyncCommand> commands) {
-        if (!reviewer.enabled() || commands == null || commands.isEmpty()) return;
+    public int enqueue(List<NoticeSyncCommand> commands) {
+        if (!reviewer.enabled() || commands == null || commands.isEmpty()) return 0;
         List<GeminiNormalizationDocument> documents = commands.stream()
                 .filter(command -> noticeRepository == null || noticeRepository
                         .findBySourceAndExternalNoticeId(
@@ -65,11 +65,13 @@ public class GeminiNoticeNormalizationService {
                 .map(this::toDocument)
                 .toList();
         if (!documents.isEmpty()) jobService.enqueue(documents);
+        return documents.size();
     }
 
     /** 신규 수집과 무관하게 PENDING/RETRY 작업을 읽어 정규화만 다시 수행합니다. */
     public void normalizePending() {
         if (!reviewer.enabled()) return;
+        long normalizationStarted = System.nanoTime();
         List<AiNormalizationJob> dueJobs = jobService.findDue();
         if (dueJobs.isEmpty()) return;
 
@@ -78,6 +80,7 @@ public class GeminiNoticeNormalizationService {
         for (AiNormalizationJob job : dueJobs) {
             try {
                 GeminiNormalizationDocument document = jobService.readDocument(job);
+                if (AiReprocessingScope.enabled() && !AiReprocessingScope.includes(externalNoticeId(document))) continue;
                 if (!isCurrentLiteDocument(document)) {
                     jobService.markSuccess(List.of(job.getId()));
                     log.info("현재 추출 버전이 아닌 AI 정규화 작업을 종료합니다: document={}",
@@ -101,7 +104,9 @@ public class GeminiNoticeNormalizationService {
         if (documents.isEmpty()) return;
 
         try {
+            long reviewStarted = System.nanoTime();
             GeminiNormalizationResult result = reviewer.review(documents);
+            long reviewCompleted = System.nanoTime();
             Set<String> deferred = Set.copyOf(result.deferredDocumentIds());
             List<Long> deferredIds = jobsByDocumentId.entrySet().stream()
                     .filter(entry -> deferred.contains(entry.getKey()))
@@ -145,6 +150,11 @@ public class GeminiNoticeNormalizationService {
             log.info("AI 정규화 대기열 처리: 대상={}, 성공={}, 재시도={}, 실제호출={}, 캐시={}",
                     documents.size(), successCount, deferredIds.size() + patchRetryCount,
                     result.executedCalls(), result.cacheHits());
+            log.info("AI 정규화 구간 시간: 입력준비ms={}, 검수ms={}, DB반영및상태처리ms={}, 전체ms={}",
+                    (reviewStarted - normalizationStarted) / 1_000_000,
+                    (reviewCompleted - reviewStarted) / 1_000_000,
+                    (System.nanoTime() - reviewCompleted) / 1_000_000,
+                    (System.nanoTime() - normalizationStarted) / 1_000_000);
             result.warnings().forEach(warning -> log.warn("AI 2단계 정규화: {}", warning));
         } catch (RuntimeException exception) {
             log.warn("COLLECTOR_METRIC event=normalization_error reason=batch count={}", jobsByDocumentId.size());
@@ -197,11 +207,17 @@ public class GeminiNoticeNormalizationService {
     private boolean isLitePayload(String rawPayload) {
         if (rawPayload == null || rawPayload.isBlank()) return false;
         try {
-            return GeminiPdfHousingExtractor.PROMPT_VERSION.equals(
-                    JSON.readTree(rawPayload).path("parser").asText(""));
+            return containsLitePayload(JSON.readTree(rawPayload), 0);
         } catch (RuntimeException ignored) {
             return false;
         }
+    }
+
+    private boolean containsLitePayload(JsonNode node, int depth) {
+        if (node == null || node.isMissingNode() || depth > 8) return false;
+        if (GeminiPdfHousingExtractor.PROMPT_VERSION.equals(node.path("parser").asText(""))) return true;
+        return containsLitePayload(node.path("primary"), depth + 1)
+                || containsLitePayload(node.path("supplement"), depth + 1);
     }
 
     private boolean isCurrentLiteDocument(GeminiNormalizationDocument document) {
@@ -210,7 +226,7 @@ public class GeminiNoticeNormalizationService {
         return list.stream().filter(Map.class::isInstance).map(Map.class::cast).allMatch(row -> {
             Object raw = row.get("rawPayload");
             if (!(raw instanceof Map<?, ?> rawMap)) return false;
-            return GeminiPdfHousingExtractor.PROMPT_VERSION.equals(String.valueOf(rawMap.get("parser")));
+            return isLitePayload(JSON.writeValueAsString(rawMap));
         });
     }
 

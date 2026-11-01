@@ -96,7 +96,7 @@ zipick:
     base-url: ${gemini.api.base-url:https://generativelanguage.googleapis.com}
     enabled: ${GEMINI_PDF_PARSER_ENABLED:true}
     model: ${GEMINI_PDF_PARSER_MODEL:gemini-3.5-flash-lite}
-    max-file-bytes: 20971520
+    max-file-bytes: 41943040
     # PDF 한 건씩 처리하므로 모델의 출력 한도를 사용한다.
     max-output-tokens: 65536
     thinking-level: medium
@@ -135,22 +135,6 @@ zipick:
     collection:
       # 운영 웹 서버는 false (수집은 collector 프로세스가 공고 수집 직후 실행). 로컬·collector 는 true
       enabled: ${INFRA_COLLECTION_ENABLED:true}
-      # 기동 후 최초 수집까지의 지연. 애플리케이션이 완전히 뜬 뒤 시작하도록 짧게 둔다.
-      startup-delay: PT10S
-      # 최초 수집 이후 보정 실행 간격. 공고 수집이 늦게 끝나 뒤늦게 좌표가 채워진 주택을 줍는다.
-      # 대상이 0건이면 SELECT 한 번으로 끝나므로 비용이 거의 없다.
-      catch-up-interval: PT10M
-      # 보정 실행을 유지하는 기간(기동 시점 기준). 이 시간이 지나면 일일 cron 만 남는다.
-      # 좌표는 공고 수집의 맨 마지막 단계에서 생기므로, 이 창은 공고 수집 '전체' 시간을 덮어야 한다.
-      # 실측(AI ON + 빈 DB 최초 전건): 2시간 21분 25초(elapsedSeconds=8485).
-      # 보정이 10분 간격이라 같은 조건이면 약 2시간 30분 시점 실행에서 새 좌표를 잡는다.
-      # PT3H 는 그 실측을 수용하면서 no-op polling 도 과하게 늘리지 않는 임시 안전값이다
-      # (창을 늘리는 비용은 대상이 0건일 때의 SELECT 몇 번뿐이다).
-      # 공고 수집기의 기동·일일 스케줄이 확정되면 실제 cron 시각과 증분 수집 시간 기준으로 다시 조정한다.
-      catch-up-window: PT3H
-      # 하루 1회 정기 수집 시각. 공고 수집 스케줄이 정해지면 그 뒤 시각으로 맞춘다.
-      daily-cron: "0 30 4 * * *"
-      cron-zone: Asia/Seoul
       # 한 번에 DB에서 가져올 최대 주택 수. 대상이 남아 있으면 대기 없이 다음 batch 를 이어서 처리한다.
       batch-size: 100
       # 카카오 호출이 연속으로 이 횟수만큼 실패하면 남은 batch 가 있어도 실행 전체를 중단한다(전체 장애로 판단).

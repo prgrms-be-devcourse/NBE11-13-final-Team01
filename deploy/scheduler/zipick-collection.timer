@@ -1,0 +1,11 @@
+[Unit]
+Description=ZIPICK collection at 09:30 Korea time
+
+[Timer]
+OnCalendar=*-*-* 09:30:00 Asia/Seoul
+AccuracySec=1s
+Persistent=false
+Unit=zipick-collection.service
+
+[Install]
+WantedBy=timers.target
