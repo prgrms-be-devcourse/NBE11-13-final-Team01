@@ -43,6 +43,36 @@ import static org.mockito.Mockito.when;
 
 class NoticeSyncPersistenceServiceTest {
 
+    @Test
+    void 같은_지역의_유일한_동일_블록만_주소표현이_달라도_같은단지로_판정한다() {
+        Notice notice = new Notice("LH", "n", "공고", NoticeStatus.OPEN);
+        Housing existing = new Housing(notice, "old", "구리갈매역세권 A-1BL", "경기도 구리시 갈매동 산 14");
+        var same = new NoticeHousingResponse("new", "구리갈매역세권 A-1블록 신혼희망타운 행복주택",
+                "경기도", "구리시", "경기도 구리시 갈매동 일원 A-1블록", null, null, null, null, null, null, null,
+                List.of(), List.of());
+        var wrongRegion = new NoticeHousingResponse("other", "구리갈매역세권 A-1블록 신혼희망타운 행복주택",
+                "경기도", "남양주시", "경기도 남양주시 일원 A-1블록", null, null, null, null, null, null, null,
+                List.of(), List.of());
+        var conflicting = new NoticeHousingResponse("other2", "구리갈매역세권 A-1블록 신혼희망타운 행복주택",
+                "경기도", "구리시", "경기도 구리시 갈매동 50", null, null, null, null, null, null, null,
+                List.of(), List.of());
+        assertThat(NoticeSyncPersistenceService.sameVerifiedComplex(existing, same)).isTrue();
+        assertThat(NoticeSyncPersistenceService.sameVerifiedComplex(existing, wrongRegion)).isFalse();
+        assertThat(NoticeSyncPersistenceService.sameVerifiedComplex(existing, conflicting)).isFalse();
+    }
+
+    @Test
+    void 원문확인한_기숙사비와_일치할때만_기존_잘못된_월세를_비운다() {
+        var supply = new HousingSupply(mock(Housing.class), "GEMINI:test", null);
+        ReflectionTestUtils.setField(supply, "monthlyRent", 120000L);
+        assertThat(NoticeSyncPersistenceService.verifiedDormitoryFee("{\"verifiedDormitoryFee\":{\"amount\":120000,\"page\":5,\"evidence\":\"기숙사 - - 120,000원\"}}")).isEqualTo(120000L);
+        assertThat(NoticeSyncPersistenceService.verifiedDormitoryFee("{\"verifiedDormitoryFee\":{\"amount\":120000}}" )).isNull();
+        supply.clearMonthlyRentIfEqualTo(90000L);
+        assertThat(supply.getMonthlyRent()).isEqualTo(120000L);
+        supply.clearMonthlyRentIfEqualTo(120000L);
+        assertThat(supply.getMonthlyRent()).isNull();
+    }
+
     private final AgencyRepository agencies = mock(AgencyRepository.class);
     private final NoticeRepository notices = mock(NoticeRepository.class);
     private final NoticeAttachmentRepository attachments = mock(NoticeAttachmentRepository.class);

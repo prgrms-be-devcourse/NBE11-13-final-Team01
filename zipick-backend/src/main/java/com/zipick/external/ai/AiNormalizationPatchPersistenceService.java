@@ -57,8 +57,8 @@ public class AiNormalizationPatchPersistenceService {
                             "정규화 대상 공고를 찾을 수 없습니다: " + correction.documentId()));
             switch (correction.target()) {
                 case "DOCUMENT" -> applyDocument(notice, correction);
-                case "HOUSING" -> applyHousing(notice, correction);
-                case "SUPPLY", "ATTRIBUTE" -> applySupply(notice, correction);
+                case "HOUSING" -> applyHousing(notice, job, correction);
+                case "SUPPLY", "ATTRIBUTE" -> applySupply(notice, job, correction);
                 default -> throw new IllegalStateException("지원하지 않는 정규화 대상입니다: " + correction.target());
             }
         }
@@ -77,11 +77,8 @@ public class AiNormalizationPatchPersistenceService {
         notice.applyAiNormalizedDates(winner, start, end);
     }
 
-    private void applyHousing(Notice notice, GeminiNormalizationCorrection correction) {
-        Housing housing = housingRepository.findByNoticeIdAndSourceHousingKey(
-                        notice.getId(), correction.sourceHousingKey())
-                .orElseThrow(() -> new IllegalStateException(
-                        "정규화 대상 주택을 찾을 수 없습니다: " + correction.sourceHousingKey()));
+    private void applyHousing(Notice notice, AiNormalizationJob job, GeminiNormalizationCorrection correction) {
+        Housing housing = findHousing(notice, job, correction.sourceHousingKey());
         String name = null;
         String province = null;
         String district = null;
@@ -100,8 +97,10 @@ public class AiNormalizationPatchPersistenceService {
         housing.applyAiNormalization(name, province, district, address, lot, road);
     }
 
-    private void applySupply(Notice notice, GeminiNormalizationCorrection correction) {
-        HousingSupply supply = findSupply(notice, correction);
+    private void applySupply(Notice notice, AiNormalizationJob job, GeminiNormalizationCorrection correction) {
+        HousingSupply supply = findSupply(notice, job, correction);
+        if ("supplyCount".equals(correction.field())
+                && com.zipick.notice.service.NoticeSyncPersistenceService.hasVerifiedSharedSupplyCount(supply.getRawPayload())) return;
         String housingType = null;
         String supplyType = null;
         String dong = null;
@@ -147,23 +146,49 @@ public class AiNormalizationPatchPersistenceService {
                 mechanicalSpaces, rawPayload);
     }
 
-    private HousingSupply findSupply(Notice notice, GeminiNormalizationCorrection correction) {
+    private HousingSupply findSupply(Notice notice, AiNormalizationJob job, GeminiNormalizationCorrection correction) {
         if (correction.sourceHousingKey() != null && !correction.sourceHousingKey().isBlank()) {
-            Housing housing = housingRepository.findByNoticeIdAndSourceHousingKey(
-                            notice.getId(), correction.sourceHousingKey())
-                    .orElseThrow(() -> new IllegalStateException(
-                            "정규화 대상 주택을 찾을 수 없습니다: " + correction.sourceHousingKey()));
-            return supplyRepository.findByHousingIdAndSourceSupplyKey(
-                            housing.getId(), correction.sourceSupplyKey())
-                    .orElseThrow(() -> new IllegalStateException(
-                            "정규화 대상 공급정보를 찾을 수 없습니다: " + correction.sourceSupplyKey()));
+            var housing = housingRepository.findByNoticeIdAndSourceHousingKey(notice.getId(), correction.sourceHousingKey());
+            if (housing.isPresent() && housing.get().isActive()) {
+                var direct = supplyRepository.findByHousingIdAndSourceSupplyKey(housing.get().getId(), correction.sourceSupplyKey());
+                if (direct.isPresent() && direct.get().isActive()) return direct.get();
+            }
         }
         List<HousingSupply> matches = supplyRepository.findAllByHousingNoticeIdAndSourceSupplyKey(
-                notice.getId(), correction.sourceSupplyKey());
+                notice.getId(), correction.sourceSupplyKey()).stream()
+                .filter(HousingSupply::isActive).filter(value -> value.getHousing().isActive()).toList();
         if (matches.size() != 1) {
             throw new IllegalStateException("공급정보 키가 없거나 중복됩니다: " + correction.sourceSupplyKey());
         }
         return matches.getFirst();
+    }
+
+    private Housing findHousing(Notice notice, AiNormalizationJob job, String sourceKey) {
+        var direct = housingRepository.findByNoticeIdAndSourceHousingKey(notice.getId(), sourceKey);
+        if (direct.isPresent()) return direct.get();
+        // 수집 시 동일 주소로 병합되면 DB에는 기존 키가 남으므로 당시 입력 주소로만 대응한다.
+        var addresses = new java.util.HashSet<String>();
+        var input = JSON.readTree(job.getInputPayload());
+        for (var row : input.path("databaseCandidate").path("rows")) {
+            if (!java.util.Objects.equals(sourceKey, row.path("sourceHousingKey").asText())) continue;
+            for (String field : List.of("fullAddress", "lotAddress", "roadAddress")) {
+                String address = normalizedAddress(row.path(field).asText(""));
+                if (!address.isBlank()) addresses.add(address);
+            }
+        }
+        if (!addresses.isEmpty()) {
+            List<Housing> matches = housingRepository.findAllByNoticeId(notice.getId()).stream()
+                    .filter(housing -> java.util.stream.Stream.of(
+                                    housing.getAddress(), housing.getLotAddress(), housing.getRoadAddress())
+                            .map(this::normalizedAddress).anyMatch(addresses::contains))
+                    .toList();
+            if (matches.size() == 1) return matches.getFirst();
+        }
+        throw new IllegalStateException("정규화 대상 주택을 찾을 수 없습니다: " + sourceKey);
+    }
+
+    private String normalizedAddress(String address) {
+        return address == null ? "" : address.replaceAll("\\s+", "").trim();
     }
 
     @SuppressWarnings("unchecked")

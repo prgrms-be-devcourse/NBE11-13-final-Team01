@@ -13,6 +13,115 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class LhHousingDetailSourceTest {
 
     @Test
+    void 동의서만_있는_서식은_주택분석에서_제외하고_공고문이_포함되면_유지한다() {
+        assertThat(LhHousingDetailSource.isConsentFormOnly("붙임1.개인정보 수집 이용 동의서.pdf")).isTrue();
+        assertThat(LhHousingDetailSource.isConsentFormOnly("2-2.샘플_금융정보제공동의서.pdf")).isTrue();
+        assertThat(LhHousingDetailSource.isConsentFormOnly("모집공고문 및 동의서.pdf")).isFalse();
+        assertThat(LhHousingDetailSource.isConsentFormOnly("공급주택목록.pdf")).isFalse();
+    }
+
+    @Test
+    void 주택행이_없어도_공고문_추가정보는_첨부이력에_보존한다() {
+        var source = source(new StubDocumentClient("", new byte[0]));
+        var attachment = new com.zipick.notice.dto.NoticeAttachmentResponse("LH_FILE:1", "NOTICE", "공고.pdf", "https://example.com/1", null);
+        var attributes = java.util.Map.<String, List<java.util.Map<String, Object>>>of("LH_FILE:1", List.of(
+                java.util.Map.of("scope", "DOCUMENT", "name", "지원금액", "value", "2억원", "page", 1, "evidence", "2억원")));
+        assertThat(source.preserveDocumentAttributes(List.of(attachment), attributes)).singleElement().satisfies(result -> {
+            assertThat(result.rawPayload()).contains("지원금액", "2억원", "DOCUMENT");
+            assertThat(result.sourceKey()).isEqualTo("LH_FILE:1");
+        });
+    }
+
+    @Test
+    void 같은_단지와_주택형의_팸플릿은_기존_공급행에_정보를_합친다() {
+        var source = source(new StubDocumentClient("", new byte[0]));
+        var primary = new DetailedHousingUnit("GEMINI:main/item-1", "구리갈매역세권 A-1BL 신혼희망타운 행복주택", null, null,
+                "경기도 구리시 갈매동 1", null, null, null, new java.math.BigDecimal("55.94"), null,
+                "55A-1", null, 175200000L, 730000L, "{\"primaryData\":true}");
+        var pamphlet = new DetailedHousingUnit("GEMINI:pamphlet/item-1", "구리갈매역세권 A-1블록 신혼희망타운", null, null,
+                "구리갈매역세권 A-1블록", null, null, null, new java.math.BigDecimal("55.94"), null,
+                "55A-1", null, null, null, "{\"extraData\":true}");
+        var result = new java.util.ArrayList<>(List.of(primary));
+        source.mergePamphletUnits(result, List.of(pamphlet));
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().rentDeposit()).isEqualTo(175200000L);
+        assertThat(result.getFirst().rawPayload()).contains("primaryData", "extraData");
+    }
+
+    @Test
+    void 주택행이_없는_팸플릿의_공통정보는_기존_행의_문서정보로_보존한다() {
+        var source = source(new StubDocumentClient("", new byte[0]));
+        var primary = new DetailedHousingUnit("GEMINI:main/item-1", "단지", null, null,
+                "경기도 구리시 갈매동 1", null, null, null, new java.math.BigDecimal("55.94"), null,
+                "55A-1", null, 175200000L, 730000L, "{\"parser\":\"DIRECT_HOUSING_V19_BOUNDED_REPAIR\"}");
+        var result = new java.util.ArrayList<>(List.of(primary));
+        source.preservePamphletAttributes(result, List.of(java.util.Map.of("scope", "DOCUMENT", "name", "주민공동시설 종류", "value", "스마트멀티룸", "page", 12, "evidence", "스마트멀티룸")));
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().rawPayload()).contains("스마트멀티룸", "DOCUMENT", "DIRECT_HOUSING_V19_BOUNDED_REPAIR");
+        assertThat(result.getFirst().rentDeposit()).isEqualTo(175200000L);
+    }
+
+    @Test
+    void LH_AI_성공한_첨부만_이력을_남기고_다음_실행에서_건너뛴다() throws Exception {
+        var source = source(new StubDocumentClient(
+                "<a href=\"javascript:fileDownLoad('77');\">모집공고문.pdf</a>", emptyPdf()));
+        var history = org.mockito.Mockito.mock(com.zipick.notice.repository.DocumentParseHistoryRepository.class);
+        var ai = org.mockito.Mockito.mock(com.zipick.external.ai.GeminiPdfHousingDetailSupport.class);
+        source.setHistoryRepository(history); source.setGeminiSupport(ai);
+        org.mockito.Mockito.when(ai.enabled()).thenReturn(true);
+        org.mockito.Mockito.when(ai.parserVersion()).thenReturn("AI_TEST");
+        var response = new com.zipick.external.ai.GeminiPdfHousingDetailSupport.SupplementResult(
+                List.of(unit("LH_PDF:1", "서울특별시 강남구 테헤란로 1")), true, true);
+        org.mockito.Mockito.when(ai.supplementWithStatus(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList()))
+                .thenReturn(response);
+        var first = source.extract(notice("https://apply.lh.or.kr/detail"));
+        assertThat(first.parseCheckpoints()).hasSize(1);
+        var checkpoint = first.parseCheckpoints().getFirst();
+        assertThat(checkpoint.parserVersion()).isEqualTo("LH_AI_TEST");
+        var success = new com.zipick.notice.domain.DocumentParseHistory(checkpoint.documentKey(), checkpoint.parserVersion());
+        success.markSuccess(checkpoint.size(), checkpoint.unitCount());
+        org.mockito.Mockito.when(history.findByDocumentKeyAndParserVersion(checkpoint.documentKey(), checkpoint.parserVersion()))
+                .thenReturn(java.util.Optional.of(success));
+        var second = source.extract(notice("https://apply.lh.or.kr/detail"));
+        assertThat(second.preservesExistingHousings()).isTrue();
+        assertThat(second.housings()).isEmpty();
+        org.mockito.Mockito.verify(ai, org.mockito.Mockito.times(1)).supplementWithStatus(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList());
+    }
+
+    @Test
+    void LH_AI_실패하고_기본결과를_사용하면_AI_성공이력을_남기지_않는다() throws Exception {
+        var source = source(new StubDocumentClient(
+                "<a href=\"javascript:fileDownLoad('77');\">모집공고문.pdf</a>", emptyPdf()));
+        var history = org.mockito.Mockito.mock(com.zipick.notice.repository.DocumentParseHistoryRepository.class);
+        var ai = org.mockito.Mockito.mock(com.zipick.external.ai.GeminiPdfHousingDetailSupport.class);
+        source.setHistoryRepository(history); source.setGeminiSupport(ai);
+        org.mockito.Mockito.when(ai.enabled()).thenReturn(true);
+        org.mockito.Mockito.when(ai.parserVersion()).thenReturn("AI_TEST");
+        var response = new com.zipick.external.ai.GeminiPdfHousingDetailSupport.SupplementResult(
+                List.of(unit("LH_PDF:1", "서울특별시 강남구 테헤란로 1")), false, false);
+        org.mockito.Mockito.when(ai.supplementWithStatus(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList()))
+                .thenReturn(response);
+        var result = source.extract(notice("https://apply.lh.or.kr/detail"));
+        assertThat(result.housings()).hasSize(1);
+        assertThat(result.parseCheckpoints()).isEmpty();
+    }
+
+    private byte[] emptyPdf() throws Exception {
+        try (var pdf = new org.apache.pdfbox.pdmodel.PDDocument();
+             var output = new java.io.ByteArrayOutputStream()) {
+            pdf.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+            pdf.save(output);
+            return output.toByteArray();
+        }
+    }
+
+    @Test
     void unchangedAttachmentIsSkippedAndChangedBytesAreParsed() throws Exception {
         byte[] workbook = LhSpreadsheetTestFixture.oneHousingWorkbook();
         var client = new StubDocumentClient("<a href=\"javascript:fileDownLoad('77');\">공급주택목록.xlsx</a>", workbook);
@@ -129,6 +238,62 @@ class LhHousingDetailSourceTest {
         List<DetailedHousingUnit> merged = source.mergeAttachmentDetails(List.of(json), List.of(spreadsheet));
 
         assertThat(merged).containsExactly(json, spreadsheet);
+    }
+
+    @Test
+    void 동일주소의_AI_공급행은_서로_합치지_않는다() {
+        var source = source(new StubDocumentClient("", null));
+        var first = new DetailedHousingUnit("GEMINI:abc:LH_FILE:1/item-1", null, null, null,
+                "전남광주통합특별시 여수시 미평로 77", "101,102", null, null,
+                new java.math.BigDecimal("26.37"), null, "26", null, 2520000L, 50160L, null);
+        var second = new DetailedHousingUnit("GEMINI:abc:LH_FILE:1/item-2", null, null, null,
+                "전남광주통합특별시 여수시 미평로 77", "103", null, null,
+                new java.math.BigDecimal("31.32"), null, "31", null, 2993000L, 59570L, null);
+        assertThat(source.mergeAttachmentDetails(List.of(), List.of(first, second))).containsExactly(first, second);
+        var embedded = unit("LH_DETAIL:1", "전남광주통합특별시 여수시 미평로 77");
+        assertThat(source.mergeAttachmentDetails(List.of(embedded), List.of(first, second)))
+                .hasSize(2).extracting(DetailedHousingUnit::exclusiveArea)
+                .containsExactly(new java.math.BigDecimal("26.37"), new java.math.BigDecimal("31.32"));
+    }
+
+    @Test
+    void 기존_행과_AI_행_결합시_조건별_임대료를_보존한다() {
+        var source = source(new StubDocumentClient("", null));
+        var embedded = unit("LH_DETAIL:1", "서울특별시 강남구 테헤란로 1");
+        var condition = new DetailedRentalCondition("NA", "나군", 7706000L, 106460L, "{}");
+        var ai = new DetailedHousingUnit("GEMINI:abc:LH_FILE:1/item-1", null, null, null,
+                "서울특별시 강남구 테헤란로 1", null, null, null,
+                new java.math.BigDecimal("31.32"), null, "31", null, 3328000L, 66210L,
+                "{\"parser\":\"DIRECT_HOUSING_V19_BOUNDED_REPAIR\"}", null, null, 1, null, null,
+                null, null, null, null, null, null, 30L, List.of(condition));
+        var result = source.mergeAttachmentDetails(List.of(embedded), List.of(ai));
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().rentalConditions()).containsExactly(condition);
+        assertThat(result.getFirst().supplyCount()).isEqualTo(30L);
+    }
+
+    @Test
+    void 주소_부가설명이_달라도_도로명과_호수가_같으면_병합한다() {
+        var source = source(new StubDocumentClient("", null));
+        var json = new DetailedHousingUnit("LH_DETAIL:1", null, null, null,
+                "경기도 부천시 소사구 소사로148번길 58-9(소사본동) 한결주택 101동/소사구",
+                "101동", "403호", null, null, null, null, null, null, null, null);
+        var xlsx = new DetailedHousingUnit("LH_FILE:1", null, null, null,
+                "경기도 부천시 소사구 소사로148번길 58-9(소사본동) 한결주택",
+                "101", "403", null, new java.math.BigDecimal("54.26"), null, null, null, null, null, null);
+        var result = source.mergeAttachmentDetails(List.of(json), List.of(xlsx));
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().exclusiveArea()).isEqualByComparingTo("54.26");
+    }
+
+    @Test
+    void 같은_도로명과_호수라도_동이_다르면_병합하지_않는다() {
+        var source = source(new StubDocumentClient("", null));
+        var a = new DetailedHousingUnit("LH_DETAIL:1", null, null, null, "서울특별시 강남구 테헤란로 1 건물A",
+                "101동", "403호", null, null, null, null, null, null, null, null);
+        var b = new DetailedHousingUnit("LH_FILE:1", null, null, null, "서울특별시 강남구 테헤란로 1 건물B",
+                "102동", "403호", null, null, null, null, null, null, null, null);
+        assertThat(source.mergeAttachmentDetails(List.of(a), List.of(b))).hasSize(2);
     }
 
     @Test

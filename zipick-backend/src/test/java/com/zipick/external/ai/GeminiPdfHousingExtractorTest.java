@@ -1,5 +1,6 @@
 package com.zipick.external.ai;
 
+import com.zipick.external.housingdetail.DetailedHousingUnit;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -31,6 +32,53 @@ class GeminiPdfHousingExtractorTest {
 
     @TempDir
     Path temporary;
+
+    @Test
+    void 텍스트에서_주택형_숫자를_면적으로_추정하지_않는다() {
+        var area = new java.math.BigDecimal("16.00");
+        assertThat(GeminiPdfHousingExtractor.explicitAreaInEvidence("16A 382세대", area)).isFalse();
+        assertThat(GeminiPdfHousingExtractor.explicitAreaInEvidence("전용면적 16.00㎡", area)).isTrue();
+    }
+
+    @Test
+    void 같은_주택형이라도_기본금액이_다르면_전환금액을_혼합하지_않는다() {
+        String page = "임대보증금(천원) 최대전환시 월임대료\n"
+                + "(+) 28,000 86,480 93,920\n대학생 58,480 2,924 55,556 233,920\n"
+                + "(-) 49,000 9,480 376,830\n(+) 29,000 90,920 102,680\n"
+                + "16A 청년 61,920 3,096 58,824 247,680\n(-) 52,000 9,920 399,340";
+        var pages = Map.of(4, page);
+        assertThat(GeminiPdfHousingExtractor.verifiedConversionConditionsForBase("16A", 58480000L, 233920L, pages)).isEmpty();
+        var youth = GeminiPdfHousingExtractor.verifiedConversionConditionsForBase("16A", 61920000L, 247680L, pages);
+        assertThat(youth).hasSize(2);
+        assertThat(youth.getFirst().rentDeposit()).isEqualTo(90920000L);
+    }
+
+    @Test
+    void 주차장_면적의_영을_주차_대수_영으로_해석하지_않는다() {
+        var area = JSON.readTree("{\"name\":\"주차\",\"value\":\"0\",\"evidence\":\"주차장 0\"}");
+        var explicitCount = JSON.readTree("{\"name\":\"주차\",\"value\":\"0대\",\"evidence\":\"주차 가능 0대\"}");
+        assertThat(GeminiPdfHousingExtractor.verifiedParkingCount(0, List.of(area))).isNull();
+        assertThat(GeminiPdfHousingExtractor.verifiedParkingCount(0, List.of(explicitCount))).isZero();
+    }
+
+    @Test
+    void 원문_해당동_열을_호수로_착각하지_않는다() {
+        String page = "형별 공급계획 공급 형별 전용면적 공가 호수 금회 모집 예비자 해당동 구조 및 난방\n31.32 0 60 206\n※ 안내";
+        assertThat(GeminiPdfHousingExtractor.belongsToBuildingColumn(page, "206", "31.32 0 60 206")).isTrue();
+        assertThat(GeminiPdfHousingExtractor.belongsToBuildingColumn(page, "206", "31.32 0 60 207")).isFalse();
+        assertThat(GeminiPdfHousingExtractor.belongsToBuildingColumn(page.replace("해당동", "해당동 호실"), "206", "31.32 0 60 206")).isFalse();
+        assertThat(GeminiPdfHousingExtractor.belongsToBuildingColumn(page, "206호", "31.32 0 60 206호")).isFalse();
+    }
+
+    @Test
+    void 원문_공급표에_별도_공용면적_행이_있으면_누락을_찾는다() {
+        String page = "형별 공급계획 전용 주거공용 합계 해당동\n31.32 12.60 43.92 304\n13.94 45.26 301,302\n※ 안내";
+        var first = new GeminiPdfHousingExtractor.AreaVariant(new java.math.BigDecimal("31.32"), new java.math.BigDecimal("12.60"), new java.math.BigDecimal("43.92"));
+        var second = new GeminiPdfHousingExtractor.AreaVariant(new java.math.BigDecimal("31.32"), new java.math.BigDecimal("13.94"), new java.math.BigDecimal("45.26"));
+        assertThat(GeminiPdfHousingExtractor.missingAreaVariants(page, List.of(first))).containsExactly(second);
+        assertThat(GeminiPdfHousingExtractor.missingAreaVariants(page, List.of(first, second))).isEmpty();
+        assertThat(GeminiPdfHousingExtractor.missingAreaVariants(page, List.of(second))).containsExactly(first);
+    }
 
     @Test
     void 전체_PDF에서_추출한_건물공통값과_주택값을_매핑하고_캐시한다() throws Exception {
@@ -91,14 +139,14 @@ class GeminiPdfHousingExtractorTest {
         GeminiApiTransport transport = request -> {
             JsonNode body = JSON.readTree(request);
             JsonNode parts = body.path("contents").get(0).path("parts");
-            assertThat(request).contains("전달페이지매핑=1->2,2->3,3->4");
+            assertThat(request).contains("전달페이지매핑=1->1,2->2,3->3,4->4");
             assertThat(request).doesNotContain("PDFBox 보조 텍스트", "1 row", "2 row");
             String encodedPdf = null;
             for (JsonNode part : parts) {
                 if (part.has("inlineData")) encodedPdf = part.path("inlineData").path("data").asText();
             }
             assertThat(encodedPdf).isNotBlank();
-            assertThat(pdfPageCount(Base64.getDecoder().decode(encodedPdf))).isEqualTo(3);
+            assertThat(pdfPageCount(Base64.getDecoder().decode(encodedPdf))).isEqualTo(4);
             return envelope(payload(true, "", 1, List.of(unit("u1", "101", 3, 1))),
                     "STOP", 500, 100);
         };
@@ -108,6 +156,107 @@ class GeminiPdfHousingExtractorTest {
         ));
 
         assertThat(result.complete()).isTrue();
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "ZIPICK_AUDIT_LARGE_PAGE", matches = "true")
+    void 실제_과천_대형페이지를_API_호출없이_텍스트로_전달한다() throws Exception {
+        Path file = Path.of("tmp", "ai-investigation", "69178686.pdf");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(file));
+        byte[] page;
+        try (PDDocument original = org.apache.pdfbox.Loader.loadPDF(file.toFile());
+             PDDocument selected = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            selected.importPage(original.getPage(5)); selected.save(output); page = output.toByteArray();
+        }
+        assertThat(page.length).isGreaterThan(40 * 1024 * 1024);
+        Path response = Path.of("tmp", "ai-investigation", "gwachon-large-page", "cache", "responses",
+                "2e3448e0e8ae7f443ec73bc95b70673ebfe21d71e90690a8164a5a7b276d0301.json");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(response));
+        @SuppressWarnings("unchecked") Map<String, Object> savedResponse = JSON.readValue(
+                java.nio.file.Files.readString(response), Map.class);
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            calls.incrementAndGet();
+            assertThat(request).contains("16A", "382", "이미지와 도면은 제공되지 않았으므로");
+            assertThat(JSON.readTree(request).path("contents").get(0).path("parts").toString()).doesNotContain("inlineData");
+            return envelope(savedResponse, "STOP", 500, 100);
+        };
+        var result = extractor(transport, 0, 40 * 1024 * 1024L, 50).extract(List.of(
+                new GeminiPdfDocument("LH_FILE:69178686:page6", "LH", "과천", "팸플릿.pdf", page)));
+        assertThat(calls).hasValue(1);
+        assertThat(result.warnings()).anyMatch(w -> w.contains("이미지 미분석"));
+        assertThat(result.units()).hasSize(7);
+        assertThat(result.units()).allSatisfy(unit -> {
+            assertThat(unit.exclusiveArea()).isNull();
+            assertThat(unit.supplyCount()).isNull();
+        });
+    }
+
+    @Test
+    void 한페이지가_크면_텍스트만_전달하고_이미지_미분석_기록을_캐시에_남긴다() throws Exception {
+        byte[] pdf;
+        try (PDDocument document = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            PDPage page = new PDPage(); document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.beginText(); content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                content.newLineAtOffset(50, 700); content.showText("Housing 101"); content.endText();
+            }
+            document.save(output); pdf = output.toByteArray();
+        }
+        long limit = subsetSize(pdf, List.of(1)) - 1L;
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            calls.incrementAndGet();
+            assertThat(request).contains("Housing 101", "이미지와 도면은 제공되지 않았으므로");
+            assertThat(JSON.readTree(request).path("contents").get(0).path("parts").toString()).doesNotContain("inlineData");
+            return envelope(payload(true, "", 1, List.of(unit("u1", "101", 1, 1))), "STOP", 500, 100);
+        };
+        var extractor = extractor(transport, 0, limit);
+        var doc = new GeminiPdfDocument("doc-1", "LH", "공고", "공고.pdf", pdf, 1);
+        var result = extractor.extract(List.of(doc));
+        assertThat(result.complete()).isTrue();
+        assertThat(result.warnings()).anyMatch(w -> w.contains("이미지 미분석") && w.contains("page=1"));
+        assertThat(result.units().getFirst().rawPayload()).contains("이미지 미분석 페이지");
+        var cached = extractor.extract(List.of(doc));
+        assertThat(cached.fromCache()).isTrue();
+        assertThat(cached.warnings()).anyMatch(w -> w.contains("이미지 미분석"));
+        assertThat(calls).hasValue(1);
+    }
+
+    @Test
+    void 대형페이지에_추출할_텍스트도_없으면_성공으로_처리하지_않는다() throws Exception {
+        byte[] pdf = onePagePdf();
+        long limit = subsetSize(pdf, List.of(1)) - 1L;
+        var extractor = extractor(request -> { throw new AssertionError("API 호출 금지"); }, 0, limit);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> extractor.extract(List.of(
+                new GeminiPdfDocument("doc-1", "LH", "공고", "공고.pdf", pdf, 1))))
+                .hasMessageContaining("추출 가능한 텍스트 없음");
+    }
+
+    @Test
+    void 팸플릿_분할응답의_재사용된_행번호는_서로_다른_주택형을_덮어쓰지_않는다() throws Exception {
+        byte[] pdf = blankPagePdf(2);
+        long limit = (subsetSize(pdf, List.of(1, 2)) + subsetSize(pdf, List.of(1))) / 2L;
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            int call = calls.getAndIncrement();
+            var first = unit("u1", "101", call + 1, 1);
+            var second = unit("u2", "101", call + 1, 2);
+            first.put("unitNumber", ""); second.put("unitNumber", "");
+            first.put("housingType", call == 0 ? "16A" : "16B");
+            second.put("housingType", call == 0 ? "16B" : "26A");
+            first.put("supplyType", "행복주택"); second.put("supplyType", "행복주택");
+            Map<String, Object> response = new java.util.LinkedHashMap<>(payload(call > 0, "", 3, List.of(first, second)));
+            response.put("documents", List.of(Map.of("documentId", "doc-1", "documentType", "입주자 팸플릿",
+                    "relevantPages", List.of(call + 1), "expectedUnitCount", 3)));
+            return envelope(response, "STOP", 500, 100);
+        };
+        var result = extractor(transport, 0, limit, 50).extract(List.of(
+                new GeminiPdfDocument("doc-1", "LH", "공고", "팸플릿.pdf", pdf, 3)));
+        assertThat(calls).hasValue(2);
+        assertThat(result.complete()).isTrue();
+        assertThat(result.units()).extracting(DetailedHousingUnit::housingType)
+                .containsExactly("16A", "16B", "26A");
     }
 
     @Test
@@ -160,7 +309,7 @@ class GeminiPdfHousingExtractorTest {
             assertThat(properties.path("units").has("minItems")).isFalse();
             assertThat(properties.path("units").has("maxItems")).isFalse();
             assertThat(request).contains(
-                    "공급행수=3(서버 사전확인)",
+                    "공급행수=3(서버가 확인한 최소 후보 수)",
                     "첫 행부터 마지막 행까지 모두 반환하세요",
                     "모두 최상위 배열입니다",
                     "베란다",
@@ -220,6 +369,175 @@ class GeminiPdfHousingExtractorTest {
                 6. 입주
                 7. 유의사항
                 """)).isNull();
+        assertThat(extractor.estimateUnitCount("""
+                순번 주소 면적 임대료
+                건물의 기본 정보는 아래를 확인하세요
+                1. 신청 자격
+                2. 신청 서류
+                3. 소득 기준
+                """)).isNull();
+    }
+
+    @Test
+    void 실제_예비입주자공고의_다른번호를_공급행으로_오인하지_않는다() throws Exception {
+        Path directory = Path.of("tmp", "ai-investigation");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(directory.resolve("69173002.pdf")));
+        GeminiPdfHousingExtractor extractor = extractor(request -> "", 0);
+        for (String id : List.of("69173002", "65965106", "69165378")) {
+            Path pdf = directory.resolve(id + ".pdf");
+            if (!java.nio.file.Files.exists(pdf)) continue;
+            try (PDDocument document = org.apache.pdfbox.Loader.loadPDF(pdf.toFile())) {
+                var stripper = new org.apache.pdfbox.text.PDFTextStripper();
+                stripper.setSortByPosition(true);
+                assertThat(extractor.estimateUnitCount(stripper.getText(document))).as(id).isNull();
+            }
+        }
+    }
+
+    @Test
+    void 실제_단일주택공고의_신청안내번호를_누락된_표페이지로_오인하지_않는다() throws Exception {
+        Path pdf = Path.of("tmp", "ai-investigation", "69173002.pdf");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(pdf));
+        GeminiApiTransport transport = request -> envelope(payload(true, "", 1,
+                List.of(unit("u1", "101", 1, 1))), "STOP", 500, 100);
+        GeminiPdfExtractionResult result = extractor(transport, 0).extract(List.of(
+                new GeminiPdfDocument("doc-1", "LH", "예비입주자 공고", "공고문.pdf",
+                        java.nio.file.Files.readAllBytes(pdf), 1)));
+        assertThat(result.complete()).isTrue();
+        assertThat(result.warnings()).noneMatch(value -> value.contains("공급표 원문 페이지 누락"));
+    }
+
+    @Test
+    void 실제_SH공고의_주택표가_있는_2페이지를_반드시_모델에_전달한다() throws Exception {
+        Path pdf = Path.of("tmp", "ai-investigation", "SH-306301-2.pdf");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(pdf));
+        GeminiApiTransport transport = request -> {
+            assertThat(request).containsPattern("전달페이지매핑=[^\\\"]*2->2(?:,|\\\")");
+            return envelope(payload(true, "", 1, List.of(unit("u1", "402", 2, 1))), "STOP", 500, 100);
+        };
+        extractor(transport, 0).extract(List.of(new GeminiPdfDocument("doc-1", "SH", "공고", "공고문.pdf",
+                java.nio.file.Files.readAllBytes(pdf))));
+    }
+
+    @Test
+    void 실제_임대금액표가_있는데_금액이_전부_빠지면_보정한다() throws Exception {
+        Path pdf = Path.of("tmp", "ai-investigation", "69178684.pdf");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(pdf));
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            Map<String, Object> row = unit("u1", "101", 3, 1);
+            Map<String, Object> response = new java.util.LinkedHashMap<>(payload(true, "", 1, List.of(row)));
+            response.put("rentalConditions", List.of());
+            if (calls.getAndIncrement() == 0) {
+                row.remove("rentDeposit");
+                row.remove("monthlyRent");
+                response = new java.util.LinkedHashMap<>(payload(true, "", 1, List.of(row)));
+                response.put("rentalConditions", List.of());
+            } else {
+                assertThat(request).contains("missingPricingIndexes", "원문 임대보증금");
+            }
+            return envelope(response, "STOP", 500, 100);
+        };
+        var result = extractor(transport, 1, 20 * 1024 * 1024L, 50).extract(List.of(
+                new GeminiPdfDocument("doc-1", "LH", "공고", "공고문.pdf", java.nio.file.Files.readAllBytes(pdf))));
+        assertThat(result.complete()).isTrue();
+        assertThat(calls).hasValue(2);
+        assertThat(result.units().getFirst().rentDeposit()).isEqualTo(10_000_000L);
+    }
+
+    @Test
+    void 같은_주택형의_공급대상은_원문_행_표시로_구분하여_금액을_보정한다() throws Exception {
+        Path pdf = Path.of("tmp", "ai-investigation", "69178684.pdf");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(pdf));
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            boolean repair = calls.getAndIncrement() > 0;
+            Map<String, Object> first = unit("u1", "101", 3, 1);
+            Map<String, Object> second = unit("u2", "101", 3, 2);
+            first.put("sourceRowLabel", "16A 대학생 우선공급");
+            second.put("sourceRowLabel", "16A 대학생 일반공급");
+            if (!repair) {
+                first.remove("rentDeposit"); first.remove("monthlyRent");
+                second.remove("rentDeposit"); second.remove("monthlyRent");
+            } else {
+                first.put("rentDeposit", 58480000L);
+                second.put("rentDeposit", 61920000L);
+            }
+            Map<String, Object> response = new java.util.LinkedHashMap<>(payload(true, "", 2, List.of(first, second)));
+            response.put("rentalConditions", List.of());
+            return envelope(response, "STOP", 500, 100);
+        };
+        var result = extractor(transport, 1, 20 * 1024 * 1024L, 50).extract(List.of(
+                new GeminiPdfDocument("doc-1", "LH", "공고", "공고문.pdf", java.nio.file.Files.readAllBytes(pdf))));
+        assertThat(calls).hasValue(2);
+        assertThat(result.complete()).isTrue();
+        assertThat(result.units()).extracting(unit -> unit.rentDeposit())
+                .containsExactly(58480000L, 61920000L);
+    }
+
+    @Test
+    void 금액_보정에서_다른_주택이_같은_순번으로_반환되면_기존_행을_보존한다() throws Exception {
+        Path pdf = Path.of("tmp", "ai-investigation", "69178684.pdf");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(pdf));
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            Map<String, Object> row = unit("u1", calls.getAndIncrement() == 0 ? "101" : "202", 3, 1);
+            if (calls.get() == 1) {
+                row.remove("rentDeposit");
+                row.remove("monthlyRent");
+            }
+            Map<String, Object> response = new java.util.LinkedHashMap<>(payload(true, "", 1, List.of(row)));
+            response.put("rentalConditions", List.of());
+            return envelope(response, "STOP", 500, 100);
+        };
+        var result = extractor(transport, 1, 20 * 1024 * 1024L, 50).extract(List.of(
+                new GeminiPdfDocument("doc-1", "LH", "공고", "공고문.pdf", java.nio.file.Files.readAllBytes(pdf))));
+        assertThat(calls).hasValue(2);
+        assertThat(result.complete()).isFalse();
+        assertThat(result.units().getFirst().unitNumber()).isEqualTo("101");
+        assertThat(result.units().getFirst().rentDeposit()).isNull();
+        assertThat(result.units().getFirst().exclusiveArea()).isNotNull();
+    }
+
+    @Test
+    void 주택별_임대조건을_개별안내하는_공고는_전환예시를_실제금액으로_취급하지_않는다() throws Exception {
+        for (String id : List.of("69107811", "69108015")) {
+            Path pdf = Path.of("tmp", "ai-investigation", id + ".pdf");
+            org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(pdf));
+            AtomicInteger calls = new AtomicInteger();
+            GeminiApiTransport transport = request -> {
+                calls.incrementAndGet();
+                Map<String, Object> row = unit("u1", "101", 2, 1);
+                row.remove("rentDeposit"); row.remove("monthlyRent");
+                Map<String, Object> response = new java.util.LinkedHashMap<>(payload(true, "", 1, List.of(row)));
+                response.put("rentalConditions", List.of());
+                return envelope(response, "STOP", 500, 100);
+            };
+            var result = extractor(transport, 1, 20 * 1024 * 1024L, 50).extract(List.of(
+                    new GeminiPdfDocument("doc-1", "LH", "공고", id + ".pdf", java.nio.file.Files.readAllBytes(pdf))));
+            assertThat(calls).hasValue(1);
+            assertThat(result.complete()).isTrue();
+            assertThat(result.units().getFirst().rentDeposit()).isNull();
+        }
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "ZIPICK_AUDIT_REAL_PDFS", matches = "true")
+    void 실제_미사용문서들의_공급행_추정치를_점검한다() throws Exception {
+        Path directory = Path.of("tmp", "ai-investigation");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isDirectory(directory));
+        GeminiPdfHousingExtractor extractor = extractor(request -> "", 0);
+        try (var files = java.nio.file.Files.list(directory)) {
+            for (Path pdf : files.filter(path -> path.toString().endsWith(".pdf")).sorted().toList()) {
+                try (PDDocument document = org.apache.pdfbox.Loader.loadPDF(pdf.toFile())) {
+                    var stripper = new org.apache.pdfbox.text.PDFTextStripper();
+                    stripper.setSortByPosition(true);
+                    Integer count = extractor.estimateUnitCount(stripper.getText(document));
+                    System.out.println("SUPPLY_AUDIT file=" + pdf.getFileName() + " pages="
+                            + document.getNumberOfPages() + " count=" + count);
+                }
+            }
+        }
     }
 
     @Test
@@ -258,6 +576,22 @@ class GeminiPdfHousingExtractorTest {
         assertThat(result.apiCallCount()).isEqualTo(2);
         assertThat(result.units()).extracting(value -> value.unitNumber()).containsExactly("101", "102");
         assertThat(result.tokenUsage().totalTokens()).isEqualTo(2_750);
+    }
+
+    @Test
+    void 잘린_JSON은_페이지를_분할해_다시_분석한다() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> switch (calls.getAndIncrement()) {
+            case 0 -> JSON.writeValueAsString(Map.of("candidates", List.of(Map.of(
+                    "finishReason", "MAX_TOKENS", "content", Map.of("parts", List.of(Map.of("text", "{\"units\":[")))))));
+            case 1 -> envelope(payload(false, "", 2, List.of(unit("u1", "101", 1, 1))), "STOP", 100, 50);
+            default -> envelope(payload(true, "", 2, List.of(unit("u2", "102", 2, 2))), "STOP", 100, 50);
+        };
+        GeminiPdfExtractionResult result = extractor(transport, 2).extract(List.of(
+                new GeminiPdfDocument("doc-1", "GH", "목록", "목록.pdf", blankPagePdf(2), 2)));
+        assertThat(result.complete()).isTrue();
+        assertThat(result.apiCallCount()).isEqualTo(3);
+        assertThat(result.units()).extracting(DetailedHousingUnit::unitNumber).containsExactly("101", "102");
     }
 
     @Test
@@ -725,7 +1059,7 @@ class GeminiPdfHousingExtractorTest {
     }
 
     @Test
-    void 일반문서는_행이_일부_누락돼도_같은실행에서_재호출하지_않는다() throws Exception {
+    void 일반문서도_구체적인_누락행이_있으면_한번만_보정한다() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         GeminiApiTransport transport = request -> {
             calls.incrementAndGet();
@@ -739,8 +1073,29 @@ class GeminiPdfHousingExtractorTest {
                         "doc-1", "SH", "소형 공고", "목록.pdf", onePagePdf(), 4)));
 
         assertThat(result.complete()).isFalse();
-        assertThat(result.apiCallCount()).isEqualTo(1);
-        assertThat(calls).hasValue(1);
+        assertThat(result.apiCallCount()).isEqualTo(2);
+        assertThat(calls).hasValue(2);
+    }
+
+    @Test
+    void 소형문서_부분캐시는_다음실행에_누락행을_한번_보정한다() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        GeminiApiTransport transport = request -> {
+            if (calls.getAndIncrement() == 0) {
+                return envelope(payload(true, "", 2, List.of(unit("u1", "101", 1, 1))), "STOP", 500, 100);
+            }
+            assertThat(request).contains("missingExtractionIndexes", "[2]");
+            return envelope(payload(true, "", 2, List.of(unit("u2", "102", 1, 2))), "STOP", 500, 100);
+        };
+        GeminiPdfHousingExtractor firstRun = extractor(transport, 0, 20 * 1024 * 1024L, 50);
+        GeminiPdfHousingExtractor extractor = extractor(transport, 4, 20 * 1024 * 1024L, 50);
+        var document = new GeminiPdfDocument("doc-1", "SH", "소형 공고", "목록.pdf", onePagePdf(), 2);
+
+        assertThat(firstRun.extract(List.of(document)).complete()).isFalse();
+        GeminiPdfExtractionResult repaired = extractor.extract(List.of(document));
+        assertThat(repaired.complete()).isTrue();
+        assertThat(repaired.units()).extracting(DetailedHousingUnit::unitNumber).containsExactly("101", "102");
+        assertThat(calls).hasValue(2);
     }
 
     @Test

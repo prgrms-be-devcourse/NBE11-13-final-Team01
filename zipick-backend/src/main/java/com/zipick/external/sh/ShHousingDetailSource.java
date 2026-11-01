@@ -108,7 +108,8 @@ public class ShHousingDetailSource implements HousingDetailSource {
                 byte[] bytes = documentClient.getBytes(downloadUri(detailUri, attachment));
                 String fingerprintKey = "SH:" + attachment.brdId() + ":" + attachment.seq() + ":"
                         + attachment.fileSeq() + ":" + com.zipick.external.housingdetail.DocumentFingerprint.sha256(bytes);
-                if (historyRepository.findByDocumentKeyAndParserVersion(fingerprintKey, parserVersion)
+                if (!(aiEnabled && com.zipick.external.ai.AiReprocessingScope.includes(notice.noticeId()))
+                        && historyRepository.findByDocumentKeyAndParserVersion(fingerprintKey, parserVersion)
                         .filter(DocumentParseHistory::isSuccess).isPresent()) {
                     log.info("SH 변경 없는 첨부 재파싱 생략: seq={}, fileSeq={}", attachment.seq(), attachment.fileSeq());
                     return new HousingDetailResult(List.of(), savedAttachments, Map.of(), true);
@@ -177,9 +178,10 @@ public class ShHousingDetailSource implements HousingDetailSource {
             return new ParsedAttachment(spreadsheetParser.parse(bytes, compatible), true);
         }
         if (name.endsWith(".pdf")) {
-            List<DetailedHousingUnit> structured = shPdfParser.parse(bytes, attachment);
-            List<DetailedHousingUnit> fallback = structured.isEmpty()
-                    ? fallbackPdfParser.parse(bytes, compatible) : structured;
+            List<DetailedHousingUnit> fallback = com.zipick.external.ai.GeminiPdfStageTiming.measureBasicParser(() -> {
+                List<DetailedHousingUnit> structured = shPdfParser.parse(bytes, attachment);
+                return structured.isEmpty() ? fallbackPdfParser.parse(bytes, compatible) : structured;
+            });
             if (geminiSupport == null || !geminiSupport.enabled()) {
                 return new ParsedAttachment(fallback, true);
             }
