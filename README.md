@@ -13,61 +13,7 @@
 
 ## 시스템 구성도
 
-```mermaid
-flowchart TB
-    user(["사용자 · 운영자 브라우저"])
-    gh["GitHub Actions → GHCR<br/>ARM64 이미지 빌드·보관"]
-
-    subgraph AWS["AWS (ap-northeast-2)"]
-        direction TB
-        ssm["AWS SSM Run Command<br/>(SSH 없이 배포 명령 전달)"]
-
-        subgraph APP["앱 EC2 — 바깥에는 80/443 만 공개"]
-            direction TB
-            web["web · Caddy<br/>React 정적 파일 + /api 프록시"]
-            backend["backend · Spring Boot<br/>인증 · 추천 · 관심 공고 · 운영자 API"]
-            mq[("RabbitMQ")]
-            notif["notification · Go<br/>아웃박스 · 재시도 · 채널 발송"]
-            timer["systemd timer 매일 09:30<br/>+ 운영자 수집 요청 cron"]
-            collector["collector · ai-collector<br/>공고 · 주택 · AI 보조 수집"]
-            exp["exporters<br/>node · cAdvisor · blackbox · postgres"]
-            web --> backend
-            backend -- 알림 요청 --> mq --> notif
-            timer --> collector
-        end
-
-        subgraph DBS["DB EC2 — 프라이빗"]
-            pg[("PostgreSQL 16")]
-        end
-
-        subgraph MON["모니터링 EC2"]
-            prom["Prometheus"] --> graf["Grafana"]
-            prom --> am["Alertmanager"]
-        end
-
-        ses["Amazon SES"]
-    end
-
-    subgraph EXT["외부 서비스"]
-        direction LR
-        myhome["마이홈 API (LH)"]
-        orgs["SH · GH · HUG 공고"]
-        kakao["Kakao<br/>Local · Maps · OAuth"]
-        gemini["Google Gemini"]
-        slack["Slack"]
-    end
-
-    user -- HTTP --> web
-    gh -- 배포 --> ssm --> APP
-    backend --> pg
-    collector --> pg
-    collector -- 공고 수집 --> myhome & orgs
-    collector -- PDF 파싱 · 좌표 --> gemini & kakao
-    backend -- 로그인 · AI 가이드 --> kakao & gemini
-    notif -- 메일 --> ses
-    notif -- 운영 알림 --> slack
-    prom -. 사설 IP 수집 .-> exp
-```
+![ZIPICK 시스템 구성도](docs/images/architecture.png)
 
 | 구성 요소 | 역할 |
 | --- | --- |
