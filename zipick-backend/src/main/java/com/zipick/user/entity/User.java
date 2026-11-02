@@ -79,6 +79,11 @@ public class User extends BaseTimeEntity {
         return User.of(null, email, encodedPassword, Role.ROLE_USER);
     }
 
+    /** 운영자 화면에서 권한을 바꿀 때 */
+    public void changeRole(Role role) {
+        this.role = role;
+    }
+
     /**
      * 카카오 최초 로그인 시 자동 가입.
      *

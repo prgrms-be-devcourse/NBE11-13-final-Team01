@@ -1,0 +1,211 @@
+/*
+ * 운영자 화면(/admin) 전용. DESIGN.md 기준: 토큰은 .zipick-theme 루트에서만, 공유 클래스는 이 루트 아래 :global 로만 덮는다.
+ * 서비스 페이지의 전역 styles.css 는 건드리지 않는다.
+ */
+
+/* ---- 셸 ---- */
+.shell {
+  --ink: var(--zipick-ink);
+  --muted: var(--zipick-body);
+  --line: var(--zipick-line);
+  --bg: var(--zipick-surface);
+  --card: var(--zipick-white);
+  --accent: var(--zipick-blue);
+  --accent-soft: var(--zipick-blue-light);
+  --radius: var(--zipick-radius-control);
+  min-height: 100%;
+  background: var(--zipick-surface);
+  color: var(--zipick-ink);
+  font-family: var(--zipick-font-family);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.shell :where(button, input, select, textarea, summary) { font: inherit; }
+.shell :focus-visible { outline: 3px solid #2059d660; outline-offset: 3px; }
+
+.header {
+  position: sticky; top: 0; z-index: 30;
+  height: 72px; padding: 0 24px;
+  display: flex; align-items: center; gap: 24px;
+  background: var(--zipick-white);
+  border-bottom: 1px solid var(--zipick-line);
+}
+.brand { display: inline-flex; align-items: center; gap: 9px; color: var(--zipick-blue); letter-spacing: -1.3px; text-decoration: none; }
+.brand > span:not(.brandTag) { color: var(--zipick-ink); font-size: 24px; font-weight: 760; }
+.brandTag {
+  margin-left: 2px; padding: 3px 9px; border-radius: 6px;
+  background: var(--zipick-navy); color: #fff;
+  font-size: 12px; font-weight: 700; letter-spacing: 0;
+}
+.account { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.email { color: var(--zipick-body); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ghost {
+  display: inline-flex; align-items: center; cursor: pointer;
+  padding: 8px 14px; border-radius: var(--zipick-radius-control);
+  background: var(--zipick-white); color: var(--zipick-body);
+  border: 1px solid var(--zipick-line); font-size: 13px; font-weight: 650; text-decoration: none;
+}
+.ghost:hover { border-color: #d6deea; color: var(--zipick-ink); }
+
+.body {
+  max-width: 1464px; margin: 0 auto; padding: 32px;
+  display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; align-items: start;
+}
+.nav {
+  position: sticky; top: 104px;
+  display: flex; flex-direction: column; gap: 2px; padding: 8px;
+  background: var(--zipick-white); border: 1px solid var(--zipick-line);
+  border-radius: var(--zipick-radius-panel); box-shadow: var(--zipick-shadow-panel);
+}
+.nav a { padding: 10px 12px; border-radius: var(--zipick-radius-control); color: var(--zipick-body); font-weight: 600; text-decoration: none; }
+.nav a:hover { background: var(--zipick-blue-mist); color: var(--zipick-ink); }
+.nav a.navActive { background: var(--zipick-blue-light); color: var(--zipick-blue); }
+.content { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+/* ---- 본문 공유 클래스 (이 셸 아래에서만) ---- */
+.content :global(.admin__head) { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.content :global(.admin__head) h1 { margin: 0; font-size: 22px; line-height: 1.45; font-weight: 760; letter-spacing: -.5px; }
+.content :global(.admin__toolbar) { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.content :global(.admin__toolbar) :where(input:not([type="checkbox"]), select) {
+  min-height: 40px; padding: 8px 12px; border: 1px solid var(--zipick-line); border-radius: var(--zipick-radius-control);
+  background: var(--zipick-white); color: var(--zipick-ink);
+}
+.content :global(.admin__toolbar) :is(input[type="text"], input[type="search"], input[type="number"]) { width: auto; min-width: 240px; flex: 0 1 320px; }
+.content :global(.admin__toolbar) label { display: inline-flex; align-items: center; gap: 4px; color: var(--zipick-body); }
+.content :global(.admin__pager) { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 12px; font-size: 13px; color: var(--zipick-soft); }
+
+.content :global(.panel) {
+  background: var(--zipick-white); border: 1px solid var(--zipick-line);
+  border-radius: var(--zipick-radius-panel); box-shadow: var(--zipick-shadow-panel); padding: 24px;
+}
+.content :global(.panel) { overflow-x: auto; }
+.content :global(.panel__title) { font-size: 16px; font-weight: 700; margin: 0 0 12px; color: var(--zipick-ink); }
+.content :global(.panel) > :global(.admin__head) { margin-bottom: 12px; }
+
+.content :global(.btn) {
+  border-radius: var(--zipick-radius-control); padding: 10px 16px; font-weight: 650;
+  background: var(--zipick-blue); border-color: var(--zipick-blue); color: #fff;
+}
+.content :global(.btn):hover:not(:disabled) { background: var(--zipick-blue-strong); border-color: var(--zipick-blue-strong); }
+.content :global(.btn) { white-space: nowrap; }
+.content :global(.btn--small) { padding: 7px 12px; font-size: 12px; }
+.content :global(.btn--ghost) { background: var(--zipick-white); color: var(--zipick-body); border-color: var(--zipick-line); }
+.content :global(.btn--ghost):hover:not(:disabled) { background: var(--zipick-blue-mist); color: var(--zipick-ink); border-color: #d6deea; }
+
+.content :global(.badge) { display: inline-block; font-size: 11px; line-height: 1.5; padding: 4px 7px; border-radius: 6px; border: 1px solid var(--zipick-line); color: var(--zipick-body); background: var(--zipick-white); white-space: nowrap; }
+.content :global(:is(.badge--success, .badge--done, .badge--sent)) { color: var(--zipick-green); background: #e8f6f1; border-color: transparent; }
+.content :global(:is(.badge--open, .badge--upcoming, .badge--scheduled, .badge--role_admin)) { color: var(--zipick-blue); background: var(--zipick-blue-light); border-color: transparent; }
+.content :global(:is(.badge--running, .badge--pending, .badge--partial, .badge--retry)) { color: #98600d; background: #fff4df; border-color: #f6e4bf; }
+.content :global(:is(.badge--failed, .badge--fail)) { color: #c0392b; background: #fdeeee; border-color: #f6d4d1; }
+.content :global(:is(.badge--closed, .badge--cancelled, .badge--draft, .badge--role_user)) { color: var(--zipick-soft); background: var(--zipick-surface); }
+
+.content :global(.error) { color: #c0392b; background: #fdeeee; border: 1px solid #f6d4d1; border-radius: var(--zipick-radius-control); padding: 10px 14px; margin: 0; }
+.content :global(.muted) { color: var(--zipick-soft); }
+.content :global(.small) { font-size: 12px; }
+.content :global(.ok-text) { color: var(--zipick-green); }
+
+/* 지표 */
+.content :global(.stat-grid) { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
+.content :global(.stat) { background: var(--zipick-surface); border: 1px solid var(--zipick-line); border-radius: 12px; padding: 14px 16px; }
+.content :global(.stat__label) { font-size: 12px; color: var(--zipick-body); }
+.content :global(.stat__value) { font-size: 24px; line-height: 1.4; font-weight: 750; letter-spacing: -.5px; color: var(--zipick-ink); margin-top: 2px; }
+.content :global(.stat__value) small { font-size: 12px; font-weight: 500; color: var(--zipick-soft); margin-left: 4px; letter-spacing: 0; }
+.content :global(.stat--warn) :global(.stat__value) { color: #98600d; }
+.content :global(.stat--bad) :global(.stat__value) { color: #c0392b; }
+
+/* 수집 실행 카드 */
+.content :global(.run-cards) { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.content :global(.run-card) {
+  background: var(--zipick-white); border: 1px solid var(--zipick-line); border-radius: var(--zipick-radius-panel);
+  box-shadow: var(--zipick-shadow-panel); padding: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px;
+}
+.content :global(.run-card__title) { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 15px; }
+.content :global(.run-card) dl { margin: 6px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.content :global(.run-card) dt { color: var(--zipick-soft); }
+.content :global(.run-card) dd { margin: 0; color: var(--zipick-ink); }
+
+/* 표 */
+.content :global(table.admin-table) { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; background: var(--zipick-white); border: 1px solid var(--zipick-line); border-radius: 12px; overflow: hidden; }
+.content :global(table.admin-table) :is(th, td) { padding: 10px 12px; border-bottom: 1px solid var(--zipick-line); text-align: left; vertical-align: top; }
+.content :global(table.admin-table) th { font-size: 12px; color: var(--zipick-body); font-weight: 650; background: var(--zipick-surface); white-space: nowrap; }
+.content :global(table.admin-table) tbody tr:last-child td { border-bottom: 0; }
+.content :global(table.admin-table) tbody tr:hover td { background: var(--zipick-blue-mist); }
+.content :global(table.admin-table) :global(td.num) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.content :global(table.admin-table) :global(td.actions) { white-space: nowrap; }
+.content :global(table.admin-table) :global(td.actions) :global(.btn) + :global(.btn) { margin-left: 4px; }
+.content :global(table.admin-table) :global(.clip) { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.content :global(table.admin-table) :global(tr.is-selected) td { background: var(--zipick-blue-light); }
+.content :global(table.admin-table) a { color: var(--zipick-blue); }
+
+/* 상세 패널 */
+.content :global(.admin-split) { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; align-items: start; }
+.content :global(.admin-detail) {
+  position: sticky; top: 104px; max-height: calc(100dvh - 128px); overflow: auto;
+  background: var(--zipick-white); border: 1px solid var(--zipick-line); border-radius: var(--zipick-radius-panel);
+  box-shadow: var(--zipick-shadow-panel); padding: 20px; display: flex; flex-direction: column; gap: 12px; font-size: 13px;
+}
+.content :global(.admin-detail) h3 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.5; }
+.content :global(.admin-detail) pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 12px; background: var(--zipick-surface); padding: 10px; border-radius: var(--zipick-radius-control); }
+.content :global(.admin-detail) dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.content :global(.admin-detail) dt { color: var(--zipick-soft); }
+.content :global(.admin-detail) dd { margin: 0; }
+.content :global(.admin-detail) input[type="text"] { border: 1px solid var(--zipick-line); border-radius: var(--zipick-radius-control); }
+.content :global(.panel__actions) { display: flex; gap: 8px; justify-content: flex-end; }
+.content :global(.inline-form) { display: inline-flex; gap: 4px; align-items: center; }
+.content :global(.inline-form) { flex-wrap: nowrap; }
+.content :global(.inline-form) input { width: 92px; min-width: 0; padding: 6px 8px; border: 1px solid var(--zipick-line); border-radius: 8px; }
+.content :global(table.admin-table) td:has(> a) { min-width: 96px; }
+
+/* 이동 경로 (사용자 행동) */
+.content :global(.trail) { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 2px solid var(--zipick-line); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.content :global(.trail__item) { position: relative; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding-left: 8px; }
+.content :global(.trail__item)::before { content: ''; position: absolute; left: -15px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--zipick-line); }
+.content :global(.trail__item--page_view)::before { background: var(--zipick-blue); }
+.content :global(.trail__item--login)::before { background: var(--zipick-green); }
+.content :global(.trail__item--click) { padding-left: 24px; }
+.content :global(.trail__time) { color: var(--zipick-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.content :global(.trail__text) { word-break: break-all; }
+.content :global(.trail__gap) { width: 100%; color: var(--zipick-soft); font-size: 11px; padding: 2px 0; }
+
+/* 기존 캠페인 화면 (AdminCampaignPage) */
+.content :global(.page.admin-campaign) { padding: 0; max-width: none; }
+.content :global(.admin-campaign) > h1 { font-size: 22px; font-weight: 760; margin: 0; }
+
+@media (max-width: 1100px) {
+  .content :global(.admin-split) { grid-template-columns: 1fr; }
+  .content :global(.admin-detail) { position: static; max-height: none; }
+}
+@media (max-width: 860px) {
+  .body { grid-template-columns: 1fr; padding: 16px; }
+  .nav { position: static; flex-direction: row; overflow-x: auto; }
+  .nav a { white-space: nowrap; }
+  .header { padding: 0 16px; }
+  .email { display: none; }
+}
+
+/* ---- 운영자 로그인 ---- */
+.login {
+  min-height: 100%; display: grid; place-items: center; padding: 24px 16px;
+  background: var(--zipick-surface); color: var(--zipick-ink); font-family: var(--zipick-font-family);
+}
+.loginCard {
+  width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 14px;
+  background: var(--zipick-white); border: 1px solid var(--zipick-line);
+  border-radius: var(--zipick-radius-panel); box-shadow: var(--zipick-shadow-panel); padding: 36px 32px;
+}
+.loginCard .brand { align-self: center; margin-bottom: 4px; }
+.loginTitle { margin: 0; text-align: center; font-size: 20px; line-height: 1.5; font-weight: 760; }
+.loginHint { margin: -8px 0 4px; text-align: center; color: var(--zipick-soft); font-size: 13px; }
+.loginNotice { margin: 0; padding: 10px 12px; border-radius: var(--zipick-radius-control); background: #fff4df; border: 1px solid #f6e4bf; color: #98600d; font-size: 12.5px; }
+.loginError { margin: 0; padding: 10px 12px; border-radius: var(--zipick-radius-control); background: #fdeeee; border: 1px solid #f6d4d1; color: #c0392b; font-size: 13px; }
+.field, .field :global(label) { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 650; color: var(--zipick-ink); }
+.field input { min-height: 44px; padding: 10px 12px; border: 1px solid var(--zipick-line); border-radius: var(--zipick-radius-control); font: inherit; font-weight: 400; }
+.field input:focus { border-color: var(--zipick-blue); outline: none; box-shadow: 0 0 0 3px #2059d620; }
+.primary {
+  min-height: 48px; border: 0; border-radius: var(--zipick-radius-control); cursor: pointer;
+  background: var(--zipick-blue); color: #fff; font: inherit; font-weight: 700; font-size: 15px;
+}
+.primary:hover:not(:disabled) { background: var(--zipick-blue-strong); }
+.primary:disabled { opacity: .5; cursor: not-allowed; }
+.backLink { align-self: center; color: var(--zipick-body); font-size: 13px; text-decoration: none; }
+.backLink:hover { color: var(--zipick-blue); }

@@ -192,4 +192,33 @@ class AuthServiceTest {
             verify(tokenService, never()).issueToken(any(User.class));
         }
     }
+
+    @Nested
+    @DisplayName("운영자 로그인")
+    class AdminLogin {
+
+        @Test
+        @DisplayName("ROLE_ADMIN 이면 토큰을 발급한다")
+        void admin() {
+            User admin = User.of(2L, "admin@example.com", ENCODED_PASSWORD, Role.ROLE_ADMIN);
+            given(authenticationManager.authenticate(any(Authentication.class)))
+                    .willReturn(new UsernamePasswordAuthenticationToken(new CustomUserDetails(admin), null));
+            given(tokenService.issueToken(admin)).willReturn(new TokenService.TokenPair("a", "r"));
+
+            assertThat(authService.adminLogin(new LoginRequest("admin@example.com", RAW_PASSWORD)).accessToken()).isEqualTo("a");
+        }
+
+        @Test
+        @DisplayName("일반 사용자는 비밀번호가 맞아도 일반 로그인 실패와 같은 401 로 거부하고 토큰을 발급하지 않는다")
+        void userRejected() {
+            given(authenticationManager.authenticate(any(Authentication.class)))
+                    .willReturn(new UsernamePasswordAuthenticationToken(new CustomUserDetails(USER), null));
+
+            assertThatThrownBy(() -> authService.adminLogin(new LoginRequest(EMAIL, RAW_PASSWORD)))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_LOGIN);
+            verify(tokenService, never()).issueToken(any(User.class));
+        }
+    }
 }
