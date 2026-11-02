@@ -1,0 +1,9 @@
+.frame {
+  background: var(--zipick-surface);
+  color: var(--zipick-ink);
+  font-family: var(--zipick-font-family);
+}
+.frame :global(.main) { max-width: 1464px; width: 100%; padding: 32px; }
+@media (max-width: 720px) {
+  .frame :global(.main) { padding: 16px; }
+}

@@ -1,0 +1,38 @@
+# 로컬 DB 접속 정보는 비밀 설정 파일을 우선 사용하고, 없으면 환경 변수에서 읽는다.
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:zipick}
+    username: ${zipick.local-db.username:${DB_USERNAME:}}
+    password: ${zipick.local-db.password:${DB_PASSWORD:}}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+# 로컬에서 평소 실행하는 백엔드도 Prometheus가 지표를 수집한다.
+# 운영 환경은 이 파일을 사용하지 않는다.
+management:
+  server:
+    port: 19090
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    # 주변 인프라 자동 수집 배치가 SQL을 대량으로 찍어 수집 결과 로그가 묻힌다.
+    # 쿼리를 직접 봐야 할 때만 debug로 올린다.
+    org.hibernate.SQL: warn
+
+cookie:
+  # 로컬은 HTTP이므로 secure를 켜면 쿠키가 전달되지 않는다.
+  secure: false
+  same-site: Lax

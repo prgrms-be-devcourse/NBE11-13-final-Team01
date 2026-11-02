@@ -1,0 +1,13 @@
+# 소식 메일(광고). 요청: main 의 운영자 캠페인. 광고 표기와 수신 거부 안내는 문구에 처음부터 넣는다.
+# 광고성 정보는 수신 동의자에게만, 21~08시를 피해서 — 이 판단은 요청하는 쪽(메인 서버)이 한다.
+code: MARKETING_NEWSLETTER
+owner: 안서호 (마케팅)
+variables: [headline, message, unsubscribeUrl]
+email:
+  subject: "(광고) {{headline}}"
+  body: |-
+    {{message}}
+
+    수신 거부: {{unsubscribeUrl}} 의 알림 설정에서 '광고성 정보 수신'을 끄면 더 보내지 않아요.
+slack:
+  text: "*(광고) {{headline}}*\n{{message}}\n수신 거부: {{unsubscribeUrl}}"

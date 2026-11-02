@@ -1,0 +1,19 @@
+{
+  "documentId": "hug-2026-deundeun-jeonse-notice",
+  "verification": {
+    "method": "PDF 원문의 공급개요와 공급일정 표를 직접 대조",
+    "verifiedOn": "2026-10-22",
+    "notes": "개별 주택 목록은 PDF가 아닌 안심전세포털 웹페이지에 있으므로 units는 0이 정답임"
+  },
+  "units": [],
+  "additionalAttributes": [
+    {"scope":"공고","name":"공급대상 주택 수","value":"800","unit":"호","page":2,"evidence":"공급대상 주택 : 총 800호"},
+    {"scope":"공고","name":"기본 임대기간","value":"2","unit":"년","page":2,"evidence":"2년, 재계약 3회까지 가능"},
+    {"scope":"공고","name":"재계약 가능 횟수","value":"3","unit":"회","page":2,"evidence":"재계약 3회까지 가능"},
+    {"scope":"공고","name":"최장 거주기간","value":"8","unit":"년","page":2,"evidence":"입주자격 유지 시 최장 8년 거주"},
+    {"scope":"공고","name":"임대조건","value":"시중 전세시세의 90% 이하","page":2,"evidence":"시중 전세시세의 90% 이하 수준의 전세보증금"},
+    {"scope":"공고","name":"신청 시작","value":"2026-05-29 10:00","page":2,"evidence":"5.29(금) 10:00"},
+    {"scope":"공고","name":"신청 마감","value":"2026-06-08 17:00","page":2,"evidence":"6.8(월) 17:00"},
+    {"scope":"공고","name":"신청 방식","value":"안심전세포털 온라인 접수","page":1,"evidence":"안심전세포털을 통한 온라인 접수만 가능합니다"}
+  ]
+}

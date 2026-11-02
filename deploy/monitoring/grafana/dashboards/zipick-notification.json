@@ -1,0 +1,642 @@
+{
+  "uid": "zipick-notification",
+  "title": "ZIPICK · 알림 시스템",
+  "description": "알림센터 접근과 RabbitMQ 큐를 확인합니다.",
+  "schemaVersion": 40,
+  "version": 3,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "서버·컨테이너",
+      "type": "link",
+      "url": "/grafana/d/zipick-overview",
+      "targetBlank": false
+    },
+    {
+      "title": "메인 서비스",
+      "type": "link",
+      "url": "/grafana/d/zipick-details",
+      "targetBlank": false
+    },
+    {
+      "title": "공고 수집기",
+      "type": "link",
+      "url": "/grafana/d/zipick-collector",
+      "targetBlank": false
+    },
+    {
+      "title": "알림 시스템",
+      "type": "link",
+      "url": "/grafana/d/zipick-notification",
+      "targetBlank": false
+    },
+    {
+      "title": "부하테스트",
+      "type": "link",
+      "url": "/grafana/d/zipick-load-test",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "알림센터 접속",
+      "description": "알림센터 GET /health의 HTTP 응답입니다. DB·큐 연결과 실제 발송 성공을 보장하지 않습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "알림센터 접속",
+          "noValue": "측정 정보 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "연결 실패",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "정상",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "측정 정보 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "min(probe_success{job=\"service-probe\",service=\"notification\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "RabbitMQ 지표 수집",
+      "description": "RabbitMQ 지표 접근 상태이며 메시지 처리 성공을 보장하지 않습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "RabbitMQ 지표 수집",
+          "noValue": "측정 정보 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "연결 실패",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "정상",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "측정 정보 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "min(up{job=\"rabbitmq\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "알림 요청 · 처리 대기",
+      "description": "기본 알림 요청 큐에서 아직 소비되지 않은 메시지 수입니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "알림 요청 · 처리 대기",
+          "noValue": "큐 지표 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "큐 지표 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq\",queue=\"notification.requests.v1\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "알림 요청 · 소비자",
+      "description": "기본 큐의 소비자 수입니다. 0이면 처리 주체 연결을 확인해야 합니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "알림 요청 · 소비자",
+          "noValue": "큐 지표 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "큐 지표 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rabbitmq_detailed_queue_consumers{job=\"rabbitmq\",queue=\"notification.requests.v1\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "실패 메시지 큐 · 대기",
+      "description": "형식 오류 또는 처리할 수 없는 알림 요청 등이 들어가는 큐입니다. 이메일·Slack 발송 실패 전체를 뜻하지 않습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "실패 메시지 큐 · 대기",
+          "noValue": "큐 지표 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "큐 지표 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq\",queue=\"notification.requests.v1.dlq\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "알림 요청 · 처리 중",
+      "description": "소비자에게 전달됐지만 아직 확인 응답되지 않은 메시지 수입니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "알림 요청 · 처리 중",
+          "noValue": "큐 지표 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "큐 지표 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rabbitmq_detailed_queue_messages_unacked{job=\"rabbitmq\",queue=\"notification.requests.v1\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "알림 요청과 실패 큐 · 대기 추이",
+      "description": "지표가 없으면 0으로 가정하지 않습니다. 실패 큐는 모든 이메일·Slack 발송 실패를 의미하지 않습니다.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq\",queue=\"notification.requests.v1\",environment!~\"synthetic_test|real_process_failure_test\"}",
+          "legendFormat": "알림 요청 / 대기",
+          "refId": "A"
+        },
+        {
+          "expr": "rabbitmq_detailed_queue_messages_unacked{job=\"rabbitmq\",queue=\"notification.requests.v1\",environment!~\"synthetic_test|real_process_failure_test\"}",
+          "legendFormat": "알림 요청 / 처리 중",
+          "refId": "B"
+        },
+        {
+          "expr": "rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq\",queue=\"notification.requests.v1.dlq\",environment!~\"synthetic_test|real_process_failure_test\"}",
+          "legendFormat": "실패 메시지 / 대기",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "알림 요청 큐 · 소비자 추이",
+      "description": "알림 요청 큐에 연결된 소비자 수입니다.",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rabbitmq_detailed_queue_consumers{job=\"rabbitmq\",queue=\"notification.requests.v1\",environment!~\"synthetic_test|real_process_failure_test\"}",
+          "legendFormat": "연결된 소비자",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+name: zipick-monitor-local
+services:
+  collector-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    command:
+      - --web.listen-address=:9100
+      - --collector.disable-defaults
+      - --collector.textfile
+      - --collector.textfile.directory=/metrics
+    ports:
+      - '127.0.0.1:9116:9100'
+    volumes:
+      - ./collector-metrics:/metrics:ro

@@ -1,0 +1,165 @@
+name: Notification CI
+
+# 알림센터(Go) 를 검증한다. dev 로 들어오는 PR 과 dev 자체의 변경이 대상이다.
+#
+# 이 워크플로가 생기기 전에는 zipick-notification 이 어떤 검사도 받지 않았다.
+# deploy.yml 이 이미지를 만들긴 하지만 수동 실행(workflow_dispatch)이고 Dockerfile 은 go build 만 한다.
+# 즉 컴파일 오류조차 PR 에서 걸리지 않고 누군가 배포를 눌러야 드러났다.
+#
+# 백엔드·프론트 CI 와 같은 이유로 paths 필터는 쓰지 않는다. 나중에 이 검사를 병합 필수 조건으로 걸 경우,
+# 알림센터를 건드리지 않은 PR 에서 검사가 아예 실행되지 않아 병합이 영영 막히기 때문이다.
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+# 이 워크플로는 저장소 내용을 읽기만 한다. 쓰기 권한을 주지 않는다.
+# 커버리지는 Job Summary 와 Artifacts 로만 보여 주므로 PR 댓글용 쓰기 권한이 필요 없다.
+permissions:
+  contents: read
+
+# 같은 PR·브랜치에 새 커밋이 올라오면 진행 중이던 이전 실행을 취소한다.
+concurrency:
+  group: notification-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Go 검사 (vet + 테스트 + 커버리지)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: zipick-notification
+
+    # DB 통합 테스트(internal/message/service_db_test.go 4개)를 실제로 돌리기 위한 것이다.
+    # internal/testdb 는 NOTIFICATION_TEST_DB_URL 이 없으면 t.Skip 으로 조용히 건너뛴다.
+    # 실패가 아니라 skip 이라 로그만 봐서는 눈치채기 어렵고, 그때 커버리지가 61% -> 35% 로 떨어진다.
+    # 그래서 DB 를 띄우는 것이 이 워크플로의 핵심이다.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: zipick
+          # 러너 안에서만 쓰고 사라지는 임시 DB 다. 비밀 값이 아니므로 secrets 로 관리하지 않는다.
+          POSTGRES_PASSWORD: ci-local-only
+          # testdb 의 안전장치상 DB 이름이 _test 로 끝나야 한다 (테이블을 truncate 하기 때문).
+          POSTGRES_DB: zipick_notification_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGPASSWORD: ci-local-only
+      NOTIFICATION_TEST_DB_URL: postgres://zipick:ci-local-only@localhost:5432/zipick_notification_test
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # go-version 을 직접 적지 않고 go.mod 에서 읽는다. 버전을 두 곳에서 관리하면 조용히 어긋난다.
+      # setup-go v5 는 모듈 캐시가 기본으로 켜져 있어 actions/cache 를 따로 둘 필요가 없다.
+      - name: Go 설치 및 모듈 캐시
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: zipick-notification/go.mod
+          cache-dependency-path: zipick-notification/go.sum
+
+      # 서버는 기동할 때 스키마를 검증하지 않으므로 테스트 DB 에 DDL 을 직접 넣어 준다.
+      # psql 은 ubuntu-latest 러너에 기본 설치돼 있다.
+      # ON_ERROR_STOP=1 이 없으면 DDL 이 중간에 실패해도 이 단계가 성공으로 끝나고,
+      # 뒤의 테스트가 엉뚱한 이유로 깨진다.
+      - name: 테스트 DB 스키마 적용
+        run: psql -v ON_ERROR_STOP=1 -h localhost -U zipick -d zipick_notification_test -f db/init.sql
+
+      # 컴파일 + 정적 검사. 지금까지 PR 에서 전혀 확인되지 않던 부분이다.
+      - name: go vet
+        run: go vet ./...
+
+      - name: 테스트 및 커버리지 측정
+        run: go test ./... -coverprofile=cover.out -covermode=count
+
+      # 사람이 브라우저로 줄 단위 커버리지를 보는 용도.
+      - name: 커버리지 HTML 생성
+        if: ${{ !cancelled() }}
+        run: go tool cover -html=cover.out -o cover.html
+
+      # 테스트가 실패했을 때 원인을 봐야 하므로 성공·실패와 무관하게 올린다. 취소된 실행에서는 올리지 않는다.
+      # path 는 working-directory 가 아니라 저장소 루트 기준이다.
+      - name: 커버리지 리포트 업로드
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-coverage-report
+          path: |
+            zipick-notification/cover.out
+            zipick-notification/cover.html
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # 리포트를 내려받지 않고도 실행 화면에서 바로 수치를 보도록 요약을 남긴다.
+      # $GITHUB_STEP_SUMMARY 는 파일에 쓰는 방식이라 토큰 쓰기 권한이 필요 없다.
+      - name: 커버리지 요약 출력
+        if: ${{ !cancelled() }}
+        run: |
+          if [ ! -f cover.out ]; then
+            echo "커버리지 프로필이 생성되지 않았습니다 (테스트가 시작되기 전에 실패했을 수 있습니다)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 - cover.out >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import collections
+          import re
+          import sys
+
+          # 러너 로케일과 무관하게 한글이 깨지지 않도록 출력 인코딩을 고정한다.
+          sys.stdout.reconfigure(encoding="utf-8")
+
+          MODULE = "github.com/zipick/notification/"
+
+          # cover.out 한 줄: <파일>:<시작줄>.<칸>,<끝줄>.<칸> <statement 수> <실행 횟수>
+          # 첫 줄은 "mode: count" 라 건너뛴다.
+          BLOCK = re.compile(r"^(.*):\d+\.\d+,\d+\.\d+ (\d+) (\d+)$")
+
+          packages = collections.defaultdict(lambda: [0, 0])  # [커버된 statement, 전체 statement]
+          covered = 0
+          total = 0
+
+          with open(sys.argv[1], encoding="utf-8") as profile:
+              next(profile, None)
+              for line in profile:
+                  matched = BLOCK.match(line.strip())
+                  if not matched:
+                      continue
+                  path, statements, count = matched.group(1), int(matched.group(2)), int(matched.group(3))
+                  name = path.replace(MODULE, "").rsplit("/", 1)[0]
+                  packages[name][1] += statements
+                  total += statements
+                  if count > 0:
+                      packages[name][0] += statements
+                      covered += statements
+
+          def percent(part, whole):
+              return f"{part / whole * 100:.1f}%" if whole else "-"
+
+          print("## 알림센터 테스트 커버리지")
+          print()
+          print(f"전체 statement 커버리지: **{percent(covered, total)}** ({covered} / {total})")
+          print()
+          print("### 패키지별 커버리지")
+          print()
+          print("코드량(statement)이 많은 순으로 정렬했습니다.")
+          print()
+          print("| 패키지 | 커버 | 전체 | 비율 |")
+          print("| --- | ---: | ---: | ---: |")
+          for name, (pkg_covered, pkg_total) in sorted(
+                  packages.items(), key=lambda item: (-item[1][1], item[0])):
+              print(f"| {name} | {pkg_covered} | {pkg_total} | {percent(pkg_covered, pkg_total)} |")
+          print()
+          print("`go test ./... -covermode=count` 기준이며 패키지별 기준으로 빌드를 실패시키지는 않습니다.")
+          print("줄 단위 상세는 Artifacts 의 `notification-coverage-report` 안 `cover.html` 에서 볼 수 있습니다.")
+          PY

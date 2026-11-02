@@ -1,0 +1,2122 @@
+{
+  "uid": "zipick-collector",
+  "title": "ZIPICK · 공고 수집기",
+  "description": "기본·AI 수집기와 Gemini·카카오 결과를 확인합니다.",
+  "schemaVersion": 40,
+  "version": 3,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "서버·컨테이너",
+      "type": "link",
+      "url": "/grafana/d/zipick-overview",
+      "targetBlank": false
+    },
+    {
+      "title": "메인 서비스",
+      "type": "link",
+      "url": "/grafana/d/zipick-details",
+      "targetBlank": false
+    },
+    {
+      "title": "공고 수집기",
+      "type": "link",
+      "url": "/grafana/d/zipick-collector",
+      "targetBlank": false
+    },
+    {
+      "title": "알림 시스템",
+      "type": "link",
+      "url": "/grafana/d/zipick-notification",
+      "targetBlank": false
+    },
+    {
+      "title": "부하테스트",
+      "type": "link",
+      "url": "/grafana/d/zipick-load-test",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "기본 수집기 · 현재",
+      "description": "관측 스크립트 기준이며 강제 종료 시 실제 상태와 다를 수 있습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "기본 수집기 · 현재",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "대기·종료",
+                  "color": "gray",
+                  "index": 0
+                },
+                "1": {
+                  "text": "실행 중",
+                  "color": "blue",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(zipick_collector_running{job_type=\"basic\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "기본 수집기 · 마지막 종료",
+      "description": "프로세스 종료 결과이며 일부 공고 오류가 없다는 뜻은 아닙니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "기본 수집기 · 마지막 종료",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "종료 실패",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "종료 성공",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "min(zipick_collector_last_run_success{job_type=\"basic\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "기본 수집 · 마지막 소요 시간",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "기본 수집 · 마지막 소요 시간",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ],
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(zipick_collector_last_duration_seconds{job_type=\"basic\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "기본 수집 · 마지막 성공",
+      "description": "수집 프로세스가 마지막으로 정상 종료된 시각입니다. 개별 공고 처리의 성공을 보장하지 않습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "기본 수집 · 마지막 성공",
+          "noValue": "성공 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "성공 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ],
+          "unit": "dateTimeAsLocal"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(zipick_collector_last_success_timestamp_seconds{job_type=\"basic\",environment!~\"synthetic_test|real_process_failure_test\"} > 0) * 1000",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "AI 수집기 · 현재",
+      "description": "관측 스크립트 기준입니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "AI 수집기 · 현재",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "대기·종료",
+                  "color": "gray",
+                  "index": 0
+                },
+                "1": {
+                  "text": "실행 중",
+                  "color": "blue",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(zipick_collector_running{job_type=\"ai\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "AI 수집기 · 마지막 종료",
+      "description": "종료 성공이어도 문서 추출이나 정규화가 연기될 수 있습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 5,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "AI 수집기 · 마지막 종료",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "종료 실패",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "종료 성공",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "min(zipick_collector_last_run_success{job_type=\"ai\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "AI 수집 · 마지막 소요 시간",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "AI 수집 · 마지막 소요 시간",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ],
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(zipick_collector_last_duration_seconds{job_type=\"ai\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "AI 수집 · 마지막 성공",
+      "description": "AI 수집 프로세스가 마지막으로 정상 종료된 시각입니다. 문서 처리 연기 여부도 확인하세요.",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 5,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "AI 수집 · 마지막 성공",
+          "noValue": "성공 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "성공 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ],
+          "unit": "dateTimeAsLocal"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(zipick_collector_last_success_timestamp_seconds{job_type=\"ai\",environment!~\"synthetic_test|real_process_failure_test\"} > 0) * 1000",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "기본 수집 · 기관 오류",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "기본 수집 · 기관 오류",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_source_errors{job_type=\"basic\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "기본 수집 · 공고 오류",
+      "description": "오류가 기록된 서로 다른 공고 수입니다. 상세 처리 오류가 포함될 수 있습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 10,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "기본 수집 · 공고 오류",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_notice_errors{job_type=\"basic\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "기본 수집 · 상세 처리 오류",
+      "description": "상세 주택 정보 처리 중 기록된 오류 횟수입니다. 공고 오류와 중복될 수 있습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "기본 수집 · 상세 처리 오류",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_detail_errors{job_type=\"basic\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "카카오 좌표 검색 · 호출",
+      "description": "기본 수집기의 좌표 검색 기록입니다. 주변 인프라 검색은 포함하지 않습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 10,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "카카오 좌표 검색 · 호출",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_kakao_geocoding_calls{job_type=\"basic\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "카카오 좌표 검색 · 중단 오류",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "카카오 좌표 검색 · 중단 오류",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_kakao_geocoding_errors{job_type=\"basic\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "AI 추출 · 불완전 문서",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 15,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "AI 추출 · 불완전 문서",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_ai_document_errors{job_type=\"ai\",reason=\"incomplete\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "AI 추출 · 빈 결과",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 15,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "AI 추출 · 빈 결과",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_ai_document_errors{job_type=\"ai\",reason=\"empty\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "AI 추출 · 처리 예외",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 15,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "AI 추출 · 처리 예외",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_ai_document_errors{job_type=\"ai\",reason=\"exception\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "AI 정규화 · 처리 연기",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "AI 정규화 · 처리 연기",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_normalization_deferred{job_type=\"ai\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "AI 정규화 · 처리 오류",
+      "description": "호출 실패와는 별도로 기록된 정규화 처리 오류입니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 20,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "AI 정규화 · 처리 오류",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_normalization_errors{job_type=\"ai\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Gemini 추출 · 최종 호출 실패",
+      "description": "재시도 후에도 실패한 호출 수입니다. 모델명은 수집기 설정을 따릅니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "Gemini 추출 · 최종 호출 실패",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_gemini_final_failures{job_type=\"ai\",stage=\"extraction\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Gemini 정규화 · 최종 호출 실패",
+      "description": "재시도 후에도 실패한 호출 수입니다. 모델명은 수집기 설정을 따릅니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 20,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "Gemini 정규화 · 최종 호출 실패",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_gemini_final_failures{job_type=\"ai\",stage=\"normalization\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "Gemini 추출 · 성공 호출",
+      "description": "호출 성공 횟수이며 문서가 완전하거나 정확하다는 뜻은 아닙니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "Gemini 추출 · 성공 호출",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_gemini_http_success{job_type=\"ai\",stage=\"extraction\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "Gemini 정규화 · 성공 호출",
+      "description": "호출 성공 횟수이며 정규화 결과의 정확성을 보장하지 않습니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 25,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "Gemini 정규화 · 성공 호출",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_gemini_http_success{job_type=\"ai\",stage=\"normalization\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "Gemini 최종 실패 · 호출 제한",
+      "description": "429 오류로 최종 실패한 호출입니다. 추출과 정규화를 합산합니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 25,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "Gemini 최종 실패 · 호출 제한",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_gemini_final_failures{job_type=\"ai\",category=\"429\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "title": "Gemini 최종 실패 · 서버 오류",
+      "description": "503을 포함한 5xx 오류로 최종 실패한 호출입니다. 추출과 정규화를 합산합니다.",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 25,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "Gemini 최종 실패 · 서버 오류",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_gemini_final_failures{job_type=\"ai\",category=\"5xx\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "title": "Gemini 최종 실패 · 네트워크",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "Gemini 최종 실패 · 네트워크",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_gemini_final_failures{job_type=\"ai\",category=\"network\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "title": "Gemini 최종 실패 · 기타",
+      "description": "",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 30,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "zipick-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "Gemini 최종 실패 · 기타",
+          "noValue": "실행 기록 없음",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "실행 기록 없음",
+                  "color": "gray",
+                  "index": 99
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "text": {
+          "titleSize": 20,
+          "valueSize": 32
+        },
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(zipick_collector_last_gemini_final_failures{job_type=\"ai\",category=\"other\",environment!~\"synthetic_test|real_process_failure_test\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    }
+  ]
+}

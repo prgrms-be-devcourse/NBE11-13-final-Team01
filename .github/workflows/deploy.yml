@@ -1,0 +1,412 @@
+name: Deploy
+
+# 수동 실행만 허용한다. dev 에 merge 됐다고 자동으로 배포되지 않는다.
+# 자동 트리거(push)는 수동 배포가 충분히 검증된 뒤에 검토한다.
+#
+# 배포 범위는 전체 구성이다: db · rabbitmq · backend · notification · web (deploy/docker-compose.prod.yml).
+# 서버에서 이미 이 구성으로 돌고 있으므로, CD 도 같은 compose 와 같은 서비스 목록을 쓴다.
+# (처음엔 db · backend · web 만 다루는 1차 구성이었으나, 알림센터·RabbitMQ 가 dev 에 머지되고 서버에 배포된 뒤 전체 구성으로 바꿨다)
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '롤백할 이미지 태그 (비우면 현재 커밋으로 새로 빌드). 형식: sha-a1b2c3d'
+        required: false
+        default: ''
+      build_only:
+        description: '이미지 빌드·푸시까지만 하고 배포하지 않음 (AWS 설정 전 빌드 확인용)'
+        required: false
+        type: boolean
+        default: false
+
+# 기본은 읽기 전용. 필요한 권한은 각 job 에서만 좁게 연다.
+permissions:
+  contents: read
+
+# 배포는 겹치면 안 된다. 진행 중인 배포를 취소하지 않고 뒤에서 기다리게 한다.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
+  COMPOSE_PATH: deploy/docker-compose.prod.yml
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. 배포해도 되는 상태인지 전부 확인한다. 여기서 막히면 이미지도 만들지 않는다.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: 배포 대상 검증
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read        # CI 실행 결과 조회
+      packages: read       # 롤백 대상 이미지 존재 확인
+    outputs:
+      image_tag: ${{ steps.resolve.outputs.image_tag }}
+      deploy_sha: ${{ steps.resolve.outputs.deploy_sha }}
+      build_needed: ${{ steps.resolve.outputs.build_needed }}
+      registry_path: ${{ steps.resolve.outputs.registry_path }}
+      package_prefix: ${{ steps.resolve.outputs.package_prefix }}
+
+    steps:
+      - name: dev 브랜치인지 확인
+        if: ${{ github.ref_name != 'dev' }}
+        run: |
+          echo "::error::배포는 dev 브랜치에서만 실행합니다 (현재: ${{ github.ref_name }})"
+          exit 1
+
+      # AWS 설정이 끝나기 전에 실행하면 빌드 전에 멈춘다 (GHCR 에 쓸데없는 이미지를 남기지 않는다).
+      # build_only 는 서버에 접속하지 않으므로 AWS 설정이 없어도 실행할 수 있다.
+      - name: AWS 연동 설정 확인
+        if: ${{ inputs.build_only != true }}
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+        run: |
+          missing=""
+          [ -n "$ROLE_ARN" ]    || missing="${missing} AWS_ROLE_ARN"
+          [ -n "$INSTANCE_ID" ] || missing="${missing} EC2_INSTANCE_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::GitHub Secrets 가 설정되지 않았습니다:${missing}"
+            echo "docs/cd-pipeline.md 의 'AWS 담당자 설정 체크리스트' 를 먼저 완료해야 합니다."
+            exit 1
+          fi
+          echo "필수 설정 확인 완료."
+
+      - name: 배포 대상 결정
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.image_tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # GHCR 경로는 소문자만 허용한다. 저장소 이름에 대문자가 있어 변환이 필요하다.
+          registry_path="ghcr.io/$(echo "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          echo "registry_path=${registry_path}" >> "$GITHUB_OUTPUT"
+          # 패키지 이름 앞부분 (예: nbe11-13-final-team01). 오래된 버전 정리에 쓴다
+          echo "package_prefix=$(echo "${REPOSITORY#*/}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+          # build_only 는 '새로 빌드' 전용이다. 롤백은 이미 있는 이미지를 쓰므로 빌드할 것이 없다.
+          if [ "${{ inputs.build_only }}" = "true" ] && [ -n "$INPUT_TAG" ]; then
+            echo "::error::build_only 와 image_tag 는 함께 쓸 수 없습니다 (롤백은 빌드하지 않습니다)."
+            exit 1
+          fi
+
+          if [ -z "$INPUT_TAG" ]; then
+            echo "image_tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "deploy_sha=${GITHUB_SHA}"       >> "$GITHUB_OUTPUT"
+            echo "build_needed=true"              >> "$GITHUB_OUTPUT"
+            echo "현재 커밋으로 새로 빌드합니다: sha-${GITHUB_SHA::7}"
+            exit 0
+          fi
+
+          # --- 롤백 경로 ---
+          # 태그 형식을 제한한다. 임의 문자열이 그대로 이미지 참조에 들어가지 않도록.
+          echo "$INPUT_TAG" | grep -qE '^sha-[0-9a-f]{7}$' \
+            || { echo "::error::image_tag 형식이 올바르지 않습니다: ${INPUT_TAG} (예: sha-a1b2c3d)"; exit 1; }
+
+          # 태그의 7자리를 전체 SHA 로 되돌린다. compose 를 '그 이미지를 만든 커밋' 에서 받기 위해서다.
+          short="${INPUT_TAG#sha-}"
+          deploy_sha="$(gh api "repos/${REPOSITORY}/commits/${short}" --jq '.sha' 2>/dev/null || true)"
+          [ -n "$deploy_sha" ] \
+            || { echo "::error::태그 ${INPUT_TAG} 에 해당하는 커밋을 찾을 수 없습니다."; exit 1; }
+
+          echo "image_tag=${INPUT_TAG}"   >> "$GITHUB_OUTPUT"
+          echo "deploy_sha=${deploy_sha}" >> "$GITHUB_OUTPUT"
+          echo "build_needed=false"       >> "$GITHUB_OUTPUT"
+          echo "롤백합니다: ${INPUT_TAG} (커밋 ${deploy_sha})"
+
+      # 테스트가 깨진 커밋이 배포되지 않도록, 같은 커밋의 CI 결과를 확인한다.
+      - name: Backend CI · Frontend CI 성공 여부 확인
+        if: ${{ steps.resolve.outputs.build_needed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          failed=0
+          for workflow in "Backend CI" "Frontend CI"; do
+            conclusion="$(gh api \
+              "repos/${REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&status=completed" \
+              --jq "[.workflow_runs[] | select(.name == \"${workflow}\")] | first | .conclusion // \"없음\"")"
+
+            if [ "$conclusion" = "success" ]; then
+              echo "OK   ${workflow}: success"
+            else
+              echo "::error::${workflow} 가 이 커밋에서 성공하지 않았습니다 (결과: ${conclusion})"
+              failed=1
+            fi
+          done
+          [ "$failed" -eq 0 ] || exit 1
+
+      # 롤백은 '실제로 배포된 적이 있는 버전' 만 대상으로 한다.
+      # 그 커밋의 compose 가 이미지 변수를 받고, 그 태그의 이미지 3개가 레지스트리에 남아 있어야 한다.
+      - name: 롤백 대상 존재 확인
+        if: ${{ steps.resolve.outputs.build_needed == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DEPLOY_SHA: ${{ steps.resolve.outputs.deploy_sha }}
+          REGISTRY: ${{ steps.resolve.outputs.registry_path }}
+          TAG: ${{ steps.resolve.outputs.image_tag }}
+        run: |
+          # 1) 그 커밋의 compose 가 CD 용인가 (이미지 태그를 변수로 받는가).
+          #    CD 도입 이전의 prod compose 는 이미지 이름이 고정돼 있어 롤백 태그가 적용되지 않는다.
+          compose_body="$(gh api "repos/${REPOSITORY}/contents/${COMPOSE_PATH}?ref=${DEPLOY_SHA}" --jq '.content' 2>/dev/null | base64 -d || true)"
+          [ -n "$compose_body" ] \
+            || { echo "::error::해당 커밋에 ${COMPOSE_PATH} 가 없습니다."; exit 1; }
+          for var in BACKEND_IMAGE NOTIFICATION_IMAGE WEB_IMAGE; do
+            echo "$compose_body" | grep -q "\${${var}" \
+              || { echo "::error::해당 커밋의 compose 는 ${var} 를 받지 않습니다. 전체 구성 CD 도입 이전 버전으로는 롤백할 수 없습니다 (deploy/deploy.sh 수동 배포를 쓰세요)."; exit 1; }
+          done
+          echo "OK   ${COMPOSE_PATH} (커밋 ${DEPLOY_SHA:0:7}, 이미지 변수 3개 확인)"
+
+          # 2) 그 태그의 이미지가 레지스트리에 있는가
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin > /dev/null
+          for image in zipick-backend zipick-notification zipick-web; do
+            docker manifest inspect "${REGISTRY}/${image}:${TAG}" > /dev/null 2>&1 \
+              || { echo "::error::이미지가 없습니다: ${REGISTRY}/${image}:${TAG}"; exit 1; }
+            echo "OK   ${image}:${TAG}"
+          done
+
+  # ---------------------------------------------------------------------------
+  # 2. ARM64 이미지를 만들어 GHCR 에 올린다. backend · notification · web 세 개.
+  #    공개 저장소라 ARM64 러너를 무료로 쓸 수 있어 QEMU 에뮬레이션 없이 네이티브로 빌드한다.
+  # ---------------------------------------------------------------------------
+  build:
+    name: ARM64 이미지 빌드 및 GHCR 푸시
+    needs: verify
+    if: ${{ needs.verify.outputs.build_needed == 'true' }}
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write      # GHCR 푸시에만 필요
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Buildx 준비
+        uses: docker/setup-buildx-action@v3
+
+      - name: GHCR 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 백엔드 이미지
+        uses: docker/build-push-action@v6
+        with:
+          context: zipick-backend
+          platforms: linux/arm64
+          push: true
+          tags: ${{ needs.verify.outputs.registry_path }}/zipick-backend:${{ needs.verify.outputs.image_tag }}
+          # 출처 증명(attestation)을 따로 올리지 않는다. 태그 하나 = 패키지 버전 하나가 되어, 아래 정리 단계가 다른 태그의 이미지를 지우지 않는다
+          provenance: false
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      # 카카오 JavaScript 키는 브라우저에 그대로 노출되는 공개 키이며, 프론트 빌드 시점에 필요하다.
+      # 저장소에 두지 않기 위해 Secrets 에서 받아 빌드 인자로 넘긴다.
+      - name: 프론트엔드 이미지
+        uses: docker/build-push-action@v6
+        with:
+          context: zipick-frontend
+          platforms: linux/arm64
+          push: true
+          build-args: |
+            VITE_KAKAO_MAP_KEY=${{ secrets.VITE_KAKAO_MAP_KEY }}
+          tags: ${{ needs.verify.outputs.registry_path }}/zipick-web:${{ needs.verify.outputs.image_tag }}
+          # 출처 증명(attestation)을 따로 올리지 않는다. 태그 하나 = 패키지 버전 하나가 되어, 아래 정리 단계가 다른 태그의 이미지를 지우지 않는다
+          provenance: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      # 알림센터(Go). 실행 파일 하나라 빌드가 빠르고 이미지는 약 30MB 다.
+      - name: 알림센터 이미지
+        uses: docker/build-push-action@v6
+        with:
+          context: zipick-notification
+          platforms: linux/arm64
+          push: true
+          tags: ${{ needs.verify.outputs.registry_path }}/zipick-notification:${{ needs.verify.outputs.image_tag }}
+          # 출처 증명(attestation)을 따로 올리지 않는다. 태그 하나 = 패키지 버전 하나가 되어, 아래 정리 단계가 다른 태그의 이미지를 지우지 않는다
+          provenance: false
+          cache-from: type=gha,scope=notification
+          cache-to: type=gha,mode=max,scope=notification
+
+      # 패키지는 조직 정책으로 비공개다. 비공개 패키지는 조직의 GitHub Packages 저장 용량에 잡히므로,
+      # 이미지마다 최근 5개 버전만 남긴다. 롤백도 이 5개 안에서만 가능하다.
+      # 정리가 실패해도 배포를 막지 않는다 (continue-on-error).
+      - name: 오래된 이미지 정리 (최근 5개만 유지)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ format('{0}/zipick-backend', needs.verify.outputs.package_prefix) }}
+          package-type: container
+          min-versions-to-keep: 5
+      - name: 오래된 이미지 정리 (프론트)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ format('{0}/zipick-web', needs.verify.outputs.package_prefix) }}
+          package-type: container
+          min-versions-to-keep: 5
+      - name: 오래된 이미지 정리 (알림센터)
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ format('{0}/zipick-notification', needs.verify.outputs.package_prefix) }}
+          package-type: container
+          min-versions-to-keep: 5
+
+      - name: build_only 안내
+        if: ${{ inputs.build_only == true }}
+        env:
+          REGISTRY: ${{ needs.verify.outputs.registry_path }}
+          TAG: ${{ needs.verify.outputs.image_tag }}
+        run: |
+          {
+            echo "## 이미지 빌드 완료 (배포하지 않음)"
+            echo
+            echo "| 이미지 | 태그 |"
+            echo "| --- | --- |"
+            echo "| \`${REGISTRY}/zipick-backend\` | \`${TAG}\` |"
+            echo "| \`${REGISTRY}/zipick-notification\` | \`${TAG}\` |"
+            echo "| \`${REGISTRY}/zipick-web\` | \`${TAG}\` |"
+            echo
+            echo "### 다음 단계"
+            echo
+            echo "패키지는 조직 정책에 따라 **비공개**로 둡니다. 서버는 배포할 때 임시 토큰으로 로그인해 받습니다."
+            echo "이 워크플로를 \`build_only\` 를 **끄고** 다시 실행하면 배포까지 진행합니다 (같은 커밋이면 빌드 캐시로 빨리 끝납니다)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # 3. EC2 에 배포한다. SSH 포트를 열지 않고 SSM Run Command 로 명령을 전달한다.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: EC2 배포
+    needs: [verify, build]
+    # build 를 건너뛴 롤백 실행에서도 이어져야 하므로 always() 로 두고 결과를 직접 본다.
+    if: ${{ always() && inputs.build_only != true && needs.verify.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write      # AWS OIDC 임시 자격 증명 발급에만 필요
+      packages: read       # 비공개 GHCR 이미지 확인, 그리고 서버가 pull 할 때 쓰는 임시 토큰의 권한
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # 패키지는 조직 정책으로 비공개다. 서버에 들어가기 전에, 서버가 쓸 것과 같은 토큰(GITHUB_TOKEN)으로
+      # 세 이미지를 받을 수 있는지 먼저 확인한다. 안 되면 기존 컨테이너를 건드리기 전에 멈춘다.
+      - name: GHCR 이미지 확인 (임시 토큰)
+        env:
+          REGISTRY: ${{ needs.verify.outputs.registry_path }}
+          TAG: ${{ needs.verify.outputs.image_tag }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin > /dev/null
+          failed=0
+          for image in zipick-backend zipick-notification zipick-web; do
+            if docker manifest inspect "${REGISTRY}/${image}:${TAG}" > /dev/null 2>&1; then
+              echo "OK   ${image}:${TAG}"
+            else
+              echo "::error::${REGISTRY}/${image}:${TAG} 를 받을 수 없습니다."
+              failed=1
+            fi
+          done
+          docker logout ghcr.io > /dev/null
+          if [ "$failed" -ne 0 ]; then
+            echo
+            echo "이미지가 없거나, 패키지의 'Manage Actions access' 에 이 저장소가 연결돼 있지 않습니다."
+            echo "패키지 → Package settings → Manage Actions access 에서 저장소 권한(Read 이상)을 확인하세요."
+            exit 1
+          fi
+
+      - name: AWS 임시 자격 증명 발급 (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: zipick-deploy-${{ github.run_id }}
+
+      # 서버가 비공개 이미지를 받으려면 GHCR 토큰이 필요하다. 토큰을 SSM 명령에 직접 넣으면 명령 기록에 남으므로,
+      # SSM Parameter Store 에 SecureString(KMS 암호화)으로 잠깐 저장하고 SSM 명령에는 '파라미터 이름' 만 넘긴다.
+      #  - 값은 명령줄 인자가 아니라 파일로 넘긴다 (러너 프로세스 목록에도 남지 않게). 로그에 출력하지 않는다
+      #  - GITHUB_TOKEN 은 이 저장소 패키지 읽기 권한뿐이고, 이 워크플로가 끝나면 GitHub 이 만료시킨다
+      #  - 파라미터는 마지막 단계에서 성공·실패와 관계없이 지운다
+      - name: GHCR 임시 토큰을 암호화 파라미터로 저장
+        id: ghcr_param
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          name="/zipick/deploy/ghcr-token-${{ github.run_id }}-${{ github.run_attempt }}"
+          value_file="$(mktemp)"
+          trap 'rm -f "$value_file"' EXIT
+          printf '%s' "$GHCR_TOKEN" > "$value_file"
+          aws ssm put-parameter --name "$name" --type SecureString --value "file://${value_file}" \
+            --tags Key=Team,Value=devcos-team01 Key=Purpose,Value=zipick-deploy > /dev/null
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "저장: ${name} (SecureString)"
+
+      - name: 서버에서 배포 실행
+        env:
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          REGISTRY: ${{ needs.verify.outputs.registry_path }}
+          TAG: ${{ needs.verify.outputs.image_tag }}
+          DEPLOY_SHA: ${{ needs.verify.outputs.deploy_sha }}
+          APP_DIR: ${{ vars.APP_DIR || '/home/ubuntu/zipick' }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # compose 는 '배포할 이미지를 만든 커밋' 에서 받는다. 롤백할 때도 이미지와 설정이 같은 버전이 된다.
+          compose_url="https://raw.githubusercontent.com/${REPOSITORY}/${DEPLOY_SHA}/${COMPOSE_PATH}"
+
+          # bash 로 명시 호출한다. Windows 체크아웃에서 실행 권한이 빠져도 동작하도록.
+          bash ./deploy/ssm-run.sh deploy/remote-deploy.sh "$(printf '%s\n' \
+            "APP_DIR=${APP_DIR}" \
+            "COMPOSE_FILE=$(basename "${COMPOSE_PATH}")" \
+            "COMPOSE_URL=${compose_url}" \
+            "BACKEND_IMAGE=${REGISTRY}/zipick-backend:${TAG}" \
+            "NOTIFICATION_IMAGE=${REGISTRY}/zipick-notification:${TAG}" \
+            "WEB_IMAGE=${REGISTRY}/zipick-web:${TAG}" \
+            "GHCR_USER=${{ github.actor }}" \
+            "GHCR_TOKEN_PARAM=${{ steps.ghcr_param.outputs.name }}" \
+            "AWS_REGION=${AWS_REGION}")"
+
+      - name: GHCR 임시 토큰 파라미터 삭제
+        if: ${{ always() && steps.ghcr_param.outputs.name != '' }}
+        run: |
+          aws ssm delete-parameter --name "${{ steps.ghcr_param.outputs.name }}" > /dev/null 2>&1 \
+            && echo "삭제: ${{ steps.ghcr_param.outputs.name }}" \
+            || echo "::warning::파라미터 삭제 실패 — 토큰은 이 워크플로가 끝나면 만료되지만, Parameter Store 에서 직접 지워 주세요."
+
+      - name: 배포 요약
+        if: ${{ !cancelled() }}
+        env:
+          TAG: ${{ needs.verify.outputs.image_tag }}
+          DEPLOY_SHA: ${{ needs.verify.outputs.deploy_sha }}
+          BUILT: ${{ needs.verify.outputs.build_needed }}
+        run: |
+          {
+            echo "## 배포 결과 (db · rabbitmq · backend · notification · web)"
+            echo
+            echo "| 항목 | 값 |"
+            echo "| --- | --- |"
+            echo "| 이미지 태그 | \`${TAG}\` |"
+            echo "| 소스 커밋 | \`${DEPLOY_SHA}\` |"
+            echo "| compose | \`${COMPOSE_PATH}\` (같은 커밋) |"
+            echo "| 새로 빌드 | ${BUILT} |"
+            echo
+            echo "### 되돌리려면"
+            echo
+            echo "이 워크플로를 다시 실행하면서 \`image_tag\` 에 이전 태그(\`sha-xxxxxxx\`)를 입력하세요."
+            echo "빌드를 건너뛰고 해당 이미지와 **같은 커밋의 compose** 를 함께 되돌립니다."
+            echo
+            echo "> DB 스키마 변경은 되돌아가지 않습니다. 컬럼을 지우거나 이름을 바꾼 배포는"
+            echo "> 이미지 롤백만으로 복구되지 않습니다 (\`ddl-auto: validate\`)."
+          } >> "$GITHUB_STEP_SUMMARY"

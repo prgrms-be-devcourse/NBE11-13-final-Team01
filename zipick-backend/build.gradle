@@ -1,0 +1,220 @@
+plugins {
+    id 'java'
+    id 'jacoco'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.zipick'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    // 팀 결정에 따라 Java 25 사용. toolchain으로 고정해 로컬 JDK와 무관하게 동일 버전으로 빌드한다.
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot 4부터 spring-boot-starter-web이 spring-boot-starter-webmvc로 변경됨
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // 운영 모니터링 서버가 API와 JVM 지표를 수집한다.
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+    // 주소가 없는 LH 공고의 공급주택 목록(XLS/XLSX, 텍스트 PDF)을 읽는다.
+    implementation 'org.apache.poi:poi-ooxml:5.5.1'
+    implementation 'org.apache.pdfbox:pdfbox:3.0.8'
+    // HWP v5 첨부문서에서 텍스트를 추출한다.
+    implementation 'org.apache.tika:tika-parsers-standard-package:4.1.0'
+    // SH 공고 목록·상세 페이지의 HTML 구조를 안전하게 읽는다.
+    implementation 'org.jsoup:jsoup:1.21.2'
+
+    // JWT 생성·검증. api만 컴파일 시점에 노출하고 구현체는 런타임에만 둔다.
+    implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
+
+    // QueryDSL — 필터 조회. Hibernate 7(Boot 4)을 지원하는 OpenFeign 포크 (패키지명은 com.querydsl 그대로)
+    implementation 'io.github.openfeign.querydsl:querydsl-jpa:7.1'
+    annotationProcessor 'io.github.openfeign.querydsl:querydsl-apt:7.1:jpa'
+    annotationProcessor 'jakarta.persistence:jakarta.persistence-api'
+
+    // API 문서 (Swagger UI: /swagger-ui.html). Boot 4는 springdoc 3.x
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
+
+    // 알림(안서호): 알림 요청을 RabbitMQ 로 던진다 (응답이 필요 없는 요청만). 조회·설정은 HTTP
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+
+    runtimeOnly 'org.postgresql:postgresql'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // Boot 4에서 @WebMvcTest가 별도 모듈로 분리되어 starter-test에 포함되지 않는다.
+    testImplementation 'org.springframework.boot:spring-boot-webmvc-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // 지도·추천 조회는 QueryDSL 의 JOIN/EXISTS 동작에 기대고 있어 Mock 으로는 검증되지 않는다.
+    // 운영과 같은 PostgreSQL 컨테이너를 띄워 실제 조회 결과를 확인한다.
+    // 테스트 전용 의존성이라 운영 빌드·실행에는 영향이 없다. Docker 가 없으면 해당 테스트만 건너뛴다.
+    testImplementation 'org.springframework.boot:spring-boot-data-jpa-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testRuntimeOnly 'org.postgresql:postgresql'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    // 테스트가 끝나면 커버리지 리포트를 만든다. finalizedBy 라 테스트가 실패해도 실행된다.
+    // jacocoTestReport 에 dependsOn(test) 을 걸면 이 효과가 사라진다.
+    // Gradle 은 의존 태스크가 실패하면 그 태스크를 건너뛰므로, test 실패 시 리포트가 만들어지지 않는다.
+    // CI 는 실패 원인을 보려고 리포트를 올리므로 그때야말로 리포트가 필요하다.
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+jacoco {
+    // Gradle 9.3 기본값보다 새 버전을 명시한다. Java 25 바이트코드(class file 69)를 읽으려면 필요하다.
+    toolVersion = '0.8.15'
+}
+
+// QueryDSL 이 생성한 Q 클래스만 측정에서 뺀다. 직접 작성한 코드는 모두 포함한다.
+// 이름 규칙(Q*)만으로 거르면 직접 작성한 QuerydslConfig 까지 빠지므로 생성 위치까지 함께 지정한다.
+// 리포트와 기준 검증이 서로 다른 모수를 보면 CI 요약 수치와 합격 판정이 어긋나므로 한 곳에서 만들어 둘 다에 쓴다.
+def coverageClassDirs = {
+    files(sourceSets.main.output.classesDirs.collect { dir ->
+        fileTree(dir) {
+            exclude '**/domain/Q*.class', '**/entity/Q*.class'
+        }
+    })
+}
+
+tasks.named('jacocoTestReport') {
+    reports {
+        html.required = true   // 사람이 브라우저로 보는 리포트
+        xml.required = true    // CI 요약 및 외부 도구가 읽는 형식
+        csv.required = false
+    }
+
+    classDirectories.setFrom(coverageClassDirs())
+}
+
+// 커버리지 하락 방지선. '목표치'가 아니라 '지금 수준이 크게 후퇴하는 것을 막는 하한'이다.
+// 2026-10-27 기준 Line 82.6% / Branch 65.8% 에서 각각 약 2.6pp / 5.8pp 여유를 두고 잡았다.
+// Branch 여유를 더 크게 둔 이유: 전체 분기의 28%를 차지하는 external/ai 가 53% 로 가장 낮으면서
+// 지금도 커지고 있어 Line 보다 수치가 크게 흔들린다.
+// 수치를 올릴 때는 실제 커버리지가 오른 뒤에 팀 합의로 함께 올린다.
+// 패키지별 기준은 두지 않는다. 패키지별 수치는 CI Job Summary 에 관찰용으로만 표시한다.
+tasks.named('jacocoTestCoverageVerification') {
+    // test 가 실패하면 이 검증은 건너뛴다(빌드는 test 실패로 이미 깨진다).
+    dependsOn tasks.named('test')
+
+    classDirectories.setFrom(coverageClassDirs())
+
+    violationRules {
+        rule {
+            element = 'BUNDLE'   // 프로젝트 전체 합계로만 본다. 클래스별 기준은 아직 두지 않는다.
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+            limit {
+                counter = 'BRANCH'
+                value = 'COVEREDRATIO'
+                minimum = 0.60
+            }
+        }
+    }
+}
+
+// jacoco 플러그인은 검증 태스크를 만들기만 하고 check 에 걸어 주지 않는다.
+// CI 의 `./gradlew build` 가 check 를 거치므로 여기 연결해야 PR 에서 실제로 동작한다.
+tasks.named('check') {
+    dependsOn tasks.named('jacocoTestCoverageVerification')
+}
+
+// QueryDSL Q클래스 생성 위치
+def querydslDir = layout.buildDirectory.dir('generated/querydsl').get().asFile
+sourceSets { main.java.srcDirs += [querydslDir] }
+// QueryDSL 생성물은 main 컴파일에만 연결한다. 별도 평가 source set이 같은 출력 폴더를
+// 공유하면 Gradle 9가 태스크 의존성 충돌로 빌드를 중단한다.
+tasks.named('compileJava', JavaCompile) {
+    options.generatedSourceOutputDirectory.set(file(querydslDir))
+}
+clean { delete file(querydslDir) }
+
+// 실제 PDF를 대상으로 기존 파서와 AI 파서를 비교하는 수동 평가 도구.
+// 외부 사이트 호출과 Gemini 비용이 발생할 수 있어 일반 test/CI와 분리한다.
+sourceSets {
+    parserEvaluation {
+        java.srcDir 'src/parserEvaluation/java'
+        compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+configurations {
+    parserEvaluationImplementation.extendsFrom testImplementation
+    parserEvaluationRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+tasks.register('parserEvaluation', JavaExec) {
+    group = 'verification'
+    description = '공식 PDF 원문 정답셋과 현재 상세주택 파서 결과를 비교합니다.'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.ParserEvaluationApplication'
+    workingDir = rootProject.projectDir.parentFile
+}
+
+tasks.register('pdfLayoutDump', JavaExec) {
+    group = 'verification'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.PdfLayoutDumpApplication'
+    workingDir = rootProject.projectDir.parentFile
+}
+
+tasks.register('hybridParserTrial', JavaExec) {
+    group = 'verification'
+    description = 'Gemini가 전체 PDF에서 상세주택을 직접 추출하는 흐름을 시험합니다.'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.HybridParserTrialApplication'
+    workingDir = rootProject.projectDir.parentFile
+}
+
+tasks.register('aiParserAccuracy', JavaExec) {
+    group = 'verification'
+    description = '저장된 AI 파싱 결과를 PDF 원문 정답셋과 대조해 정확도·누락·근거 일치율을 계산합니다.'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.AiParserAccuracyApplication'
+    workingDir = rootProject.projectDir.parentFile
+}
+
+tasks.register('normalizationReviewTrial', JavaExec) {
+    group = 'verification'
+    description = '저장된 Gemini Lite JSON을 묶어 3.8 Flash 정규화 검수를 시험합니다.'
+    dependsOn tasks.named('parserEvaluationClasses')
+    classpath = sourceSets.parserEvaluation.runtimeClasspath
+    mainClass = 'com.zipick.evaluation.NormalizationReviewTrialApplication'
+    workingDir = rootProject.projectDir.parentFile
+}

@@ -1,0 +1,349 @@
+package com.zipick.external.gh;
+
+import com.zipick.external.ai.GeminiPdfHousingDetailSupport;
+import com.zipick.external.housingdetail.DetailedHousingMedia;
+import com.zipick.external.housingdetail.DetailedHousingUnit;
+import com.zipick.external.housingdetail.ExternalDocumentClient;
+import com.zipick.external.housingdetail.HousingDetailResult;
+import com.zipick.external.housingdetail.HousingDetailSource;
+import com.zipick.external.housingdetail.RentalTermsPdfParser;
+import com.zipick.notice.dto.NoticeAttachmentResponse;
+import com.zipick.notice.dto.NoticeResponse;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.springframework.core.annotation.Order;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import tools.jackson.databind.json.JsonMapper;
+
+import java.math.BigDecimal;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@Component
+@Order(30)
+public class GhHousingDetailSource implements HousingDetailSource {
+
+    private static final JsonMapper JSON_MAPPER = JsonMapper.builder().build();
+    private static final Pattern FILE_SIZE = Pattern.compile("\\s*\\(\\d+\\s*Byte\\)\\s*$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DISTRICT = Pattern.compile(
+            "^(?:경기도|서울특별시|인천광역시)\\s+((?:\\S+시\\s+\\S+구)|\\S+(?:시|군|구))"
+    );
+    private static final Pattern HOUSING_PDF = Pattern.compile(
+            "주택.*(?:목록|내역|명세)|(?:목록|내역|명세).*주택|공급.*주택",
+            Pattern.CASE_INSENSITIVE
+    );
+
+    private final ExternalDocumentClient documentClient;
+    private GeminiPdfHousingDetailSupport geminiSupport;
+    private com.zipick.notice.repository.DocumentParseHistoryRepository historyRepository;
+
+    @Autowired(required = false)
+    void setHistoryRepository(com.zipick.notice.repository.DocumentParseHistoryRepository historyRepository) {
+        this.historyRepository = historyRepository;
+    }
+
+    public GhHousingDetailSource(ExternalDocumentClient documentClient) {
+        this.documentClient = documentClient;
+    }
+
+    @Autowired(required = false)
+    void setGeminiSupport(GeminiPdfHousingDetailSupport geminiSupport) {
+        this.geminiSupport = geminiSupport;
+    }
+
+    @Override
+    public boolean supports(NoticeResponse notice) {
+        if ("GH".equalsIgnoreCase(notice.source())) {
+            return true;
+        }
+        if (!StringUtils.hasText(notice.url())) {
+            return false;
+        }
+        URI uri = URI.create(notice.url());
+        return uri.getHost() != null && uri.getHost().toLowerCase(Locale.ROOT).endsWith("gh.or.kr");
+    }
+
+    @Override
+    public HousingDetailResult extract(NoticeResponse notice) {
+        URI detailUri = URI.create(notice.url());
+        Document document = Jsoup.parse(documentClient.getText(detailUri), detailUri.toString());
+        List<NoticeAttachmentResponse> attachments = attachments(document, notice.noticeId());
+        boolean cacheEnabled = historyRepository != null && (geminiSupport == null || !geminiSupport.enabled());
+        byte[] htmlBytes = document.select("div[id^=tab]").outerHtml().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String key = "GH:" + com.zipick.external.housingdetail.DocumentFingerprint.sha256(
+                notice.noticeId().getBytes(java.nio.charset.StandardCharsets.UTF_8)) + ":"
+                + com.zipick.external.housingdetail.DocumentFingerprint.sha256(htmlBytes);
+        if (cacheEnabled && historyRepository.findByDocumentKeyAndParserVersion(key, "GH_HTML_V3")
+                .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent()) {
+            return new HousingDetailResult(List.of(), attachments, Map.of(), true);
+        }
+        List<DetailedHousingUnit> units = new ArrayList<>();
+        Map<String, List<DetailedHousingMedia>> mediaByUnit = new LinkedHashMap<>();
+
+        int rowNumber = 0;
+        for (Element section : document.select("div[id^=tab]")) {
+            Element infoTable = section.selectFirst("table:has(caption:matches(사업지구별 공급정보))");
+            if (infoTable == null) {
+                continue;
+            }
+            Map<String, String> info = labelValues(infoTable);
+            String complexName = first(info, "지구명", "단지명");
+            String address = first(info, "소재지", "주소");
+            if (!StringUtils.hasText(address)) {
+                continue;
+            }
+            List<DetailedHousingMedia> sectionMedia = media(section, notice.noticeId());
+            int supplyIndex = 0;
+            for (Element row : section.select("tbody.tb_house tr.tb_house_con")) {
+                List<Element> cells = row.select("td");
+                if (cells.size() < 5) {
+                    continue;
+                }
+                Element button = cells.getFirst().selectFirst("button[data-houseTyCd]");
+                String housingType = button == null ? cells.getFirst().text().trim()
+                        : button.attr("data-houseTyCd").trim();
+                String supplyType = button == null ? null : button.text().replaceFirst(
+                        "^" + Pattern.quote(housingType) + "\\s*", "").trim();
+                String unitKey = "GH:" + notice.noticeId() + ":" + section.id() + ":"
+                        + (++supplyIndex) + ":" + housingType;
+                Map<String, Object> raw = new LinkedHashMap<>();
+                raw.put("complexName", complexName);
+                raw.put("heatingMethod", first(info, "난방방식"));
+                raw.put("expectedMoveIn", first(info, "입주예정월", "입주예정일"));
+                raw.put("supplyCount", cells.get(2).text().trim());
+                units.add(new DetailedHousingUnit(
+                        unitKey, complexName, province(address), district(address), address,
+                        null, null, null, decimal(cells.get(1).text()), null,
+                        housingType, supplyType, money(cells.get(3).text()), money(cells.get(4).text()),
+                        JSON_MAPPER.writeValueAsString(raw), null, null, ++rowNumber,
+                        cells.size() > 5 ? cells.get(5).text().trim() : null,
+                        null, null, null, null, null, null, null,
+                        longValue(cells.get(2).text()), List.of()
+                ));
+                if (!sectionMedia.isEmpty()) {
+                    mediaByUnit.put(unitKey, sectionMedia);
+                }
+            }
+        }
+        units = supplementMissingRent(attachments, units);
+        GhPdfResult pdfResult = supplementFromHousingPdf(notice, attachments, units, key);
+        if (pdfResult.skipped()) {
+            return new HousingDetailResult(List.of(), attachments, Map.of(), true);
+        }
+        List<DetailedHousingUnit> completed = pdfResult.units();
+        var checkpoints = cacheEnabled && !completed.isEmpty()
+                ? List.of(new com.zipick.notice.dto.ParseCheckpoint(key, "GH_HTML_V3", htmlBytes.length, completed.size()))
+                : pdfResult.checkpoints();
+        return new HousingDetailResult(completed, attachments, mediaByUnit, false, checkpoints);
+    }
+
+    private record GhPdfResult(List<DetailedHousingUnit> units, boolean skipped,
+                               List<com.zipick.notice.dto.ParseCheckpoint> checkpoints) { }
+
+    private List<DetailedHousingUnit> supplementMissingRent(List<NoticeAttachmentResponse> attachments,
+            List<DetailedHousingUnit> units) {
+        if (units.stream().noneMatch(unit -> unit.rentDeposit() == null || unit.monthlyRent() == null)) return units;
+        List<RentalTermsPdfParser.Terms> terms = new ArrayList<>();
+        for (NoticeAttachmentResponse attachment : attachments) {
+            String name = attachment.fileName() == null ? "" : attachment.fileName().toLowerCase(Locale.ROOT);
+            if (!name.endsWith(".pdf") || !name.contains("공고")) continue;
+            try {
+                terms.addAll(new RentalTermsPdfParser().parse(documentClient.getBytes(URI.create(attachment.sourceUrl()))));
+            } catch (RuntimeException exception) {
+                org.slf4j.LoggerFactory.getLogger(GhHousingDetailSource.class)
+                        .warn("GH 공고문 임대조건 확인 실패: file={}, reason={}", name, exception.getMessage());
+            }
+        }
+        return units.stream().map(unit -> supplementRent(unit, terms)).toList();
+    }
+
+    static DetailedHousingUnit supplementRent(DetailedHousingUnit unit, List<RentalTermsPdfParser.Terms> terms) {
+        if (!StringUtils.hasText(unit.housingType())) return unit;
+        String type = unit.housingType().replaceAll("\\s+", "").toUpperCase(Locale.ROOT);
+        String target = unit.supplyType() == null ? "" : unit.supplyType().replaceAll("\\s+", "");
+        var matches = terms.stream().filter(term -> type.equals(term.housingType().replaceAll("\\s+", "")))
+                .filter(term -> target.isEmpty() || target.equals(term.target().replaceAll("\\s+", "")))
+                .distinct().toList();
+        if (matches.size() != 1) return unit;
+        var term = matches.getFirst();
+        if ((unit.rentDeposit() != null && unit.rentDeposit() != term.deposit())
+                || (unit.monthlyRent() != null && unit.monthlyRent() != term.monthlyRent())) return unit;
+        Map<String, Object> raw = new LinkedHashMap<>();
+        raw.put("previous", unit.rawPayload());
+        raw.put("verifiedRentalTerms", Map.of("page", term.page(), "evidence", term.evidence(),
+                "housingType", term.housingType(), "target", term.target()));
+        return new DetailedHousingUnit(unit.sourceUnitKey(), unit.complexName(), unit.provinceName(),
+                unit.districtName(), unit.address(), unit.buildingDong(), unit.unitNumber(), unit.floor(),
+                unit.exclusiveArea(), unit.roomCount(), unit.housingType(), unit.supplyType(),
+                unit.rentDeposit() == null ? term.deposit() : unit.rentDeposit(),
+                unit.monthlyRent() == null ? term.monthlyRent() : unit.monthlyRent(),
+                JSON_MAPPER.writeValueAsString(raw), unit.lotAddress(), unit.roadAddress(), unit.sourceRowNumber(),
+                unit.supplyStatus(), unit.nearbySubwayStation(), unit.subwayWalkDistanceKm(),
+                unit.elevatorAvailable(), unit.communityFacilityAvailable(), unit.totalParkingSpaces(),
+                unit.mechanicalParkingAvailable(), unit.mechanicalParkingSpaces(), unit.supplyCount(), unit.rentalConditions());
+    }
+
+    private GhPdfResult supplementFromHousingPdf(
+            NoticeResponse notice,
+            List<NoticeAttachmentResponse> attachments,
+            List<DetailedHousingUnit> fallback,
+            String htmlKey
+    ) {
+        if (geminiSupport == null || !geminiSupport.enabled()) return new GhPdfResult(List.copyOf(fallback), false, List.of());
+        for (NoticeAttachmentResponse attachment : attachments) {
+            String fileName = attachment.fileName() == null ? "" : attachment.fileName();
+            if (!fileName.toLowerCase(Locale.ROOT).endsWith(".pdf")
+                    || !HOUSING_PDF.matcher(fileName.replaceAll("[\\s._-]", "")).find()) {
+                continue;
+            }
+            try {
+                byte[] bytes = documentClient.getBytes(URI.create(attachment.sourceUrl()));
+                String key = htmlKey + ":" + com.zipick.external.housingdetail.DocumentFingerprint.sha256(bytes);
+                String version = "GH_" + geminiSupport.parserVersion();
+                if (historyRepository != null && historyRepository.findByDocumentKeyAndParserVersion(key, version)
+                        .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent()) {
+                    return new GhPdfResult(List.of(), true, List.of());
+                }
+                var result = geminiSupport.supplementWithStatus(
+                        bytes, attachment.sourceKey(), "GH", notice.title(), fileName, fallback);
+                var checkpoints = historyRepository != null && result.aiApplied() && result.aiComplete()
+                        && !result.units().isEmpty()
+                        ? List.of(new com.zipick.notice.dto.ParseCheckpoint(key, version, bytes.length, result.units().size()))
+                        : List.<com.zipick.notice.dto.ParseCheckpoint>of();
+                return new GhPdfResult(result.units(), false, checkpoints);
+            } catch (RuntimeException ignored) {
+                // 기존 HTML 파싱 결과를 유지하고 AI 성공 이력은 남기지 않는다.
+            }
+        }
+        return new GhPdfResult(List.copyOf(fallback), false, List.of());
+    }
+
+    List<NoticeAttachmentResponse> attachments(Document document, String noticeId) {
+        List<NoticeAttachmentResponse> result = new ArrayList<>();
+        int index = 0;
+        for (Element link : document.select("a[href*=selectFileDown]")) {
+            String fileName = FILE_SIZE.matcher(link.ownText().trim()).replaceFirst("");
+            if (!StringUtils.hasText(fileName)) {
+                fileName = "GH 첨부파일 " + (index + 1);
+            }
+            String url = link.absUrl("href");
+            result.add(new NoticeAttachmentResponse(
+                    "GH_FILE:" + noticeId + ":" + (++index), attachmentType(fileName),
+                    fileName, url, null
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private Map<String, String> labelValues(Element table) {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Element header : table.select("th")) {
+            Element value = header.nextElementSibling();
+            if (value != null && "td".equals(value.tagName())) {
+                result.put(header.text().replaceAll("\\s+", "").trim(), value.text().trim());
+            }
+        }
+        return result;
+    }
+
+    private List<DetailedHousingMedia> media(Element section, String noticeId) {
+        List<DetailedHousingMedia> result = new ArrayList<>();
+        int index = 0;
+        for (Element button : section.select("button[data-show]")) {
+            String targetId = button.attr("data-show").trim();
+            if (!StringUtils.hasText(targetId)) {
+                continue;
+            }
+            Element image = section.selectFirst("#" + targetId + " img[src]");
+            if (image == null) {
+                continue;
+            }
+            String label = button.text().trim();
+            String rawPayload = JSON_MAPPER.writeValueAsString(Map.of(
+                    "alt", image.attr("alt")
+            ));
+            result.add(new DetailedHousingMedia(
+                    section.id(), "GH_MEDIA:" + noticeId + ":" + section.id() + ":" + (++index),
+                    mediaType(label), label, image.absUrl("src"), rawPayload
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private String first(Map<String, String> values, String... names) {
+        for (String name : names) {
+            for (Map.Entry<String, String> entry : values.entrySet()) {
+                if (entry.getKey().contains(name) && StringUtils.hasText(entry.getValue())) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
+    private String province(String address) {
+        return address == null || address.isBlank() ? null : address.trim().split("\\s+")[0];
+    }
+
+    private String district(String address) {
+        Matcher matcher = DISTRICT.matcher(address == null ? "" : address.trim());
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    private BigDecimal decimal(String value) {
+        try {
+            Matcher matcher = Pattern.compile("[\\d.]+").matcher(value.replace(",", ""));
+            return matcher.find() ? new BigDecimal(matcher.group()) : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private Long money(String value) {
+        if (!StringUtils.hasText(value) || value.contains("확인")) {
+            return null;
+        }
+        String digits = value.replaceAll("[^0-9]", "");
+        try {
+            return digits.isEmpty() ? null : Long.valueOf(digits);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private Long longValue(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String digits = value.replaceAll("[^0-9]", "");
+        try {
+            return digits.isEmpty() ? null : Long.valueOf(digits);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private String attachmentType(String name) {
+        String normalized = name.toLowerCase(Locale.ROOT);
+        if (normalized.contains("공고") && !normalized.contains("주택목록")) return "ANNOUNCEMENT";
+        if (normalized.contains("주택") || normalized.contains("공급")) return "HOUSING_LIST";
+        if (normalized.contains("평면") || normalized.contains("도면")) return "FLOOR_PLAN";
+        return "OTHER";
+    }
+
+    private String mediaType(String label) {
+        if (label.contains("평면")) return "FLOOR_PLAN";
+        if (label.contains("배치")) return "SITE_PLAN";
+        if (label.contains("위치")) return "LOCATION_MAP";
+        return "HOUSING_IMAGE";
+    }
+}

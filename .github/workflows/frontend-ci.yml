@@ -1,0 +1,53 @@
+name: Frontend CI
+
+# dev 로 들어오는 PR 과 dev 자체의 변경을 검증한다.
+# 백엔드 CI 와 같은 이유로 paths 필터는 쓰지 않는다.
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+# 이 워크플로는 저장소 내용을 읽기만 한다.
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 타입 검사 및 빌드
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: zipick-frontend
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # 저장소에 Node 버전 고정(.nvmrc / engines)이 없어 워크플로에서 명시한다.
+      # 버전을 적지 않으면 러너 기본값이 바뀔 때 결과가 조용히 달라진다.
+      - name: Node 22 설치 및 npm 캐시
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: zipick-frontend/package-lock.json
+
+      # npm install 과 달리 package-lock.json 을 그대로 설치해 매번 같은 의존성을 쓴다.
+      - name: 의존성 설치
+        run: npm ci
+
+      # package.json 의 lint 는 ESLint 가 아니라 tsc --noEmit 타입 검사다.
+      # 빌드가 실패하기 전에 타입 오류를 먼저 분명하게 드러내려고 따로 실행한다.
+      - name: TypeScript 타입 검사
+        run: npm run lint
+
+      # tsc -b && vite build. VITE_* 값이 없어도 빌드 자체는 통과하므로
+      # CI 는 비밀값 없이 번들 생성 가능 여부만 확인한다.
+      - name: 프로덕션 빌드
+        run: npm run build

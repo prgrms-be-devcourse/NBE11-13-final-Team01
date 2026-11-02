@@ -1,0 +1,101 @@
+/* 헤더에만 적용하는 공통 정렬·인터랙션. 본문 컨테이너는 그대로 둔다. */
+.header.header {
+  height: 76px;
+  border-bottom: 1px solid #eff1f5;
+  background: rgba(255, 255, 255, .98);
+  color: var(--zipick-ink);
+  font-family: var(--zipick-font-family);
+  font-size: 15px;
+  line-height: 1.65;
+  letter-spacing: normal;
+  -webkit-font-smoothing: antialiased;
+}
+.inner {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: none;
+  margin-inline: auto;
+}
+.inner {
+  /* 넓은 화면에서도 본문(최대 1400px)보다 조금 바깥에 둔다. 1440px에서는 32px를 넘기지 않는다. */
+  --header-padding: max(32px, calc((var(--header-viewport-width, 100vw) - 1440px) / 2));
+  padding-inline-start: var(--header-padding);
+  /* 본문 폭을 바꾸지 않고, 스크롤바 유무와 관계없이 우측 행동을 같은 화면 기준에 맞춘다. */
+  padding-inline-end: max(0px, calc(var(--header-padding) - var(--header-scrollbar-width, 0px)));
+}
+.header .inner { height: 100%; gap: 54px; }
+.header.service { display: block; padding: 0; position: sticky; top: 0; z-index: 30; backdrop-filter: blur(14px); }
+.header.authentication { height: 76px; }
+.header.authentication .inner { min-height: 0; padding-block: 0; }
+.header.service :global(.logo) { display: inline-flex; align-items: center; flex-shrink: 0; }
+.header.service :global(.nav) { display: flex; align-self: stretch; align-items: stretch; flex-shrink: 0; gap: 28px; font-size: 16px; font-weight: 550; line-height: 1.5; letter-spacing: normal; }
+/* 링크를 행 높이만큼 늘려 기존 2px 활성 테두리가 헤더 하단 구분선과 맞닿게 한다. */
+/* 패딩 합은 유지하고 위/아래에 6px를 재배분해 아이콘과 텍스트를 함께 내린다. */
+.header.service :global(.nav) a { display: inline-flex; align-items: center; flex-shrink: 0; gap: 8px; padding: 16px 0 2px; color: #667386; }
+.navIcon { display: block; flex-shrink: 0; }
+.header.service :global(.nav) a:global(.active) { color: var(--zipick-blue); border-color: var(--zipick-blue); }
+.header.service :global(.auth-box) { flex: 1; min-width: 0; justify-content: flex-end; gap: 22px; }
+.header.service :global(.auth-box__email) { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: var(--zipick-body); font-size: 12px; }
+.header .primary, .header .secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 44px;
+  border: 1px solid var(--zipick-blue);
+  border-radius: var(--zipick-radius-control);
+  padding: 0 20px;
+  background: var(--zipick-blue);
+  color: var(--zipick-white);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.65;
+  letter-spacing: normal;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.header .secondary { border-color: var(--zipick-line); background: var(--zipick-white); color: var(--zipick-body); }
+
+.header :is(a, button) {
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+}
+.header :is(a, button):focus-visible {
+  outline: 3px solid #2059d660;
+  outline-offset: 3px;
+}
+.header .secondary:hover:not(:disabled) { background: var(--zipick-blue-light); color: var(--zipick-blue); }
+.header .primary:hover:not(:disabled) { background: var(--zipick-blue-strong); border-color: var(--zipick-blue-strong); }
+.header .navLink:hover, .header.service :global(.nav) a:hover { background: var(--zipick-blue-mist); color: var(--zipick-blue); }
+.header .navLink:focus-visible { outline-offset: -3px; }
+
+@media (max-width: 980px) {
+  .inner { --header-padding: 22px; }
+  .header .inner { gap: 24px; }
+  .header.service :global(.nav) { gap: 24px; }
+  .header.service :global(.auth-box) { gap: 10px; }
+}
+@media (max-width: 720px) {
+  .inner { --header-padding: 16px; }
+  .header.header.service { height: auto; }
+  .header.service .inner { height: auto; flex-wrap: wrap; gap: 8px 16px; padding-block: 14px 0; }
+  /* 기존 모바일 행간(15px × 1.65)을 유지해 헤더·본문 시작 높이는 바뀌지 않게 한다. */
+  .header.service :global(.nav) { order: 3; width: 100%; min-width: 0; overflow-x: auto; scrollbar-width: none; line-height: 24.75px; }
+  .header.service :global(.nav)::-webkit-scrollbar { display: none; }
+  .header.service :global(.auth-box__email) { max-width: 100px; }
+  .header.authentication { height: 68px; }
+  .header.authentication .inner { gap: 16px; }
+  .header.service .primary, .header.service .secondary, .header.authentication .secondary { height: 38px; padding-inline: 13px; font-size: 12px; }
+}
+@media (max-width: 680px) {
+  .header.header { height: 68px; }
+  .header .inner { gap: 12px; }
+  .header .primary, .header .secondary { height: 38px; padding-inline: 13px; font-size: 12px; }
+}
+@media (max-width: 420px) {
+  .inner { --header-padding: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .header :is(a, button) { transition: none; }
+}

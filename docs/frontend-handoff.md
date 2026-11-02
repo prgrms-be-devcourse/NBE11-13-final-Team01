@@ -1,0 +1,397 @@
+# ZIPICK 지도·인증 영역 인계 문서
+
+작성 시점: 2026-10-23 · 기준 커밋: `dev` (PR #28, #29 병합 완료)
+
+이 문서는 **지도 탐색 · 맞춤 추천 UI · 인증 화면 · 공개 공고 상세** 영역을 이어받는 사람을 위한 것이다.
+무엇이 돌아가고, 왜 그렇게 짰고, 어디가 비어 있고, 무엇을 조심해야 하는지를 적었다.
+
+관련 문서
+- 지도 군집화 개선 계획 → [`docs/map-clustering.md`](./map-clustering.md)
+- 인증 상세 → [`docs/auth.md`](./auth.md)
+- 추천 알고리즘 → [`docs/recommendation.md`](./recommendation.md)
+- 주변 인프라 → [`docs/housing-infra.md`](./housing-infra.md)
+
+---
+
+## 1. 지금 돌아가는 것
+
+### 화면 구조
+
+```
+/map                        기본 진입. 전체 공고 지도 (비회원 가능)
+/map?mode=recommended       맞춤 추천 지도 (로그인 + 온보딩 완료 필요)
+/map?housing=123            123번 주택 상세 패널 열림
+/houses/:houseId            /map?housing={houseId}로 이동하는 기존 주소
+/login  /signup             인증
+/onboarding  /tune          내 조건 입력 · 취향 찾기(AHP)
+/calendar                   관심 공고 일정
+
+/houses            → /map 으로 리다이렉트 (필터 쿼리 유지)
+/recommendations   → /map?mode=recommended 로 리다이렉트
+```
+
+**전체 공고와 맞춤 추천은 별도 페이지가 아니라 같은 `MapPanel` 위의 두 모드다.**
+모드·선택한 핀·필터가 전부 URL 쿼리에 있어서, 로그인하러 갔다 돌아와도 같은 화면이 복원된다.
+
+### 모드별 차이
+
+| | 전체 공고 | 맞춤 추천 |
+| --- | --- | --- |
+| 데이터 | `GET /api/v1/map/housings` | `GET /api/v1/recommendations` |
+| 접근 | 비회원 가능 | 로그인 + 온보딩 완료 |
+| 기본 필터 패널 | 있음 | **없음** (의도적) |
+| 우측 패널 | 핀 선택 시 상세 | 추천 목록 + 우선순위·완화·피드백 |
+| 좌표 없는 주택 | 서버가 조회 단계에서 제외 | 목록에 남고 핀만 없음 |
+
+---
+
+## 2. 반드시 알아야 할 것 (함정 모음)
+
+### 2-1. ID 세 가지를 구분한다
+
+| 이름 | 정체 | 쓰는 곳 |
+| --- | --- | --- |
+| `housingId` / `houseId` | **`housing.id`** (둘은 같은 값) | 지도 핀 선택, 상세 조회, 추천 점수 조회, 피드백 |
+| `noticeId` / `announcementId` | **`notice.id`** (둘은 같은 값) | **관심 공고 저장** |
+| `housingSupplyId` | `housing_supply.id` | 상세의 공급 조건 카드 |
+
+백엔드 `HouseSummaryResponse.from()` 과 `RecommendedHouseResponse` 가 둘 다 `Candidate.housingId()` 를
+`houseId` 자리에 넣는다. 그래서 추천 결과의 `houseId` 로 지도 상세 API 를 그대로 부를 수 있다.
+
+⚠️ **관심 저장에 `housingId` 를 넘기면 안 된다.** `InterestButton` 은 항상 notice id 를 받는다.
+현재 넘기는 곳은 세 군데다 — `detail.noticeId`(지도 상세), `house.announcementId`(추천 목록),
+`s.notice.noticeId`(캘린더).
+
+### 2-2. 전체 공고 필터가 추천에 새면 안 된다
+
+추천 모드에는 필터 UI 가 없다. 그래서 전체 공고 모드에서 고른 조건이 추천 요청에 섞이면
+**사용자가 모르는 조건이 추천 결과를 몰래 좁힌다.** 화면에서 숨기는 것만으로는 부족하다.
+
+```tsx
+// MapPage.tsx — 추천 경로에는 항상 빈 필터를 넘긴다
+const board = useRecommendationBoard(EMPTY_FILTER, canRecommend);
+<RecommendationSidebar filter={EMPTY_FILTER} ... />   // RelaxSuggestions 도 같은 기준
+```
+
+추천 쪽에서 필터를 받는 경로는 **세 곳**이다. 하나라도 빠뜨리면 누수가 생긴다.
+- `recommendationApi.list()` (`useRecommendationBoard`)
+- `recommendationApi.relax()` (`RelaxSuggestions`)
+- 사이드바로 내려가는 `filter` prop
+
+### 2-3. `active = false` 는 "신청 불가"가 아니다
+
+`Housing.active` / `HousingSupply.active` 는 **"최근 수집에서 원천 데이터에 보였는가"** 다.
+
+```java
+// NoticeSyncPersistenceService
+MISSING_THRESHOLD = 2;   // 2회 연속 누락되면 active = false, 다시 보이면 true 로 복구
+```
+
+즉 비활성에는 두 가지가 섞인다. ① 실제로 공급이 빠짐 ② **수집 실패·첨부 파싱 실패로 못 읽음.**
+수집이 수동 트리거라 ②가 드물지 않다.
+
+그래서 정책이 이렇게 되어 있다.
+- 공고가 유효(UPCOMING/OPEN)하고 주택이 활성이면 **공급 정보가 없어도 지도에 표시**한다
+- 다만 상세에서 "공급 조건을 확인하지 못했어요" 안내 + 공고문 링크를 띄워 **신청 가능한 것처럼 보이지 않게** 한다
+- 공급 조건 필터를 고르면 **활성 호실**만 본다 (비활성은 현재 유효한 조건이 아니다)
+
+상세 API 가 활성 호실만 내려주므로(`findAllByHousingIdAndActiveTrueOrderByIdAsc`)
+프론트에서 비활성을 걸러낼 필요는 없다. `detail.supplies` 가 비어 있으면 "활성 공급 없음"이다.
+
+### 2-4. 공급 조건은 "같은 호실 하나"가 모두 만족해야 한다
+
+주택 하나에 여러 공급 유형이 있을 때, 서로 다른 호실의 값을 조합하면 안 된다.
+
+```
+A형: 보증금 1,000만 · 26㎡      필터: 보증금 ≤ 2,500만 AND 면적 ≥ 30㎡
+B형: 보증금 2,000만 · 36㎡   →  B형이 둘 다 만족 → 주택 포함 ✅
+
+C형: 보증금 1,000만 · 20㎡      같은 필터
+D형: 보증금 3,000만 · 40㎡   →  각각 하나씩만 만족 → 주택 제외 ✅
+```
+
+백엔드가 EXISTS 서브쿼리 안에서 AND 로 걸어 이를 보장한다.
+실제 PostgreSQL 통합 테스트로 고정돼 있다 (`HousingPinQueryRepositoryIntegrationTest`).
+
+### 2-5. 모집 상태는 교집합으로 좁힌다
+
+공개 지도는 `UPCOMING`, `OPEN` 만 보여 준다. **기본값만 그렇게 두면 부족하다** —
+`?statuses=CLOSED` 로 요청하면 마감 공고가 그대로 나가기 때문이다.
+
+```java
+// MapHousingFilterPolicy — 요청 상태 ∩ 공개 허용 상태
+statuses=CLOSED       → 빈 집합 → 빈 결과  (조건을 빼면 '필터 없음'이 되어 전체가 나온다!)
+statuses=OPEN,CLOSED  → {OPEN}
+```
+
+빈 집합을 `HousingPinQueryRepository.findPins()` 가 받으면 **쿼리 자체를 하지 않고** 빈 목록을 돌려준다.
+
+### 2-6. 지도는 `includeUnknown` 을 무시한다
+
+전체 목록(`/api/v1/houses`)과 추천은 `includeUnknown=true` 가 기본이라 "값이 없어도 통과"다.
+**공개 지도만 반대로 엄격하다** — 고른 조건의 값이 없는 호실은 불충족으로 본다.
+요청 파라미터로 `includeUnknown=true` 를 보내도 `MapHousingFilterPolicy` 가 `false` 로 덮는다.
+
+고르지 **않은** 조건은 애초에 걸리지 않으므로, 값이 비어 있다는 이유로 주택이 사라지지는 않는다.
+
+> 2026-10-29: 지도가 이 값을 무시하므로 `FilterPanel` 의 `includeUnknown` 토글을 **화면에서 뺐다.**
+> 동작하지 않는 스위치를 보여 주면 안 되기 때문이다. 서버 정책(`MapHousingFilterPolicy`)은 그대로다.
+
+### 2-7. D-day 는 한국 시간 기준이다
+
+접수 일정은 DB 에 `Instant` 로 들어 있고, DTO 에서 `LocalDate.ofInstant(..., Asia/Seoul)` 로 바꾼다.
+UTC 로 자르면 날짜가 하루 밀린다 (예: `2026-10-15T14:30Z` = KST 10-16 이 아니라 10-15).
+
+표시 규칙은 `utils/format.ts` 의 `applySchedule()` 한 곳에 있다.
+- `UPCOMING` → 접수 시작일까지 (시작일이 없으면 마감일 기준)
+- `OPEN` → 접수 마감일까지, 3일 이내면 강조
+- 날짜 없음 → "접수 일정 미정" (**임의 날짜를 만들지 않는다**)
+
+---
+
+## 3. 코드 구조
+
+### 백엔드 — 조회 계층이 둘이다
+
+```
+housing/repository/
+  HouseFilterPredicates.java      필터 → QueryDSL 조건. 지도·목록·추천이 공유
+    noticeScope(f)   공고·주택 기준: 상태 · 지역 · 기관 · 임대유형
+    supplyScope(f)   공급 호실 기준: 보증금 · 월세 · 면적 · 주택유형
+    all(f)           = active 2개 + 위 둘  (목록·추천이 쓰던 기존 조건과 동일)
+
+  CandidateQueryRepository.java   호실 단위. 전체 목록 + 추천 후보
+notice/repository/
+  HousingPinQueryRepository.java  주택 단위. 지도 핀 (공급 조건은 EXISTS 안으로)
+notice/dto/
+  MapHousingFilterPolicy.java     지도 전용 정책 (상태 교집합 + 엄격 null)
+```
+
+**필터가 실제로 참조하는 위치** — 이름만 보면 틀린다.
+
+| 필터 | 어디서 판정하나 |
+| --- | --- |
+| 공공임대 유형(`rentalTypes`) | **`notice`**.noticeType, 비면 notice.title 로 분류 |
+| 주택 유형(`housingTypes`) | **`housing_supply`**.housingType 원본 문자열 (완전 일치) |
+| 지역 | `housing`.provinceName / districtName |
+| 보증금·월세·면적 | `housing_supply` (금액은 **원 단위**, 필터는 만 원 → ×10,000) |
+
+### 프론트엔드 — 지도 주변
+
+```
+pages/MapPage.tsx                 모드·필터·선택 상태 조립 (URL 쿼리가 단일 출처)
+features/map/
+  MapPanel.tsx                    지도 인스턴스 생성·유지. 핀만 갈아 끼운다. 확대/축소/전국 보기 버튼
+  clustering.ts                   카카오 Marker·CustomOverlay 로 그린다
+                                  PinLayer { render, highlight, resetStage, destroy } 계약
+  regionCluster.ts                행정구역 군집 규칙 (SDK 무의존 순수 함수)
+  locationGroup.ts                같은 좌표 묶기 + 보수적 중복 제거 (SDK 무의존 순수 함수)
+  kakaoMaps.ts                    SDK 로더 + 타입 (추가 라이브러리 없음)
+components/
+  HousingDetail.tsx               지도 선택 패널의 공개 주택 상세
+  map/RecommendationSidebar.tsx   추천 목록 + 우선순위·완화·피드백
+hooks/
+  useRecommendationBoard.ts       추천 상태 (preview + 즉시 재계산)
+  useAuthGate.ts                  로그인/온보딩 팝업 + 로그인 후 이어서 할 작업
+  useOnboardingStatus.ts          온보딩 완료 판정 (5가지 상태)
+utils/supplyMatch.ts              "검색 조건 일치" 공급 유형 판정 (백엔드 복제)
+```
+
+### 왜 `HousingDetail` 을 공유하나
+
+비회원과 회원이 보는 **기본 공고 정보가 달라지면 안 된다**는 정책 때문이다.
+한 컴포넌트만 쓰면 구조적으로 어긋날 수 없다. 회원 전용 내용(추천 점수·근거)은
+`score` 슬롯으로 주입한다.
+
+### 추천 점수는 서버 것을 쓴다
+
+`useRecommendationBoard` 는 `preview=true` 로 후보와 항목 점수를 함께 받아,
+**우선순위 슬라이더를 움직일 때만** `utils/score.ts` 의 *서버와 같은 공식* 으로 다시 계산한다.
+슬라이더를 건드리지 않으면 서버 순위와 같다. '적용'을 누르면 추천 기준에 저장된다.
+
+⚠️ **프론트에서 새로운 추천 기준을 만들지 말 것.** 이 구조는 추천 담당자가 설계한 것이다.
+
+---
+
+## 4. 알려진 문제
+
+### ✅ (해결됨) Docker 없이 `./gradlew test` 를 돌리면 통합 테스트가 실패하던 문제
+
+> 2026-10-28 수정 완료. **다시 조사할 필요 없다.** 아래는 원인과 검증 기록이다.
+
+**증상이었던 것**
+
+Docker 가 없을 때 PostgreSQL Testcontainers 통합 테스트가 건너뛰어지지 않고
+`ApplicationContext` 로드 실패로 전부 깨졌다. Docker 없는 CI 에서는 빌드가 그대로 실패했다.
+
+**진짜 원인 — `@EnabledIf` 는 상위 클래스에서 상속되지 않는다**
+
+처음에는 `DockerClientFactory.instance().isDockerAvailable()` 이 데몬이 꺼져 있어도
+`true` 를 돌려주는 것이 원인이라고 봤는데, **그것만으로는 설명되지 않았다.**
+조건 함수를 실제 연결 시도로 고쳐 `false` 를 돌려주도록 만든 뒤에도 테스트가 그대로 실행됐다
+(진단용 테스트로 `isAvailable() = false` 출력을 직접 확인했다).
+
+JUnit 의 `@EnabledIf` 는 `@Inherited` 가 아니다. 그래서 이런 일이 벌어진다.
+
+1. `@EnabledIf` 에 메타 애너테이션으로 달린 `@ExtendWith(EnabledIfCondition.class)` 는
+   **상속되어** 하위 클래스에 등록된다
+2. 그런데 정작 `EnabledIfCondition` 이 `@EnabledIf` 애너테이션을 찾지 못한다
+3. 조건이 없으면 **"기본값 = 활성"** 으로 판단한다 → 그대로 실행된다
+
+조용히 활성화되기 때문에 "조건을 달았는데 왜 안 먹지"를 알아채기 어렵다.
+
+**수정 내용** (테스트 지원 코드만, 운영 코드 무변경)
+
+| 파일 | 변경 |
+| --- | --- |
+| `support/DockerRequiredCondition.java` (신규) | `ExecutionCondition` 직접 구현. 애너테이션 탐색이 필요 없어 상속 함정을 피한다 |
+| `support/PostgresRepositoryTestBase.java` | `@EnabledIf` → `@ExtendWith(DockerRequiredCondition.class)`. **`@ExtendWith` 로 등록한 Extension 은 하위 클래스에 상속된다** |
+| `support/DockerAvailability.java` | `isDockerAvailable()` → `client()` 로 실제 연결 시도 |
+
+앞으로 `PostgresRepositoryTestBase` 를 상속하는 테스트는 **따로 표시하지 않아도** 자동으로 적용된다.
+
+**검증 결과** (`./gradlew cleanTest test`, `test` 태스크가 캐시되므로 `cleanTest` 필수)
+
+| | tests | skipped | failures | 빌드 |
+| --- | --- | --- | --- | --- |
+| Docker OFF | 724 | **47** (통합 45 + 기존 2) | **0** | SUCCESSFUL |
+| Docker ON | 748 | 2 (기존) | **0** | SUCCESSFUL |
+
+Docker OFF 에서 통합 테스트 4개 클래스가 모두 skipped 로 떨어지는 것을 클래스별로 확인했다
+(`EmailVerificationServiceIntegrationTest`, `CandidateQueryRepositoryIntegrationTest`,
+`HousingInfraSnapshotRepositoryIntegrationTest`, `HousingPinQueryRepositoryIntegrationTest` 중첩 6개).
+Docker ON 에서는 같은 클래스들이 skipped=0 으로 정상 실행된다.
+
+커버리지 게이트(Line 80 / Branch 60)도 양쪽 다 통과한다.
+
+| | Line | Branch |
+| --- | --- | --- |
+| Docker OFF | 82.12% | 65.90% |
+| Docker ON | 82.77% | 66.27% |
+
+통합 테스트가 빠져도 1%p 미만 차이라 **Docker 없는 CI 에서도 커버리지로 빌드가 깨지지 않는다.**
+
+⚠️ 다만 **skip 은 "검증하지 않았다"는 뜻**이다. JOIN·EXISTS 가 실제 PostgreSQL 에서 맞게 도는지는
+Docker 가 있는 환경에서만 확인된다. 테스트 결과를 볼 때 skipped 개수를 함께 보라.
+
+### 🟡 P2 — `utils/supplyMatch.ts` 가 백엔드 판정을 복제하고 있다
+
+상세 패널에서 "검색 조건 일치" 배지를 띄우려고 서버 필터 로직을 프론트에 따라 적었다.
+**서버 규칙이 바뀌면 양쪽을 같이 고쳐야 한다.** 파일 주석에 대응표를 남겨 뒀다.
+
+근본 해결은 백엔드가 상세 응답에 "이 호실이 조건을 만족하는지" 플래그를 실어 주는 것이지만,
+DTO 변경이라 담당자 승인이 필요해 하지 않았다.
+
+### 🟡 P3 — 프론트엔드에 테스트가 없다
+
+`package.json` 의 `lint` 는 `tsc --noEmit` 이고 테스트 러너가 없다.
+검증 수단은 타입 검사와 빌드뿐이다.
+
+### 🟢 P4 — 미사용 코드
+
+- `api/house.ts` 의 `houseApi.list()` — 지도가 전용 API 로 옮겨 가 쓰이지 않는다.
+  같은 파일의 `filterOptions()` 는 필터 칩·온보딩에서 계속 쓰므로 **파일은 지우지 말 것.**
+- 백엔드 `MapHousingQueryService.findOpenHousings()` — 정책 원복용으로 남겨 둔 것.
+
+---
+
+## 5. 아직 안 된 것
+
+### 백엔드 (승인 전이라 손대지 않음)
+
+| 항목 | 왜 필요한가 | 범위 |
+| --- | --- | --- |
+| ~~`MapHousingSummaryResponse` 에 `province`·`district` 추가~~ | ✅ **완료 (2026-10-29).** 승인 후 반영했다. 함께 `noticeId`·`noticeAnnouncedAt`·`applyEndAt` 도 추가해 같은 좌표의 공고를 구분할 수 있게 했다(9필드 → 14필드). 쿼리 구조·스키마 변경 없음 | — |
+| 좌표 없는 주택 집계 | 전체 공고 모드에서 "지도에 안 뜨는 N곳"을 안내할 수 없다 (서버가 조회 단계에서 빼므로 개수를 모른다) | 집계 엔드포인트 또는 응답에 카운트 추가 |
+| 상세 응답의 "조건 일치" 플래그 | P2 해소 | `MapHousingSupplyResponse` 에 1필드 |
+
+### 프론트엔드
+
+- ~~**행정구역별 클러스터링**~~ — ✅ **완료 (2026-10-29).** 최종 구현과 정책은
+  [`docs/map-clustering.md`](./map-clustering.md) 에 정리했다. 카카오 `MarkerClusterer` 는 더 이상 쓰지 않는다.
+- **군집 레벨 경계 튜닝** — `CLUSTER_LEVELS = { province: 11, district: 7 }` 은 실데이터로 맞춘 초기값이다.
+  최종 정책이 아니며 `regionCluster.ts` 상수 하나로 조정한다.
+- **브라우저 수동 검증** — 지도 군집·drill-down·위치 목록은 실화면에서 통과시켰다.
+  추천 슬라이더·인증·모바일 등 **아래 6장의 나머지 항목은 아직 그대로다.**
+
+---
+
+## 6. 아직 하지 않은 브라우저 검증
+
+**이 영역은 대부분 실제 화면에서 통과시킨 적이 없다.** 이어받는 사람이 가장 먼저 할 일이다.
+
+> **2026-10-29 에 실화면으로 통과시킨 범위 (지도 군집만).**
+> 전국 15개 시도 군집 합 316곳 = 툴바 표시, 시도→시군구→개별 단계가 화면 전체에서 일관,
+> 군집 클릭 후 대상 주택이 모두 뷰포트 안(원주 16/16, 정선 2/2, 춘천 41/41, 달성군 19/19),
+> 축소 시 단계 해제, 위치 목록 ↔ 상세 ↔ 목록 복귀, 새 탐색 시 선택 초기화.
+> **아래 추천·인증·모바일 항목은 그대로 남아 있다.**
+
+**전체 공고**
+- [x] `/` → `/map` 이동, 핀 표시, 군집 숫자가 주택 수와 맞는지 (2026-10-29)
+- [ ] 필터 변경 시 핀 갱신 + **지도 중심·확대가 유지되는지** (전국으로 튕기면 안 됨)
+- [ ] 필터를 바꿔도 `?housing=`·`?mode=` 가 풀리지 않는지
+- [ ] 공고중(UPCOMING) 공고의 상세와 **사진이 깨지지 않는지**
+
+**추천 모드**
+- [ ] 비회원 → 로그인 팝업 / 온보딩 미완료 → 조건 입력 팝업
+- [ ] 우선순위 슬라이더 → 목록·핀 동시 갱신, '적용' 후 새로고침해도 유지
+- [ ] 조건 완화 제안 · "별로예요" 피드백 후 목록·핀 갱신
+- [ ] **전체 모드에서 필터를 걸고 추천으로 전환했을 때 추천 결과가 좁아지지 않는지** (2-2 항목)
+
+**상세·인증**
+- [ ] 활성 공급 없는 주택 → "공급 조건을 확인하지 못했어요" + 공고문 링크
+- [ ] 공급 필터 적용 후 → "검색 조건 일치" 배지가 맞는 유형에 붙는지
+- [ ] 좌표 없는 추천 주택 → 목록에 남고 상세는 열리며 로드뷰 대신 안내
+- [ ] 비회원 ☆ → 팝업 → 가입/로그인 → **같은 핀·같은 공고로 복귀 + 저장**
+- [ ] 이미 저장한 공고로 반복 → 중복·해제 없음 (서버 `save()` 는 멱등)
+- [ ] D-day: UPCOMING=시작일, OPEN=마감일, 일정 없으면 "미정"
+
+**모바일(~400px)**
+- [ ] 헤더 접힘, 필터 드롭다운, 지도/패널 세로 배치
+
+---
+
+## 7. 실행·검증
+
+```bash
+# 백엔드 (DB_USERNAME / DB_PASSWORD / JWT_SECRET 환경 변수 필요)
+cd zipick-backend && ./gradlew bootRun
+
+# 프론트엔드 (http://localhost:5173, /api → 8080 프록시)
+cd zipick-frontend && npm run dev
+
+# 검증
+cd zipick-frontend && npx tsc --noEmit && npm run build
+cd zipick-backend  && ./gradlew test        # Docker 없으면 통합 테스트 45건은 자동 skip (4장 참고)
+```
+
+외부 API 키는 `zipick-backend/config/application-secret.yml` 에 둔다 (`.gitignore` 대상).
+지도에는 `zipick-frontend/.env.local` 의 `VITE_KAKAO_MAP_KEY` 가 필요하다.
+
+---
+
+## 8. 다른 담당자 코드를 건드린 부분과 원복 방법
+
+지도·공고 담당 영역과 추천 담당 영역을 수정했다. 정책이 바뀌면 아래대로 되돌릴 수 있다.
+
+| 변경 | 목적 | 원복 |
+| --- | --- | --- |
+| `NoticeStatus.PUBLIC_STATUSES` | 공개 범위를 UPCOMING+OPEN 으로 | `Set.of(OPEN)` 으로 — **한 줄**. 목록·상세·이미지가 함께 되돌아간다 |
+| `MapHousingAssetService.findVisibleHousing` | UPCOMING 이미지·첨부 허용 | 조건을 `== NoticeStatus.OPEN` 으로 (위와 독립) |
+| `MapHousingDetailResponse` | 접수 일정 D-day | 필드 2개 + `toSeoulDate()` 제거 |
+| `MapHousingController.list()` | 지도 필터 지원 | 파라미터 제거 + `service.findOpenHousings()` 호출로 복귀 |
+| `CandidateQueryRepository.build()` | 판정식 공유 | `HouseFilterPredicates.all()` 본문을 그대로 되돌린다. **변경 전 원본이 테스트의 `LegacyCandidateFilterFixture` 에 그대로 보존되어 있다** |
+
+**추천 회귀 안전장치** — `HouseFilterPredicatesEquivalenceTest` 가 변경 전/후 조건을 21가지 필터 조합에서,
+`CandidateQueryRepositoryIntegrationTest` 가 실제 PostgreSQL 조회 결과를 13가지 조합에서 비교한다.
+필터 로직을 손볼 때 이 테스트가 깨지면 **추천 결과가 바뀐다는 뜻**이다.
+
+---
+
+## 9. 손대면 안 되는 것
+
+- 추천 점수 계산·순위 규칙 (`ScoreCalculator`, `RecommendationRanker`) — 추천 담당 영역
+- 공고 수집 파이프라인 (`NoticeSyncPersistenceService` 등) — 공고 담당 영역
+- 엔티티·DDL — 변경하려면 팀 공유와 로컬 DB 재적용이 필요하다
+- 인증 토큰 구조 (`api/client.ts` 의 single-flight 재발급, 메모리 Access Token)
+- **추천 모드에 기본 필터를 다시 붙이는 것** — 저장된 희망조건과 중복돼 혼란스럽다는 팀 결정이다

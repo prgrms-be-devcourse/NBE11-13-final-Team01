@@ -1,0 +1,93 @@
+groups:
+  - name: zipick-warning
+    rules:
+      - alert: MonitoringTargetDown
+        expr: up{job=~"node|backend|cadvisor|postgres|rabbitmq|service-probe"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: '지표 수집 대상 연결 실패: {{ $labels.job }} / {{ $labels.instance }}'
+      - alert: InternalServiceUnreachable
+        expr: probe_success{job="service-probe"} == 0
+        for: 3m
+        labels: {severity: warning}
+        annotations:
+          summary: '서비스 접근 점검 실패: {{ $labels.service }}'
+      - alert: RabbitQueueBacklog
+        expr: rabbitmq_detailed_queue_messages_ready{job="rabbitmq"} > 100
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: 'RabbitMQ 처리 대기 메시지가 지속적으로 쌓이고 있습니다'
+      - alert: HostMemoryLow
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.90
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: '서버 가용 메모리가 10% 미만으로 지속됩니다: {{ $labels.instance }}'
+      - alert: HostDiskLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}) < 0.15
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: '서버 루트 디스크 여유가 15% 미만입니다: {{ $labels.instance }}'
+      - alert: BackendHighErrorRate
+        expr: sum(rate(http_server_requests_seconds_count{job="backend",status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job="backend"}[5m])), 0.001) > 0.05 and sum(increase(http_server_requests_seconds_count{job="backend"}[5m])) >= 20
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: '최근 API 서버 오류 비율이 높습니다'
+      - alert: PostgresDown
+        expr: pg_up{job="postgres"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: 'PostgreSQL에 연결할 수 없습니다: {{ $labels.instance }}'
+      - alert: PostgresExporterScrapeError
+        expr: pg_exporter_last_scrape_error{job="postgres"} > 0
+        for: 3m
+        labels: {severity: warning}
+        annotations:
+          summary: 'PostgreSQL 지표 일부를 읽지 못했습니다: {{ $labels.instance }}'
+      - alert: PostgresConnectionsHigh
+        expr: sum by (instance) (pg_stat_database_numbackends{job="postgres"}) / on(instance) pg_settings_max_connections{job="postgres"} > 0.8
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'PostgreSQL 연결 수가 최대 연결 수의 80%를 초과했습니다: {{ $labels.instance }}'
+      - alert: BackendDatabaseConnectionWait
+        expr: sum(hikaricp_connections_pending{job="backend"}) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: '백엔드가 DB 연결을 5분 이상 기다리고 있습니다'
+      - alert: CollectorFailed
+        expr: zipick_collector_last_run_success{job_type=~"basic|ai"} == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: '공고 수집기 실행이 실패했습니다: {{ $labels.job_type }} / {{ $labels.instance }}'
+      - alert: CollectorPartialFailure
+        expr: zipick_collector_last_notice_errors > 0 or zipick_collector_last_source_errors > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: '수집기에서 공고 또는 기관 처리 오류가 기록됐습니다: {{ $labels.job_type }} / {{ $labels.instance }}'
+      - alert: CollectorGeminiErrors
+        expr: zipick_collector_last_gemini_final_failures > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: '수집기의 Gemini 호출이 최종 실패했습니다: {{ $labels.stage }} / {{ $labels.category }} / {{ $labels.instance }}'
+      - alert: CollectorAiIncomplete
+        expr: sum by (job_type, instance) (zipick_collector_last_ai_document_errors) > 0 or zipick_collector_last_normalization_deferred > 0 or zipick_collector_last_normalization_errors > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: 'AI 추출 또는 정규화가 완료되지 않았습니다: {{ $labels.job_type }} / {{ $labels.instance }}'
+      - alert: CollectorNotSuccessfulRecently
+        expr: zipick_collector_last_success_timestamp_seconds{job_type="basic"} > 0 and time() - zipick_collector_last_success_timestamp_seconds{job_type="basic"} > 129600
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: '기본 공고 수집기가 36시간 넘게 성공하지 못했습니다: {{ $labels.instance }}'

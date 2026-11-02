@@ -1,0 +1,12 @@
+# 내 조건에 맞는 새 공고. 요청: main 의 알림 스케줄러
+code: NOTICE_NEW_MATCH
+owner: 안서호 (메인 서버)
+variables: [noticeTitle, score, region, deadlineText, detailUrl]
+email:
+  subject: "[ZIPICK] 내 조건에 맞는 새 공고 · {{noticeTitle}}"
+  body: |-
+    추천도 {{score}}점 · {{region}}{{deadlineText}}
+
+    공고 보기: {{detailUrl}}
+slack:
+  text: "*내 조건에 맞는 새 공고 · {{noticeTitle}}*\n추천도 {{score}}점 · {{region}}{{deadlineText}}\n{{detailUrl}}"

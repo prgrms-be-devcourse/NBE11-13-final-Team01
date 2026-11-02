@@ -1,0 +1,6 @@
+.image { display: block; flex-shrink: 0; width: auto; height: 40px; }
+.image.compact { height: 30px; }
+
+@media (max-width: 720px) {
+  .image { height: 36px; }
+}
