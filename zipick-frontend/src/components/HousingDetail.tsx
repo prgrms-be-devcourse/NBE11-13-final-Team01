@@ -33,7 +33,7 @@ function hasDisplayableSupplyFacts(supply: MapHousingSupply) {
 }
 
 function money(value: number) {
-  return `${(value / 10000).toLocaleString('ko-KR', { maximumFractionDigits: 4 })}만원`;
+  return `${Math.trunc(value / 10000).toLocaleString('ko-KR')}만원`;
 }
 
 export default function HousingDetail({ detail, score, filter }: Props) {
