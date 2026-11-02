@@ -23,6 +23,10 @@ export const authApi = {
   login: (email: string, password: string) =>
     unwrap<{ accessToken: string }>(api.post('/api/auth/login', { email, password })),
 
+  // 운영자 화면 전용. 서버가 ROLE_ADMIN 이 아니면 토큰 없이 401 INVALID_LOGIN 을 준다
+  adminLogin: (email: string, password: string) =>
+    unwrap<{ accessToken: string }>(api.post('/api/auth/admin/login', { email, password })),
+
   // 204 No Content라 공통 응답 본문이 없다. unwrap을 쓰지 않는다.
   logout: () => api.post('/api/auth/logout').then(() => undefined),
 
@@ -32,6 +36,13 @@ export const authApi = {
 export async function login(email: string, password: string) {
   const { accessToken } = await authApi.login(email, password);
   setAccessToken(accessToken); // me() 요청에 바로 실리도록 먼저 넣는다
+  setUser(await authApi.me());
+}
+
+/** 운영자 로그인. 일반 계정이면 서버가 거부하므로 세션이 생기지 않는다 */
+export async function adminLogin(email: string, password: string) {
+  const { accessToken } = await authApi.adminLogin(email, password);
+  setAccessToken(accessToken);
   setUser(await authApi.me());
 }
 

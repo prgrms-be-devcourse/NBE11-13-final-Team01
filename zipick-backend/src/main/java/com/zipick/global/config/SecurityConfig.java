@@ -56,7 +56,10 @@ public class SecurityConfig {
                                 "/api/auth/email-verifications",
                                 "/api/auth/email-verifications/**",
                                 "/api/auth/login",
+                                "/api/auth/admin/login",
                                 "/api/auth/reissue",
+                                // 화면 진입·클릭 기록. 비로그인도 보낸다 (운영자 화면에서 조회)
+                                "/api/v1/activity",
                                 // 카카오 로그인 시작·완료. 둘 다 비로그인 상태에서 호출한다
                                 "/api/auth/kakao/authorize",
                                 "/api/auth/kakao/login",

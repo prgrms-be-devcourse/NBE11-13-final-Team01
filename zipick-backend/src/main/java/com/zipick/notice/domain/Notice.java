@@ -227,6 +227,10 @@ public class Notice extends BaseTimeEntity {
         return title;
     }
 
+    public String getRegion() {
+        return region;
+    }
+
     public String getNoticeType() {
         return noticeType;
     }

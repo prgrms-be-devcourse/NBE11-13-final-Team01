@@ -65,6 +65,24 @@ public class NotificationClient {
                 .retrieve().body(new ParameterizedTypeReference<ApiResponse<List<NotificationEventResponse>>>() {}));
     }
 
+    /** 운영자 화면: source(main/collector) 또는 tag(k:v) 로 알림 내역 검색. 알림센터가 둘 중 하나를 요구한다 */
+    public List<NotificationEventResponse> search(String source, String tag) {
+        return call(() -> notificationRestClient.get()
+                .uri(b -> {
+                    b.path("/internal/v1/notifications");
+                    if (source != null && !source.isBlank()) b.queryParam("source", source);
+                    if (tag != null && !tag.isBlank()) b.queryParam("tag", tag);
+                    return b.build();
+                })
+                .retrieve().body(new ParameterizedTypeReference<ApiResponse<List<NotificationEventResponse>>>() {}));
+    }
+
+    /** 운영자 화면: 메시지 하나 (전달 상태·오류 포함) */
+    public NotificationEventResponse get(long id) {
+        return call(() -> notificationRestClient.get().uri("/internal/v1/notifications/{id}", id)
+                .retrieve().body(new ParameterizedTypeReference<ApiResponse<NotificationEventResponse>>() {}));
+    }
+
     /** 알림센터에 켜진 채널 (email/slack → true/false). 닿지 않으면 마지막 값, 그것도 없으면 null */
     public Map<String, Boolean> availableChannels() {
         try {

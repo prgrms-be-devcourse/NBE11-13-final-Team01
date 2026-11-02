@@ -10,6 +10,15 @@ import TunePage from './pages/TunePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import AdminCampaignPage from './pages/AdminCampaignPage';
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminLoginPage from './pages/admin/AdminLoginPage';
+import AdminActivityPage from './pages/admin/AdminActivityPage';
+import ActivityTracker from './components/ActivityTracker';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import AdminAiDocumentsPage from './pages/admin/AdminAiDocumentsPage';
+import AdminNoticesPage from './pages/admin/AdminNoticesPage';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
+import AdminNotificationsPage from './pages/admin/AdminNotificationsPage';
 import OAuthCallbackPage from './pages/OAuthCallbackPage';
 
 /**
@@ -38,8 +47,26 @@ function RedirectHouseToMap() {
 
 export default function App() {
   return (
+    <>
+    {/* 화면 진입·클릭 기록 (운영자 화면 '사용자 행동'). /admin 은 기록하지 않는다 */}
+    <ActivityTracker />
     <Routes>
       <Route path="/landing" element={<LandingPage />} />
+      {/*
+        운영자 화면. 서비스 Layout 과 분리된 독립 셸(AdminLayout)이고 로그인도 따로(/admin/login, ROLE_ADMIN 만).
+        AdminLayout 이 운영자가 아니면 /admin/login 으로 보내고, 서버도 /api/v1/admin/** 를 ROLE_ADMIN 으로 막는다.
+      */}
+      <Route path="/admin/login" element={<AdminLoginPage />} />
+      <Route path="/admin" element={<AdminLayout />}>
+        <Route index element={<AdminDashboardPage />} />
+        <Route path="ai-documents" element={<AdminAiDocumentsPage />} />
+        <Route path="notices" element={<AdminNoticesPage />} />
+        <Route path="users" element={<AdminUsersPage />} />
+        <Route path="notifications" element={<AdminNotificationsPage />} />
+        <Route path="activity" element={<AdminActivityPage />} />
+        <Route path="campaigns" element={<AdminCampaignPage />} />
+        <Route path="*" element={<Navigate to="/admin" replace />} />
+      </Route>
       {/*
         카카오 콜백. 헤더·게이트가 필요 없는 경유 화면이라 Layout 바깥에 둔다.
         인가 코드를 토큰으로 바꾸자마자 replace 로 원래 화면으로 넘어간다.
@@ -86,15 +113,6 @@ export default function App() {
           }
         />
 
-        {/* 운영자(ROLE_ADMIN)만. 권한은 서버가 확인한다 (아니면 403) */}
-        <Route
-          path="/admin/campaigns"
-          element={
-            <AccessGate need="LOGIN">
-              <AdminCampaignPage />
-            </AccessGate>
-          }
-        />
 
         {/* 맞춤 추천은 지도 모드로. 로그인·온보딩 확인은 지도 화면이 직접 한다 */}
         <Route path="/recommendations" element={<RedirectToMap mode="recommended" />} />
@@ -110,5 +128,6 @@ export default function App() {
         />
       </Route>
     </Routes>
+    </>
   );
 }

@@ -11,6 +11,12 @@ export interface AuthUser {
    */
   email: string | null;
   provider: AuthProvider;
+  /** 운영자 메뉴를 보일지만 정한다. 권한 검사는 서버가 한다 */
+  role?: 'ROLE_USER' | 'ROLE_ADMIN';
+}
+
+export function isAdmin(user: AuthUser | null): boolean {
+  return user?.role === 'ROLE_ADMIN';
 }
 
 // Access Token은 메모리에만 둔다. localStorage에 두면 XSS로 그대로 샌다.
