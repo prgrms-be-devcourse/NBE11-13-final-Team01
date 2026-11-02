@@ -2,7 +2,6 @@
 
 /* Additive service primitives; existing landing values remain unchanged. */
 .zipick-theme {
-  --zipick-font-family: 'Noto Sans CJK KR', 'NanumSquare', 'Pretendard', system-ui, -apple-system, sans-serif;
   --zipick-radius-control: 10px;
   --zipick-radius-panel: 16px;
   --zipick-shadow-panel: 0 4px 18px rgba(30, 64, 116, .06);

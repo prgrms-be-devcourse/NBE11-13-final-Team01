@@ -75,69 +75,76 @@ export default function NotificationPanel() {
         관심 공고의 접수 마감이 다가오면, 그리고 내 조건에 맞는 새 공고가 들어오면 슬랙이나 이메일로 알려 드려요. 서버가 5분마다 확인해요.
       </p>
 
-      <label className="toggle">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        알림 받기
-      </label>
+      {setting.isPending && <p className="notif__state" role="status">알림 설정을 불러오는 중이에요…</p>}
+      {setting.isError && <div className="error" role="alert">알림 설정을 불러오지 못했어요. <button className="btn btn--ghost btn--small" onClick={() => setting.refetch()}>다시 시도</button></div>}
+      <fieldset className="notif__fields" disabled={!setting.data}>
+        <label className="toggle">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          알림 받기
+        </label>
 
-      <div className="notif__grid">
-        <label>
-          슬랙 웹훅 URL {s?.slackConfigured && <span className="muted small">(저장됨 {s.slackWebhookMasked})</span>}
-          <input
-            type="text"
-            placeholder={s?.slackConfigured ? '바꾸려면 새 주소를 넣으세요' : 'https://hooks.slack.com/services/…'}
-            value={webhook}
-            onChange={(e) => setWebhook(e.target.value)}
-            autoComplete="off"
-          />
-          {s?.slackConfigured && (
-            <span className="toggle small">
-              <input type="checkbox" checked={keepWebhook} onChange={(e) => setKeepWebhook(e.target.checked)} />
-              기존 웹훅 유지 (끄면 삭제)
-            </span>
-          )}
-        </label>
-        <label>
-          이메일 {s && !s.emailAvailable && <span className="muted small">(알림센터에 이메일 발송 설정이 없어 지금은 슬랙만 동작)</span>}
-          <input type="email" placeholder="me@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </label>
-        <label>
-          마감 알림 (며칠 전, 쉼표로)
-          <input type="text" value={deadlineDays} onChange={(e) => setDeadlineDays(e.target.value)} placeholder="3,1,0" />
-        </label>
-        <label className="toggle">
-          <input type="checkbox" checked={newMatch} onChange={(e) => setNewMatch(e.target.checked)} />
-          내 조건에 맞는 새 공고 알림
-        </label>
-        <label className="toggle">
-          <input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
-          <span>
-            (광고) 소식·이벤트 메시지 받기
-            {s?.marketingConsent && s.marketingConsentedAt && (
-              <span className="muted small"> · 동의 {s.marketingConsentedAt.slice(0, 10)}</span>
+        <div className="notif__grid">
+          <label>
+            슬랙 웹훅 URL {s?.slackConfigured && <span className="muted small">(저장됨 {s.slackWebhookMasked})</span>}
+            <input
+              type="text"
+              placeholder={s?.slackConfigured ? '바꾸려면 새 주소를 넣으세요' : 'https://hooks.slack.com/services/…'}
+              value={webhook}
+              onChange={(e) => setWebhook(e.target.value)}
+              autoComplete="off"
+            />
+            {s?.slackConfigured && (
+              <span className="toggle small">
+                <input type="checkbox" checked={keepWebhook} onChange={(e) => setKeepWebhook(e.target.checked)} />
+                기존 웹훅 유지 (끄면 삭제)
+              </span>
             )}
-          </span>
-        </label>
-      </div>
+          </label>
+          <label>
+            이메일 {s && !s.emailAvailable && <span className="muted small">(알림센터에 이메일 발송 설정이 없어 지금은 슬랙만 동작)</span>}
+            <input type="email" placeholder="me@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label>
+            마감 알림 (며칠 전, 쉼표로)
+            <input type="text" value={deadlineDays} onChange={(e) => setDeadlineDays(e.target.value)} placeholder="3,1,0" />
+          </label>
+          <label className="toggle">
+            <input type="checkbox" checked={newMatch} onChange={(e) => setNewMatch(e.target.checked)} />
+            내 조건에 맞는 새 공고 알림
+          </label>
+          <label className="toggle">
+            <input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
+            <span>
+              (광고) 소식·이벤트 메시지 받기
+              {s?.marketingConsent && s.marketingConsentedAt && (
+                <span className="muted small"> · 동의 {s.marketingConsentedAt.slice(0, 10)}</span>
+              )}
+            </span>
+          </label>
+        </div>
 
-      {save.isError && <div className="error">{errText(save.error)}</div>}
-      {test.isError && <div className="error">{errText(test.error)}</div>}
-      {test.isSuccess && (
-        <p className="small">
-          테스트 알림: <b>{STATUS_LABEL[test.data.status]}</b>
-          {test.data.deliveries.length > 0 && ` — ${deliveryText(test.data)}`}
-        </p>
-      )}
+        {save.isError && <div className="error">{errText(save.error)}</div>}
+        {test.isError && <div className="error">{errText(test.error)}</div>}
+        {test.isSuccess && (
+          <p className="small">
+            테스트 알림: <b>{STATUS_LABEL[test.data.status]}</b>
+            {test.data.deliveries.length > 0 && ` — ${deliveryText(test.data)}`}
+          </p>
+        )}
 
-      <div className="panel__actions">
-        <button type="button" className="btn btn--ghost" onClick={() => test.mutate()} disabled={test.isPending || !s?.slackConfigured && !s?.email}>
-          테스트 발송
-        </button>
-        <button type="button" className="btn btn--primary" onClick={() => save.mutate()} disabled={save.isPending}>
-          저장
-        </button>
-      </div>
+        <div className="panel__actions">
+          <button type="button" className="btn btn--ghost" onClick={() => test.mutate()} disabled={test.isPending || !s?.slackConfigured && !s?.email}>
+            테스트 발송
+          </button>
+          <button type="button" className="btn btn--primary" onClick={() => save.mutate()} disabled={save.isPending}>
+            저장
+          </button>
+        </div>
+      </fieldset>
 
+      {history.isPending && <p className="notif__state" role="status">알림 내역을 불러오는 중이에요…</p>}
+      {history.isError && <div className="error" role="alert">알림 내역을 불러오지 못했어요. <button className="btn btn--ghost btn--small" onClick={() => history.refetch()}>다시 시도</button></div>}
+      {history.isSuccess && history.data.length === 0 && <p className="notif__state">아직 알림 내역이 없어요.</p>}
       {history.data && history.data.length > 0 && (
         <details className="notif__history">
           <summary>알림 내역 ({history.data.length})</summary>

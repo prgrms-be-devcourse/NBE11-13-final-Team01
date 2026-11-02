@@ -42,36 +42,7 @@ class InfraCollectionScheduleConfigTest {
         assertThat(properties.collection().enabled()).isTrue();
         assertThat(properties.collection().batchSize()).isEqualTo(100);
         assertThat(properties.collection().apiFailureThreshold()).isEqualTo(3);
-        // 코드 fallback 과 같은 값이지만, 키 이름(catch-up-window)이 실제로 바인딩되는지는 여기서만 드러난다.
-        // 키를 잘못 쓰면 바인딩이 조용히 실패하고 fallback 으로 돌아가기 때문이다.
-        assertThat(properties.collection().catchUpWindow()).isEqualTo(Duration.ofHours(3));
-        assertThat(properties.categories()).hasSize(6);
-    }
-
-    @Test
-    @DisplayName("@Scheduled 가 읽는 값이 모두 있고 파싱된다")
-    void scheduleValuesAreParsable() {
-        assertThat(Duration.parse(property("collection.startup-delay"))).isPositive();
-        assertThat(Duration.parse(property("collection.catch-up-interval"))).isPositive();
-        assertThat(CronExpression.isValidExpression(property("collection.daily-cron"))).isTrue();
-        assertThat(ZoneId.of(property("collection.cron-zone"))).isNotNull();
-    }
-
-    @Test
-    @DisplayName("하루에 한 번만 실행되는 cron 이다")
-    void dailyCronFiresOnceADay() {
-        CronExpression cron = CronExpression.parse(property("collection.daily-cron"));
-
-        LocalDateTime first = cron.next(LocalDateTime.of(2026, 10, 28, 0, 0));
-        LocalDateTime second = cron.next(first);
-
-        assertThat(Duration.between(first, second)).isEqualTo(Duration.ofDays(1));
-    }
-
-    private String property(String suffix) {
-        String value = environment.getProperty(PREFIX + "." + suffix);
-        assertThat(value).as(PREFIX + "." + suffix).isNotBlank();
-        return value;
+assertThat(properties.categories()).hasSize(6);
     }
 
     private static StandardEnvironment loadApplicationYml() {

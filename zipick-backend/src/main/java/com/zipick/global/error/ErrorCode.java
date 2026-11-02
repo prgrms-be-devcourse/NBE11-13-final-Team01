@@ -27,6 +27,14 @@ public enum ErrorCode {
     VERIFICATION_RESEND_TOO_SOON(HttpStatus.TOO_MANY_REQUESTS, "인증 메일을 방금 보냈어요. 잠시 뒤 다시 시도해 주세요."),
     VERIFICATION_DAILY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "오늘 보낼 수 있는 인증 메일 횟수를 넘었어요. 내일 다시 시도해 주세요."),
 
+    // 소셜 로그인 (카카오)
+    SOCIAL_ACCOUNT_LOGIN(HttpStatus.CONFLICT, "카카오로 가입한 계정입니다. 카카오 로그인을 이용해 주세요."),
+    SOCIAL_EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT, "이미 이메일로 가입한 계정이 있습니다. 기존 이메일 로그인을 이용해 주세요."),
+    OAUTH_STATE_INVALID(HttpStatus.UNAUTHORIZED, "로그인 요청이 만료되었거나 올바르지 않습니다. 다시 시도해 주세요."),
+    OAUTH_CODE_INVALID(HttpStatus.BAD_REQUEST, "카카오 로그인에 실패했습니다. 다시 시도해 주세요."),
+    OAUTH_PROVIDER_ERROR(HttpStatus.BAD_GATEWAY, "카카오 인증 서버와 통신하지 못했습니다. 잠시 뒤 다시 시도해 주세요."),
+    OAUTH_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "카카오 로그인이 설정되지 않았습니다."),
+
     HOUSE_NOT_FOUND(HttpStatus.NOT_FOUND, "공급주택을 찾을 수 없습니다."),
     ANNOUNCEMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "공고를 찾을 수 없습니다."),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),

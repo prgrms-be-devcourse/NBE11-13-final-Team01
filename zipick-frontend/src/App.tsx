@@ -1,9 +1,8 @@
 import LandingPage from './pages/LandingPage';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Layout from './components/Layout';
 import AccessGate from './components/AccessGate';
 import OnboardingPage from './pages/OnboardingPage';
-import HouseDetailPage from './pages/HouseDetailPage';
 import MapPage from './pages/MapPage';
 import CalendarPage from './pages/CalendarPage';
 import ApplicationGuidePage from './pages/ApplicationGuidePage';
@@ -20,6 +19,7 @@ import AdminAiDocumentsPage from './pages/admin/AdminAiDocumentsPage';
 import AdminNoticesPage from './pages/admin/AdminNoticesPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminNotificationsPage from './pages/admin/AdminNotificationsPage';
+import OAuthCallbackPage from './pages/OAuthCallbackPage';
 
 /**
  * 탐색은 지도 한 화면에서 한다. 전체 공고 / 맞춤 추천은 별도 페이지가 아니라 `?mode=` 로 구분되는 두 모드다.
@@ -37,6 +37,12 @@ function RedirectToMap({ mode }: { mode?: 'recommended' }) {
   else params.delete('mode');
   const query = params.toString();
   return <Navigate to={query ? `/map?${query}` : '/map'} replace />;
+}
+
+/** 기존 주택 상세 주소는 같은 주택을 선택한 지도 패널로 넘긴다. */
+function RedirectHouseToMap() {
+  const { houseId } = useParams();
+  return <Navigate to={`/map?housing=${encodeURIComponent(houseId ?? '')}`} replace />;
 }
 
 export default function App() {
@@ -61,14 +67,18 @@ export default function App() {
         <Route path="campaigns" element={<AdminCampaignPage />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
+      {/*
+        카카오 콜백. 헤더·게이트가 필요 없는 경유 화면이라 Layout 바깥에 둔다.
+        인가 코드를 토큰으로 바꾸자마자 replace 로 원래 화면으로 넘어간다.
+      */}
+      <Route path="/oauth/kakao/callback" element={<OAuthCallbackPage />} />
+      <Route path="/houses/:houseId" element={<RedirectHouseToMap />} />
       <Route element={<Layout />}>
         <Route index element={<Navigate to="/landing" replace />} />
 
         {/* 비회원도 볼 수 있는 화면 */}
         <Route path="/map" element={<MapPage />} />
         <Route path="/houses" element={<RedirectToMap />} />
-        {/* 상세는 공개 정보 + 개인화 영역으로 나뉜다. 게이트는 페이지 안에서 점수 영역만 막는다. */}
-        <Route path="/houses/:houseId" element={<HouseDetailPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
 

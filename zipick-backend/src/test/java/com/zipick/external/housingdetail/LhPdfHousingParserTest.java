@@ -12,6 +12,63 @@ class LhPdfHousingParserTest {
     private final LhPdfHousingParser parser = new LhPdfHousingParser();
 
     @Test
+    void 실제_전세임대와_칠곡_공고의_문의처를_주택으로_읽지_않는다() throws Exception {
+        for (String id : List.of("68868379", "68868733", "68869337", "68869885", "GBDC-3efc4e699f734d8e311beaa2")) {
+            var file = java.nio.file.Path.of("tmp", "ai-investigation", id + ".pdf");
+            org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(file));
+            assertThat(parser.parse(java.nio.file.Files.readAllBytes(file), new LhAttachment(id, "공고문.pdf")))
+                    .as(id).isEmpty();
+        }
+    }
+
+    @Test
+    void 주택을_나중에_물색하거나_별도안내하는_공고의_문의처를_제외한다() {
+        String office = "충청북도 청주시 서원구 구룡산로52번길 40";
+        String lease = "입주대상자로 선정된 이후 주택을 물색하여야 하며\n" + office;
+        String deferred = "공급대상 주택 내역은 동호지정 및 계약체결 시 별도 안내 예정\n" + office;
+        assertThat(parser.parseText(lease, new LhAttachment("1", "전세임대공고.pdf"))).isEmpty();
+        assertThat(parser.parseText(deferred, new LhAttachment("2", "공고문.hwpx"))).isEmpty();
+        assertThat(parser.parseText(lease, new LhAttachment("3", "공급주택목록.pdf"))).hasSize(1);
+    }
+
+    @Test
+    void 줄바꿈된_신청장소와_공사_안내주소는_주택주소로_수집하지_않는다() {
+        String text = """
+                신청장소 LH 경기북부지역본부
+                주소 경기도 의정부시 산단로76번길 116 1층
+                ⊙ 주소 : 경기도 의정부시 산단로76번길 116
+                1600-1004 LH홈페이지 https://lh.or.kr
+                LH경기남부지역본부
+                장소 1층 대강당
+                (경기도 성남시 분당구 성남대로 54번길 3)
+                건설위치 : 경기도 구리시 갈매동 123-4
+                """;
+        assertThat(parser.parseText(text, new LhAttachment("1", "공고.pdf")))
+                .extracting(DetailedHousingUnit::address).containsExactly("경기도 구리시 갈매동 123-4");
+    }
+
+    @Test
+    void 단지_동수와_세대수는_지번주소가_아니다() {
+        var units = parser.parseText("도청이전신도시 12개동 1,196세대", new LhAttachment("1", "공고문.pdf"));
+        assertThat(units).isEmpty();
+    }
+
+    @Test
+    void 도로명과_건물번호가_붙은_주소를_중간에서_자르지_않는다() {
+        var units = parser.parseText("건물 위치 : 서울특별시 노원구 동일로 242길103 (상계동 1002-1)",
+                new LhAttachment("1", "공고.pdf"));
+        assertThat(units).singleElement().satisfies(unit ->
+                assertThat(unit.address()).startsWith("서울특별시 노원구 동일로 242길103"));
+    }
+
+    @Test
+    void 번길_번호를_건물번호로_잘라내지_않는다() {
+        var units = parser.parseText("경기도 성남시 분당구 성남대로 54번길 3", new LhAttachment("1", "공고문.pdf"));
+        assertThat(units).extracting(DetailedHousingUnit::address)
+                .containsExactly("경기도 성남시 분당구 성남대로 54번길 3");
+    }
+
+    @Test
     void 텍스트_PDF의_도로명주소와_지번주소를_찾는다() {
         String text = """
                 1 강원특별자치도 춘천시 효자문길 38 (효자동) 202호 59.40

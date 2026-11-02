@@ -50,6 +50,9 @@ export default function CalendarPanel({ events, month, onMonthChange, onSelectEv
           ))}
         </span>
       </div>
+      {events.length > 0 && !events.some((e) => e.date.startsWith(`${current}-`)) && (
+        <p className="cal__empty" role="status">이번 달에는 등록된 공고 일정이 없어요.</p>
+      )}
       <div className="cal__grid" role="grid">
         {WEEKDAYS.map((w) => (
           <div key={w} className="cal__weekday">{w}</div>
@@ -67,6 +70,7 @@ export default function CalendarPanel({ events, month, onMonthChange, onSelectEv
                   type="button"
                   className={`cal__event cal__event--${e.kind.toLowerCase()}`}
                   title={`${KIND_LABEL[e.kind]} · ${e.title}`}
+                  aria-label={`${e.date} · ${KIND_LABEL[e.kind]} · ${e.title}`}
                   onClick={() => onSelectEvent?.(e)}
                 >
                   {KIND_LABEL[e.kind]} · {e.title}

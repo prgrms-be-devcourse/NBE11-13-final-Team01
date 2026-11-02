@@ -7,6 +7,9 @@ import PasswordField from '../components/PasswordField';
 import { useAuth } from '../hooks/useAuth';
 import { closeGate } from '../hooks/useAuthGate';
 import { DEFAULT_LANDING, type AuthNavState } from './LoginPage';
+import { AuthFooter, AuthHeading } from '../components/AuthCard';
+import KakaoLoginButton from '../components/KakaoLoginButton';
+import styles from '../features/auth/AuthPage.module.css';
 
 // 서버 SignupRequest의 검증 규칙을 그대로 옮겼다. 규칙이 바뀌면 양쪽을 함께 고쳐야 한다.
 // BCrypt가 72바이트를 넘는 입력을 처리하지 못해 멀티바이트 문자를 받지 않는다.
@@ -171,44 +174,59 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="auth-page">
-      <form className="auth-card" onSubmit={submit} noValidate>
-        <Link to="/map" className="auth-card__logo">
-          ZIPICK
-        </Link>
-        <h1 className="auth-card__title">회원가입</h1>
-        <p className="auth-card__lead">집픽과 다양한 공공임대주택을 만나보세요.</p>
+    <form className={`${styles.panel} ${styles.signup}`} onSubmit={submit} noValidate aria-busy={busy}>
+      <AuthHeading title="회원가입" description="가입하고 나에게 맞는 공공임대주택을 찾아보세요." />
+      <div className={styles.signupIntro}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v6M12 7.5v.3" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        <span>이메일 인증과 비밀번호 설정만 마치면 가입할 수 있어요.</span>
+      </div>
 
-        <label>
-          이메일
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="username"
-            placeholder="이메일을 입력하세요"
-            required
-            autoFocus
-          />
-          {fields.email ? (
-            <small className="auth-error">{fields.email}</small>
-          ) : (
-            show(email) && emailError && <small className="auth-error">{emailError}</small>
+      <div className={styles.fields}>
+        <div className={styles.field}>
+          <label htmlFor="signup-email">이메일</label>
+          <div className={styles.inlineControl}>
+            <input
+              id="signup-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username"
+              placeholder="이메일을 입력해 주세요"
+              required
+              autoFocus
+              className={verify === 'verified' ? styles.verifiedInput : undefined}
+              aria-invalid={!!fields.email || (show(email) && !!emailError)}
+              aria-describedby={fields.email || (show(email) && emailError) ? 'signup-email-error' : undefined}
+            />
+            <button
+              type="button"
+              className={styles.secondaryAction}
+              onClick={sendCode}
+              disabled={verifyBusy || !!emailError || verify !== 'idle'}
+            >
+              {verify === 'verified' ? '인증 완료' : verify === 'sent' ? '코드 발송됨' : verifyBusy ? '보내는 중…' : '인증 코드 보내기'}
+            </button>
+          </div>
+          {(fields.email || (show(email) && emailError)) && (
+            <small id="signup-email-error" className={styles.fieldError}>{fields.email || emailError}</small>
           )}
-        </label>
 
-        {/* 이메일 인증: 코드 보내기 → 코드 입력 → 인증 완료. 인증 메일은 알림센터가 보낸다 */}
-        {verify === 'verified' ? (
-          <p className="auth-verify__done">✓ 이메일 인증 완료</p>
-        ) : verify === 'sent' ? (
-          <div className="auth-verify">
-            <label>
-              인증 코드{' '}
-              <small className="muted">
-                {verifiedEmail} 로 보낸 6자리 · {codeLeft > 0 ? `남은 시간 ${mmss(codeLeft)}` : '만료됨 — 코드를 다시 받아 주세요'}
-              </small>
-              <span className="auth-verify__row">
+          {/* 상태·유효 시간·재발송 간격은 기존 서버 응답을 그대로 사용한다. */}
+          {verify === 'verified' ? (
+            <p className={styles.verified} role="status">✓ 이메일 인증 완료</p>
+          ) : verify === 'sent' ? (
+            <div className={styles.verifyBox}>
+              <div className={styles.verifyHeading}>
+                <label htmlFor="signup-code">인증 코드 입력</label>
+                <span className={styles.micro}>6자리</span>
+              </div>
+              <p className={styles.verifyDescription}>{verifiedEmail}(으)로 보낸 코드를 입력해 주세요.</p>
+              <div className={styles.codeRow}>
                 <input
+                  id="signup-code"
                   type="text"
                   inputMode="numeric"
                   maxLength={6}
@@ -216,67 +234,69 @@ export default function SignupPage() {
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
                   placeholder="000000"
                   autoComplete="one-time-code"
+                  aria-invalid={!!verifyError}
+                  aria-describedby={verifyError ? 'code-expiry signup-verify-error' : 'code-expiry'}
                 />
-                <button type="button" className="btn btn--small" onClick={confirmCode} disabled={verifyBusy || code.length !== 6 || codeLeft <= 0}>
-                  확인
+                <button type="button" className={styles.secondaryAction} onClick={confirmCode} disabled={verifyBusy || code.length !== 6 || codeLeft <= 0}>
+                  {verifyBusy ? '확인 중…' : '인증 확인'}
                 </button>
-              </span>
-            </label>
-            {/* 발신 주소가 gmail.com 이라 SES 로 보낸 메일이 받는 쪽에서 스팸으로 분류될 수 있다 (도메인 인증 전까지) */}
-            <small className="auth-verify__hint">메일이 보이지 않으면 스팸함을 확인해 주세요.</small>
-            <button type="button" className="linklike auth-verify__resend" onClick={sendCode} disabled={verifyBusy || resendIn > 0}>
-              {resendIn > 0 ? `다시 보내기 (${resendIn}초)` : '코드 다시 보내기'}
-            </button>
-          </div>
-        ) : (
-          <button type="button" className="btn btn--small btn--ghost auth-verify__send" onClick={sendCode} disabled={verifyBusy || !!emailError}>
-            {verifyBusy ? '보내는 중…' : '이메일 인증 코드 보내기'}
-          </button>
-        )}
-        {verifyError && <small className="auth-error">{verifyError}</small>}
+              </div>
+              <p id="code-expiry" className={codeLeft > 0 ? styles.micro : styles.fieldError}>
+                {codeLeft > 0 ? `남은 시간 ${mmss(codeLeft)}` : '만료됨 — 코드를 다시 받아 주세요'}
+              </p>
+              <div className={styles.verifyBottom}>
+                <small className={styles.micro}>메일이 보이지 않으면 스팸함을 확인해 주세요.</small>
+                <button type="button" className={styles.resend} onClick={sendCode} disabled={verifyBusy || resendIn > 0}>
+                  {resendIn > 0 ? `다시 보내기 (${resendIn}초)` : '코드 다시 보내기'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {verifyError && <small id="signup-verify-error" className={styles.fieldError} role="alert">{verifyError}</small>}
+        </div>
 
-        <PasswordField
-          label="비밀번호"
-          value={password}
-          onChange={setPassword}
-          placeholder="비밀번호를 입력하세요"
-          autoComplete="new-password"
-          error={fields.password}
-        />
+        <div className={styles.field}>
+          <PasswordField
+            label="비밀번호"
+            value={password}
+            onChange={setPassword}
+            placeholder="비밀번호를 입력해 주세요"
+            autoComplete="new-password"
+            error={fields.password}
+            describedBy="signup-password-rules"
+          />
+          <ul id="signup-password-rules" className={styles.rules}>
+            {rules.map((rule) => (
+              <li key={rule.text} className={rule.ok ? styles.rulePassed : undefined}>
+                <span className={styles.ruleMark} aria-hidden="true">✓</span>
+                <span><span className={styles.srOnly}>{rule.ok ? '충족: ' : '미충족: '}</span>{rule.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
 
         <PasswordField
           label="비밀번호 확인"
           value={confirm}
           onChange={setConfirm}
-          placeholder="비밀번호를 한 번 더 입력하세요"
+          placeholder="비밀번호를 한 번 더 입력해 주세요"
           autoComplete="new-password"
           error={show(confirm) ? confirmError : null}
         />
+      </div>
 
-        <ul className="auth-rules">
-          {rules.map((rule) => (
-            <li key={rule.text} className={rule.ok ? 'auth-rule auth-rule--ok' : 'auth-rule'}>
-              <span className="auth-rule__mark" aria-hidden="true">
-                ✓
-              </span>
-              {rule.text}
-            </li>
-          ))}
-        </ul>
+      {error && <div className={styles.errorNotice} role="alert">{error}</div>}
+      <button className={styles.submit} type="submit" disabled={busy}>
+        {busy ? '가입 중…' : '회원가입'}
+      </button>
 
-        {error && <div className="error">{error}</div>}
-
-        <button className="btn auth-card__submit" type="submit" disabled={busy}>
-          {busy ? '가입 중…' : '회원가입'}
-        </button>
-
-        <p className="auth-alt">
-          이미 계정이 있으신가요?{' '}
-          <Link to="/login" state={state?.from ? { from: state.from } : undefined}>
-            로그인
-          </Link>
-        </p>
-      </form>
-    </div>
+      {/* 카카오는 가입·로그인 진입점이 같다. 별도 가입 폼이나 추가 정보 입력 화면을 두지 않는다. */}
+      <KakaoLoginButton disabled={busy} />
+      <p className={styles.alternative}>
+        이미 계정이 있으신가요?{' '}
+        <Link to="/login" state={state?.from ? { from: state.from } : undefined}>로그인</Link>
+      </p>
+      <AuthFooter />
+    </form>
   );
 }

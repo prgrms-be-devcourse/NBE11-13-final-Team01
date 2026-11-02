@@ -46,6 +46,7 @@ public class HousingDetailEnricher {
     }
 
     private HousingDetailResult extract(NoticeResponse notice) {
+        boolean failed = false;
         for (HousingDetailSource source : sources) {
             if (!source.supports(notice)) {
                 continue;
@@ -63,13 +64,18 @@ public class HousingDetailEnricher {
                     return result;
                 }
             } catch (RuntimeException exception) {
+                failed = true;
                 log.warn("COLLECTOR_METRIC event=detail_error noticeId={} source={}", notice.noticeId(), source.getClass().getSimpleName());
                 log.warn("상세 주택 보완 실패: noticeId={}, source={}, reason={}",
                         notice.noticeId(), source.getClass().getSimpleName(), exception.getMessage());
             }
         }
-        log.info("상세 주택 보완 자료가 없습니다: noticeId={}, url={}",
-                notice.noticeId(), notice.url());
+        if (failed) {
+            log.warn("상세 주택 자료 확인 실패: noticeId={}, url={}", notice.noticeId(), notice.url());
+            return new HousingDetailResult(List.of(), List.of(), Map.of(), true);
+        } else {
+            log.info("상세 주택 보완 자료가 없습니다: noticeId={}, url={}", notice.noticeId(), notice.url());
+        }
         return HousingDetailResult.empty();
     }
 
@@ -131,8 +137,8 @@ public class HousingDetailEnricher {
                 unit.floor(),
                 unit.roomCount(),
                 unit.exclusiveArea(),
-                unit.supplyCount() == null ? 1L : unit.supplyCount(),
-                Long.toString(unit.supplyCount() == null ? 1L : unit.supplyCount()),
+                unit.supplyCount() == null && unit.unitNumber() != null ? Long.valueOf(1) : unit.supplyCount(),
+                unit.supplyCount() != null ? Long.toString(unit.supplyCount()) : unit.unitNumber() != null ? "1" : null,
                 unit.rentDeposit(),
                 null,
                 null,

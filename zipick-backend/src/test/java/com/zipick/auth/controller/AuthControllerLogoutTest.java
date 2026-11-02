@@ -7,9 +7,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zipick.auth.jwt.JwtProperties;
+import com.zipick.auth.oauth.KakaoOAuthProperties;
+import com.zipick.auth.oauth.OAuthStateService;
 import com.zipick.auth.jwt.JwtProvider;
 import com.zipick.auth.jwt.JwtProviderFixture;
 import com.zipick.auth.service.AuthService;
+import com.zipick.auth.service.KakaoAuthService;
 import com.zipick.auth.service.EmailVerificationService;
 import com.zipick.auth.service.TokenService;
 import com.zipick.global.config.CookieProperties;
@@ -59,6 +62,12 @@ class AuthControllerLogoutTest {
     @MockitoBean
     private TokenService tokenService;
 
+    @MockitoBean
+    private KakaoAuthService kakaoAuthService;
+
+    @MockitoBean
+    private OAuthStateService oAuthStateService;
+
     @TestConfiguration
     static class TestConfig {
 
@@ -70,6 +79,12 @@ class AuthControllerLogoutTest {
         @Bean
         CookieProperties cookieProperties() {
             return new CookieProperties(false, "Lax");
+        }
+
+        @Bean
+        KakaoOAuthProperties kakaoOAuthProperties() {
+            return new KakaoOAuthProperties("client-id", "client-secret",
+                    "http://localhost:5173/oauth/kakao/callback", null, null, null, Duration.ofMinutes(5));
         }
 
         @Bean

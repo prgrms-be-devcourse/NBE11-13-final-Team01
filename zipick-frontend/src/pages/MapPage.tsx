@@ -1,10 +1,10 @@
 import styles from '../features/map/MapPage.module.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { profileApi } from '../api/profile';
 import { getMapHousingDetail, getMapHousings } from '../api/mapHousing';
-import FilterPanel from '../components/FilterPanel';
+import MapFilterDrawer from '../features/map/MapFilterDrawer';
 import HousingDetail from '../components/HousingDetail';
 import ReasonList from '../components/ReasonList';
 import RecommendationSidebar from '../components/map/RecommendationSidebar';
@@ -15,7 +15,7 @@ import { openGate } from '../hooks/useAuthGate';
 import { useHouseFilter } from '../hooks/useHouseFilter';
 import { useOnboardingStatus } from '../hooks/useOnboardingStatus';
 import { useRecommendationBoard } from '../hooks/useRecommendationBoard';
-import { EMPTY_FILTER, type RecommendedHouse } from '../types';
+import { EMPTY_FILTER, type HouseFilter, type RecommendedHouse } from '../types';
 
 /**
  * 지도 한 화면에서 전체 공고와 맞춤 추천을 전환해 탐색한다.
@@ -55,10 +55,15 @@ function recommendationPins(houses: RecommendedHouse[]): MapPin[] {
 
 export default function MapPage() {
   const [params, setParams] = useSearchParams();
-  const { filter, setFilter } = useHouseFilter();
+  const mode: MapMode = params.get('mode') === 'recommended' ? 'recommended' : 'all';
+  const { filter, setFilter } = useHouseFilter({ omitStatuses: mode === 'all' });
+  const queryClient = useQueryClient();
+  const filterContextRef = useRef(params.toString());
+  const pageActiveRef = useRef(true);
+  filterContextRef.current = params.toString();
+  useEffect(() => { pageActiveRef.current = true; return () => { pageActiveRef.current = false; }; }, []);
   const { user } = useAuth();
 
-  const mode: MapMode = params.get('mode') === 'recommended' ? 'recommended' : 'all';
   const parsed = Number(params.get('housing'));
   const selectedId = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 
@@ -110,7 +115,18 @@ export default function MapPage() {
     queryFn: () => getMapHousings(filter),
     enabled: mode === 'all',
     placeholderData: keepPreviousData,
+    // 적용 전 검증 요청의 캐시를 바로 재사용해 같은 조건을 중복 조회하지 않는다.
+    staleTime: 1000,
   });
+
+  const applyFilter = async (next: HouseFilter) => {
+    const context = filterContextRef.current;
+    // 성공한 결과를 확보한 뒤 URL을 확정한다. 실패하면 기존 필터와 핀을 유지한다.
+    await queryClient.fetchQuery({ queryKey: ['map-housings', next], queryFn: () => getMapHousings(next), staleTime: 0, retry: false });
+    if (!pageActiveRef.current || filterContextRef.current !== context) return false;
+    setFilter(next);
+    return true;
+  };
 
   // 맞춤 추천: 저장된 내 조건과 추천 기준으로만 계산한다.
   // ⚠️ 전체 공고 모드의 탐색 필터(URL 쿼리)를 넘기면 안 된다. 추천 모드에는 필터 UI 가 없어
@@ -165,41 +181,21 @@ export default function MapPage() {
           {loading && '불러오는 중…'}
           {!loading && mode === 'all' && allQuery.data && (
             <>
-              조건에 맞는 집 <strong>{allQuery.data.total}곳</strong>
+              조건에 맞는 집 <strong>{allQuery.data.total.toLocaleString('ko-KR')}곳</strong>
             </>
           )}
           {!loading && mode === 'recommended' && board.query.data && (
             <>
-              추천 <strong>{board.ranked.length}곳</strong>
-              {unmappedRecommendations > 0 && ` · 지도 표시 ${pins.length}곳`}
+              내 조건과 맞는{' '}
+              <span className={styles.countGroup}>추천 주택 <strong>{board.ranked.length.toLocaleString('ko-KR')}곳</strong></span>
+              {unmappedRecommendations > 0 && ` · 지도 표시 ${pins.length.toLocaleString('ko-KR')}곳`}
             </>
           )}
         </span>
 
-        {mode === 'recommended' && canRecommend && (
-          <span className="map-toolbar__links">
-            <Link to="/onboarding" className="btn btn--ghost btn--small">
-              내 조건 수정
-            </Link>
-            <Link to="/tune" className="btn btn--ghost btn--small">
-              취향 찾기
-            </Link>
-          </span>
-        )}
-
         {/* 기본 필터는 전체 공고 모드에만 둔다. 추천 모드는 저장된 내 조건과 우선순위로 조정한다 */}
         {mode === 'all' && (
-          <details className="map-filter">
-            <summary>필터</summary>
-            <div className="map-filter__body">
-              <FilterPanel
-                filter={filter}
-                onChange={setFilter}
-                resultCount={allQuery.data?.total ?? 0}
-                regionOptions={pref.data?.regions ?? []}
-              />
-            </div>
-          </details>
+          <MapFilterDrawer filter={filter} contextKey={params.toString()} onApply={applyFilter} regionOptions={pref.data?.regions ?? []} />
         )}
       </div>
 
@@ -261,7 +257,6 @@ export default function MapPage() {
               {detailQuery.data && (
                 <HousingDetail
                   detail={detailQuery.data}
-                  showPageLink
                   filter={mode === 'all' ? filter : undefined}
                   score={selectedScore ? <SelectedScore house={selectedScore} /> : undefined}
                 />
@@ -301,52 +296,46 @@ export default function MapPage() {
  * 같은 좌표에 주택이 여러 곳일 때 보여 주는 목록. 카드를 누르면 기존 상세 흐름으로 넘어간다.
  * 상세 조회·상세 패널은 그대로 재사용하므로 여기서는 고를 수 있게만 해 준다.
  */
-/** 공고를 구분해 주는 한 줄. 값이 없는 항목은 빼고, 구분자가 앞뒤로 남지 않게 한다 */
-function noticeLine(pin: MapPin): string {
-  const parts: string[] = [];
-  if (pin.announcedAt) parts.push(`공고일 ${pin.announcedAt}`);
-  if (pin.applyEndAt) parts.push(`접수 마감 ${pin.applyEndAt}`);
-  if (pin.noticeId != null) parts.push(`공고 ${pin.noticeId}번`);
-  return parts.join(' · ');
-}
-
 function LocationList({ pins, onBack, onSelect }: { pins: MapPin[]; onBack: () => void; onSelect: (id: number) => void }) {
   return (
-    <div className="map-side">
+    <>
       <button type="button" className="map-aside__back" onClick={onBack}>
         ← 지도로
       </button>
-      <p className="map-side__summary">
-        이 위치의 주택 <strong>{pins.length}개</strong>
-      </p>
-      <p className="muted small">
-        같은 자리에 여러 공고가 있어요. <strong>공고마다 별도 신청 기회</strong>이니 아래에서 구분해 확인하세요.
-      </p>
+      <div className="map-side">
+      <h2 className="map-side__summary">이 위치의 주택 <strong>{pins.length}개</strong></h2>
+      <p className="location-list__intro">같은 위치에 여러 주택이 공고되어 있어요. 아래에서 원하는 주택을 선택해 자세한 내용을 확인해 보세요.</p>
       {pins.map((pin) => (
-        <article key={pin.housingId} className="rec-item">
+        <article key={pin.housingId} className="rec-item location-list__card">
           <button type="button" className="rec-item__main" onClick={() => onSelect(pin.housingId)}>
             <span className="rec-item__body">
               <span className="rec-item__badges">
-                {pin.agencyName && <span className="badge">{pin.agencyName}</span>}
-                {pin.rentalType && <span className="badge">{pin.rentalType}</span>}
-                {pin.status && <span className="badge">{STATUS_LABEL[pin.status as keyof typeof STATUS_LABEL] ?? pin.status}</span>}
+                {pin.status && <span className={`badge badge--${pin.status.toLowerCase()}`}>{STATUS_LABEL[pin.status as keyof typeof STATUS_LABEL] ?? pin.status}</span>}
+                {pin.agencyName && <span className="badge location-list__agency">{pin.agencyName}</span>}
+                {pin.rentalType && <span className="badge location-list__type">{pin.rentalType}</span>}
               </span>
               <strong>{pin.title}</strong>
-              <span className="muted small">{pin.address}</span>
+              <span className="muted small location-list__address"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg><span>{pin.address}</span></span>
               {/*
                 같은 건물에 몇 주 간격으로 올라온 공고는 제목·기관·유형이 모두 같을 수 있다.
                 그때 사용자가 서로 다른 신청 기회임을 알아볼 수 있는 값이 공고일·공고번호뿐이다.
               */}
               {pin.noticeTitle && pin.noticeTitle !== pin.title && (
-                <span className="muted small">{pin.noticeTitle}</span>
+                <span className="muted small location-list__notice-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h4M9 12h6m-6 4h6"/></svg><span>{pin.noticeTitle}</span></span>
               )}
-              <span className="muted small location-list__notice">{noticeLine(pin)}</span>
+              {(pin.announcedAt || pin.applyEndAt) && (
+                <span className="location-list__dates">
+                  {pin.announcedAt && <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18"/></svg>공고일 {pin.announcedAt}</span>}
+                  {pin.applyEndAt && <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>접수 마감 {pin.applyEndAt}</span>}
+                </span>
+              )}
             </span>
             <span className="rec-item__score" aria-hidden="true">›</span>
           </button>
         </article>
       ))}
-    </div>
+      </div>
+    </>
   );
 }
 

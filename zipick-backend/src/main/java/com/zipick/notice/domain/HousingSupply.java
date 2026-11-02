@@ -299,6 +299,14 @@ public class HousingSupply extends BaseTimeEntity {
         return monthlyRent;
     }
 
+    public void clearMonthlyRentIfEqualTo(Long incorrectAmount) {
+        if (incorrectAmount != null && incorrectAmount.equals(monthlyRent)) monthlyRent = null;
+    }
+
+    public void clearUnitNumber() { unitNumber = null; }
+
+    public void clearSupplyCounts() { supplyCount = null; supplyHouseCount = null; }
+
     public Integer getSupplyCount() {
         return supplyCount;
     }

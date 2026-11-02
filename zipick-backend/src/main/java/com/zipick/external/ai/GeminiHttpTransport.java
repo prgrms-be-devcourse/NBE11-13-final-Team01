@@ -71,6 +71,8 @@ final class GeminiHttpTransport implements GeminiApiTransport {
             log.warn("COLLECTOR_METRIC event=gemini_http_error stage={} status=network model={}", stage, model);
             throw new IllegalStateException("Gemini PDF 분석 요청에 실패했습니다.", exception);
         } finally {
+            log.info("Gemini HTTP 호출 시간: 단계={}, 모델={}, 결과={}, 경과ms={}",
+                    stage, model, outcome, (System.nanoTime() - started) / 1_000_000);
             Metrics.timer("zipick.external.api.duration", "provider", "gemini", "stage", stage, "outcome", outcome)
                     .record(System.nanoTime() - started, java.util.concurrent.TimeUnit.NANOSECONDS);
         }

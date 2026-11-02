@@ -41,6 +41,12 @@ public class GbdcHousingDetailSource implements HousingDetailSource {
     private final LhHwpHousingParser hwpParser;
     private final ShPdfHousingParser structuredPdfParser;
     private GeminiPdfHousingDetailSupport geminiSupport;
+    private com.zipick.notice.repository.DocumentParseHistoryRepository historyRepository;
+
+    @Autowired(required = false)
+    void setHistoryRepository(com.zipick.notice.repository.DocumentParseHistoryRepository repository) {
+        this.historyRepository = repository;
+    }
 
     public GbdcHousingDetailSource(
             ExternalDocumentClient documentClient,
@@ -80,9 +86,21 @@ public class GbdcHousingDetailSource implements HousingDetailSource {
         for (GbdcAttachment attachment : housingCandidates(attachments)) {
             try {
                 byte[] bytes = documentClient.getBytes(URI.create(attachment.downloadUrl()));
-                List<DetailedHousingUnit> units = parse(notice, attachment, bytes);
+                boolean aiEnabled = geminiSupport != null && geminiSupport.enabled() && "pdf".equals(attachment.extension());
+                String version = aiEnabled ? "GBDC_" + geminiSupport.parserVersion() : "GBDC_DOCUMENT_V3";
+                String key = "GBDC:" + shortHash(notice.noticeId() + ":" + attachment.sourceKey())
+                        + ":" + DocumentFingerprint.sha256(bytes);
+                if (historyRepository != null && historyRepository.findByDocumentKeyAndParserVersion(key, version)
+                        .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent()) {
+                    return new HousingDetailResult(List.of(), saved, Map.of(), true);
+                }
+                ParsedAttachment parsed = parse(notice, attachment, bytes);
+                List<DetailedHousingUnit> units = parsed.units();
                 if (!units.isEmpty()) {
-                    return new HousingDetailResult(units, saved, Map.of());
+                    var checkpoints = historyRepository != null && (!aiEnabled || parsed.aiComplete())
+                            ? List.of(new com.zipick.notice.dto.ParseCheckpoint(key, version, bytes.length, units.size()))
+                            : List.<com.zipick.notice.dto.ParseCheckpoint>of();
+                    return new HousingDetailResult(units, saved, Map.of(), !parsed.aiComplete(), checkpoints);
                 }
             } catch (RuntimeException ignored) {
                 // 다른 형식의 동일 문서 또는 다음 후보 첨부를 계속 확인한다.
@@ -114,20 +132,24 @@ public class GbdcHousingDetailSource implements HousingDetailSource {
                 .toList();
     }
 
-    private List<DetailedHousingUnit> parse(NoticeResponse notice, GbdcAttachment attachment, byte[] bytes) {
+    private record ParsedAttachment(List<DetailedHousingUnit> units, boolean aiComplete) { }
+
+    private ParsedAttachment parse(NoticeResponse notice, GbdcAttachment attachment, byte[] bytes) {
         LhAttachment compatible = new LhAttachment(attachment.sourceKey(), attachment.fileName());
         return switch (attachment.extension()) {
-            case "xlsx", "xls" -> spreadsheetParser.parse(bytes, compatible);
-            case "hwp", "hwpx" -> hwpParser.parse(bytes, compatible, housingListPrefix(attachment));
+            case "xlsx", "xls" -> new ParsedAttachment(spreadsheetParser.parse(bytes, compatible), true);
+            case "hwp", "hwpx" -> new ParsedAttachment(hwpParser.parse(bytes, compatible, housingListPrefix(attachment)), true);
             case "pdf" -> {
-                List<DetailedHousingUnit> structured = structuredPdfParser.parse(
-                        bytes, compatible, housingListPrefix(attachment));
-                List<DetailedHousingUnit> fallback = structured.isEmpty()
-                        ? pdfParser.parse(bytes, compatible, housingListPrefix(attachment)) : structured;
-                yield geminiSupport == null ? fallback : geminiSupport.supplement(
+                List<DetailedHousingUnit> fallback = com.zipick.external.ai.GeminiPdfStageTiming.measureBasicParser(() -> {
+                    List<DetailedHousingUnit> structured = structuredPdfParser.parse(bytes, compatible, housingListPrefix(attachment));
+                    return structured.isEmpty() ? pdfParser.parse(bytes, compatible, housingListPrefix(attachment)) : structured;
+                });
+                if (geminiSupport == null || !geminiSupport.enabled()) yield new ParsedAttachment(fallback, true);
+                var result = geminiSupport.supplementWithStatus(
                         bytes, attachment.sourceKey(), "GBDC", notice.title(), attachment.fileName(), fallback);
+                yield new ParsedAttachment(result.units(), result.aiApplied() && result.aiComplete());
             }
-            default -> List.of();
+            default -> new ParsedAttachment(List.of(), true);
         };
     }
 

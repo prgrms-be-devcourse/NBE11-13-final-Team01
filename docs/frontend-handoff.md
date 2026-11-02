@@ -21,7 +21,7 @@
 /map                        기본 진입. 전체 공고 지도 (비회원 가능)
 /map?mode=recommended       맞춤 추천 지도 (로그인 + 온보딩 완료 필요)
 /map?housing=123            123번 주택 상세 패널 열림
-/houses/:houseId            공개 공고 상세 페이지
+/houses/:houseId            /map?housing={houseId}로 이동하는 기존 주소
 /login  /signup             인증
 /onboarding  /tune          내 조건 입력 · 취향 찾기(AHP)
 /calendar                   관심 공고 일정
@@ -188,7 +188,7 @@ features/map/
   locationGroup.ts                같은 좌표 묶기 + 보수적 중복 제거 (SDK 무의존 순수 함수)
   kakaoMaps.ts                    SDK 로더 + 타입 (추가 라이브러리 없음)
 components/
-  HousingDetail.tsx               공개 상세. 지도 패널과 /houses/:id 가 같은 컴포넌트를 쓴다
+  HousingDetail.tsx               지도 선택 패널의 공개 주택 상세
   map/RecommendationSidebar.tsx   추천 목록 + 우선순위·완화·피드백
 hooks/
   useRecommendationBoard.ts       추천 상태 (preview + 즉시 재계산)

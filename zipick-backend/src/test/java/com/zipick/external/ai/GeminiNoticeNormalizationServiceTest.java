@@ -19,6 +19,17 @@ import static org.mockito.Mockito.when;
 class GeminiNoticeNormalizationServiceTest {
 
     @Test
+    void 기존_자료와_합쳐진_Lite_결과도_정규화_대기열에_등록한다() {
+        var reviewer = mock(GeminiDbNormalizationReviewer.class);
+        var jobs = mock(AiNormalizationJobService.class);
+        when(reviewer.enabled()).thenReturn(true);
+        var service = new GeminiNoticeNormalizationService(reviewer, jobs, mock(AiNormalizationPatchPersistenceService.class));
+        String raw = "{\"primary\":{},\"supplement\":{\"parser\":\"" + GeminiPdfHousingExtractor.PROMPT_VERSION + "\"}}";
+        service.enqueue(List.of(commandWithRaw(raw)));
+        verify(jobs).enqueue(anyList());
+    }
+
+    @Test
     void 검수패치를_DB후보와_추가속성에_적용한다() {
         GeminiDbNormalizationReviewer reviewer = mock(GeminiDbNormalizationReviewer.class);
         when(reviewer.enabled()).thenReturn(true);
@@ -67,6 +78,10 @@ class GeminiNoticeNormalizationServiceTest {
     private NoticeSyncCommand command(String parserVersion) {
         String raw = "{\"parser\":\"" + parserVersion + "\","
                 + "\"evidence\":\"남여공용\",\"unitAdditionalAttributes\":[]}";
+        return commandWithRaw(raw);
+    }
+
+    private NoticeSyncCommand commandWithRaw(String raw) {
         NoticeSupplyResponse supply = new NoticeSupplyResponse(
                 "supply-1", null, "다가구", "청년", null, "101", 1, 1,
                 new BigDecimal("20.5"), 1L, "1", 1_000_000L,

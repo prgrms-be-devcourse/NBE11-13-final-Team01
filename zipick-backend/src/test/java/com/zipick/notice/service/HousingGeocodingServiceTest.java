@@ -113,6 +113,40 @@ class HousingGeocodingServiceTest {
     }
 
     @Test
+    void 구까지만_확인된_주소는_API를_호출하거나_지역중심을_저장하지_않는다() {
+        when(repository.findActiveWithoutCoordinates()).thenReturn(List.of(housing(12L, "경상북도 포항시 남구", null)));
+        var result = service(configured()).enrichMissingCoordinates();
+        assertThat(result.unresolved()).isEqualTo(1);
+        assertThat(result.apiCalls()).isZero();
+        verify(client, never()).search(anyString());
+        verify(client, never()).searchKeyword(anyString());
+    }
+
+    @Test
+    void 행정구역이나_사업지구_중심을_주택좌표로_확정하지_않는다() {
+        assertThat(HousingGeocodingService.isPreciseAddressQuery("경상북도 포항시 남구")).isFalse();
+        assertThat(HousingGeocodingService.isPreciseAddressQuery("포항블루밸리 A3블록")).isFalse();
+        assertThat(HousingGeocodingService.isPreciseAddressQuery("인천 부평구 부평동 65-17번지 일원")).isFalse();
+        assertThat(HousingGeocodingService.isPreciseAddressQuery("서울 노원구 동일로242길 103")).isTrue();
+        assertThat(HousingGeocodingService.isPreciseAddressQuery("경기 구리시 갈매동 산 14")).isTrue();
+    }
+
+    @Test
+    void 본문에_포함된_구체적인_지번만_좌표검색에_추가한다() {
+        Housing housing = housing(10L, "인천광역시 부평구 부평동 65-17번지 101호", null);
+        ReflectionTestUtils.setField(housing, "lotAddress", "인천광역시 부평구 부평동 65-17번지");
+        assertThat(HousingGeocodingService.createSearchQueriesForHousing(housing).getFirst())
+                .isEqualTo("인천광역시 부평구 부평동 65-17번지");
+        ReflectionTestUtils.setField(housing, "lotAddress", "경기도 남양주시 갈매동 10");
+        assertThat(HousingGeocodingService.createSearchQueriesForHousing(housing))
+                .noneMatch(query -> query.contains("남양주시"));
+        Housing area = housing(11L, "인천광역시 부평구 부평동 65-17번지 일원", null);
+        ReflectionTestUtils.setField(area, "lotAddress", "인천광역시 부평구 부평동 65-17번지");
+        assertThat(HousingGeocodingService.createSearchQueriesForHousing(area))
+                .doesNotContain("인천광역시 부평구 부평동 65-17번지");
+    }
+
+    @Test
     void buildsNormalizedSearchVariants() {
         assertThat(HousingGeocodingService.createSearchQueries(null, null)).isEmpty();
         assertThat(HousingGeocodingService.createSearchQueries("서울특별시 강남구 강남구 역삼동 1", null))
