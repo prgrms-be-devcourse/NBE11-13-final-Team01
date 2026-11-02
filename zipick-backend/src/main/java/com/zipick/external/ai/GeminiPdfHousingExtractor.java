@@ -811,7 +811,7 @@ public class GeminiPdfHousingExtractor {
                 동·호 정보가 없는 주소별 또는 면적형별 공급도 하나의 unit으로 기록하고 supplyCount를 채우세요.
                 금액은 원 단위 정수, 면적은 제곱미터, 거리는 km로 정규화하세요. 추론하지 말고 원문에 없는 값은 생략하세요.
                 표의 열마다 단위를 확인하세요. 보증금이 천원 단위이면 1,000을 곱하고 월 임대료가 원 단위이면 그대로 기록하세요.
-                기숙사비·관리비는 월 임대료가 아닙니다. 임대료가 공란 또는 '-'인 경우 monthlyRent를 비우고, 기숙사비는 별도 추가정보로 기록하세요.
+                기숙사비는 별도 추가정보로 기록하세요. 임대료가 없고 기숙사비가 있는 주택은 근거를 기록하세요. 관리비를 월 임대료로 추정하지 마세요.
                 표에 공용면적과 임대면적 열이 있으면 각 unit의 commonArea와 rentalArea에 숫자로 반드시 기록하세요.
                 주소는 원문의 시·군·구·읍·면·동 계층을 하나도 생략하지 말고 address와 roadAddress에 보존하세요.
                 보증금과 월 임대료는 원문의 콤마 구분 자릿수와 대조해 10배·10분의 1 오류가 없는지 행별로 다시 확인하세요.
@@ -1158,6 +1158,10 @@ public class GeminiPdfHousingExtractor {
             appendLongAttribute(normalizedUnitAttributes, "기숙사비", dormitoryFee.amount(), dormitoryFee.page(), dormitoryFee.evidence());
             raw.put("verifiedDormitoryFee", Map.of("amount", dormitoryFee.amount(), "page", dormitoryFee.page(), "evidence", dormitoryFee.evidence()));
         }
+        boolean noDeposit = dormitoryFee != null && verifiedNoDormitoryDeposit(complexName, documents.stream()
+                .filter(value -> value.document().documentId().equals(documentId))
+                .map(InspectedDocument::pageTexts).findFirst().orElse(Map.of()));
+        if (noDeposit) raw.put("verifiedNoDormitoryDeposit", true);
         String provinceName = firstNonBlank(text(unit, "provinceName", null), text(building, "provinceName", null));
         String districtName = firstNonBlank(text(unit, "districtName", null), text(building, "districtName", null));
         String lotAddress = longestNonBlank(text(unit, "lotAddress", null), text(building, "lotAddress", null));
@@ -1195,9 +1199,8 @@ public class GeminiPdfHousingExtractor {
                 firstNonBlank(text(unit, "housingType", null), text(building, "housingType", null),
                         text(unit, "supplyType", null)),
                 text(unit, "supplyType", null),
-                correctedDeposit != null ? correctedDeposit : modelDeposit,
-                dormitoryFee != null && dormitoryFee.amount().equals(firstNonNull(nullableLong(unit, "monthlyRent"), firstConditionMonthlyRent(conditions)))
-                        ? null : firstNonNull(nullableLong(unit, "monthlyRent"), firstConditionMonthlyRent(conditions)),
+                correctedDeposit != null ? correctedDeposit : modelDeposit != null ? modelDeposit : noDeposit ? 0L : null,
+                modelRent != null ? modelRent : dormitoryFee != null ? dormitoryFee.amount() : null,
                 JSON.writeValueAsString(raw),
                 lotAddress, roadAddress,
                 extractionIndex, text(unit, "supplyStatus", null),
@@ -1343,6 +1346,17 @@ public class GeminiPdfHousingExtractor {
             }
         }
         return null;
+    }
+
+    static boolean verifiedNoDormitoryDeposit(String complexName, Map<Integer, String> pages) {
+        if (complexName == null || complexName.isBlank()) return false;
+        String name = complexName.replaceAll("\\s+", "");
+        if (!name.contains("기숙사")) return false;
+        Pattern absence = Pattern.compile(Pattern.quote(name)
+                + "(?:의경우|은|는).{0,30}임대보증금및임대료가없");
+        return pages.values().stream().filter(java.util.Objects::nonNull)
+                .map(page -> page.replaceAll("[\\s\\u00a0]+", ""))
+                .anyMatch(page -> absence.matcher(page).find());
     }
 
     static boolean belongsToBuildingColumn(String pageText, String number, String evidence) {

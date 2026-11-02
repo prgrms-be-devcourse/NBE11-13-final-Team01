@@ -15,6 +15,14 @@
 
 ## 실행
 
+네 시나리오를 각각 10 → 30 → 50 → 100명의 순서로 실행하려면 다음 명령을 사용합니다. 단계별 기본 실행 시간은 1분이며, 기준 초과나 오류가 발생하면 뒤 단계는 중단합니다. 실행 전 대상 환경·허용 부하·중단 기준을 확인해 주세요.
+
+```powershell
+.\deploy\load-test\run-sequential.ps1 -BaseUrl 'http://localhost:8080'
+```
+
+예를 들어 준비 상태만 짧게 확인하려면 `-Users 1 -Duration 10s`를 추가합니다. 결과는 `deploy/load-test/results/run-날짜시각`에 단계별 k6 JSON과 `runs.json`으로 저장됩니다. 운영 서버 주소를 지정하면 실제 운영 서버에 부하가 발생합니다.
+
 백엔드와 테스트 DB, Prometheus/Grafana를 실행한 뒤 프로젝트 루트에서 사용합니다. `BASE_URL`은 **반드시 명시**해야 합니다. 아래는 PowerShell에서 로컬 서버를 대상으로 실행하는 예시입니다.
 
 ```powershell

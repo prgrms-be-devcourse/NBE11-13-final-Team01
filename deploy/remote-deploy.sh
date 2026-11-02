@@ -78,11 +78,19 @@ if [ -n "${COMPOSE_URL:-}" ]; then
   # 문법과 변수 치환을 먼저 검증한다. 깨진 파일로 기존 파일을 덮어쓰지 않기 위해서다.
   docker compose -f "$COMPOSE_FILE.new" config -q \
     || fail "받은 compose 파일이 현재 .env 로 해석되지 않습니다. 기존 파일을 그대로 두고 중단합니다."
+  base_url="${COMPOSE_URL%/docker-compose.prod.yml}"
+  # 수집 예약(zipick-collection.timer)이 실행하는 스크립트도 같은 커밋에서 받는다.
+  # 문법 검사와 아래 overlay 검증까지 통과한 뒤 compose 와 함께 바꾼다.
+  mkdir -p monitoring
+  for script in run-daily-collection.sh collect-notices-observed.sh; do
+    curl -fsSL "$base_url/monitoring/$script" -o "monitoring/$script.new" \
+      || fail "수집 스크립트를 받지 못했습니다: $base_url/monitoring/$script"
+    bash -n "monitoring/$script.new" \
+      || fail "받은 수집 스크립트의 문법이 올바르지 않습니다: monitoring/$script"
+  done
   if [ "$METRICS" = true ]; then
     # overlay 와 blackbox 설정도 같은 커밋에서 받는다. compose 와 버전이 어긋나지 않게 하기 위해서다.
     # 새 compose 와 함께 해석되는지 먼저 확인하고, 둘 다 통과해야 기존 파일을 바꾼다.
-    base_url="${COMPOSE_URL%/docker-compose.prod.yml}"
-    mkdir -p monitoring
     curl -fsSL "$base_url/$OVERLAY_FILE" -o "$OVERLAY_FILE.new" \
       && curl -fsSL "$base_url/monitoring/blackbox.yml" -o monitoring/blackbox.yml.new \
       || fail "모니터링 overlay 를 받지 못했습니다: $base_url/$OVERLAY_FILE"
@@ -92,6 +100,11 @@ if [ -n "${COMPOSE_URL:-}" ]; then
     mv monitoring/blackbox.yml.new monitoring/blackbox.yml
     echo "모니터링 overlay 갱신."
   fi
+  for script in run-daily-collection.sh collect-notices-observed.sh; do
+    chmod 755 "monitoring/$script.new"
+    mv "monitoring/$script.new" "monitoring/$script"
+  done
+  echo "수집 스크립트 갱신."
   [ -f "$COMPOSE_FILE" ] && cp "$COMPOSE_FILE" "$COMPOSE_FILE.bak"
   mv "$COMPOSE_FILE.new" "$COMPOSE_FILE"
   echo "검증 통과. 이전 파일은 $COMPOSE_FILE.bak 로 남겨 두었습니다."
@@ -247,7 +260,7 @@ fi
 echo "알림센터 healthy."
 
 # 방금 배포한 이미지를 latest 로도 붙인다. compose 의 기본값이 zipick-*:latest 라서,
-# 이미지 변수 없이 실행되는 것들(cron 의 collector·ai-collector, 사람이 직접 치는 compose 명령)이 이전 버전을 쓰지 않게 한다.
+# 이미지 변수 없이 실행되는 것들(수집 예약 타이머의 collector·ai-collector, 사람이 직접 치는 compose 명령)이 이전 버전을 쓰지 않게 한다.
 docker tag "$BACKEND_IMAGE"      zipick-backend:latest
 docker tag "$NOTIFICATION_IMAGE" zipick-notification:latest
 docker tag "$WEB_IMAGE"          zipick-web:latest

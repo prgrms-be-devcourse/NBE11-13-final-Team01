@@ -6,6 +6,7 @@ import com.zipick.external.housingdetail.DetailedHousingUnit;
 import com.zipick.external.housingdetail.ExternalDocumentClient;
 import com.zipick.external.housingdetail.HousingDetailResult;
 import com.zipick.external.housingdetail.HousingDetailSource;
+import com.zipick.external.housingdetail.RentalTermsPdfParser;
 import com.zipick.notice.dto.NoticeAttachmentResponse;
 import com.zipick.notice.dto.NoticeResponse;
 import org.jsoup.Jsoup;
@@ -81,7 +82,7 @@ public class GhHousingDetailSource implements HousingDetailSource {
         String key = "GH:" + com.zipick.external.housingdetail.DocumentFingerprint.sha256(
                 notice.noticeId().getBytes(java.nio.charset.StandardCharsets.UTF_8)) + ":"
                 + com.zipick.external.housingdetail.DocumentFingerprint.sha256(htmlBytes);
-        if (cacheEnabled && historyRepository.findByDocumentKeyAndParserVersion(key, "GH_HTML_V2")
+        if (cacheEnabled && historyRepository.findByDocumentKeyAndParserVersion(key, "GH_HTML_V3")
                 .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent()) {
             return new HousingDetailResult(List.of(), attachments, Map.of(), true);
         }
@@ -133,19 +134,63 @@ public class GhHousingDetailSource implements HousingDetailSource {
                 }
             }
         }
+        units = supplementMissingRent(attachments, units);
         GhPdfResult pdfResult = supplementFromHousingPdf(notice, attachments, units, key);
         if (pdfResult.skipped()) {
             return new HousingDetailResult(List.of(), attachments, Map.of(), true);
         }
         List<DetailedHousingUnit> completed = pdfResult.units();
         var checkpoints = cacheEnabled && !completed.isEmpty()
-                ? List.of(new com.zipick.notice.dto.ParseCheckpoint(key, "GH_HTML_V2", htmlBytes.length, completed.size()))
+                ? List.of(new com.zipick.notice.dto.ParseCheckpoint(key, "GH_HTML_V3", htmlBytes.length, completed.size()))
                 : pdfResult.checkpoints();
         return new HousingDetailResult(completed, attachments, mediaByUnit, false, checkpoints);
     }
 
     private record GhPdfResult(List<DetailedHousingUnit> units, boolean skipped,
                                List<com.zipick.notice.dto.ParseCheckpoint> checkpoints) { }
+
+    private List<DetailedHousingUnit> supplementMissingRent(List<NoticeAttachmentResponse> attachments,
+            List<DetailedHousingUnit> units) {
+        if (units.stream().noneMatch(unit -> unit.rentDeposit() == null || unit.monthlyRent() == null)) return units;
+        List<RentalTermsPdfParser.Terms> terms = new ArrayList<>();
+        for (NoticeAttachmentResponse attachment : attachments) {
+            String name = attachment.fileName() == null ? "" : attachment.fileName().toLowerCase(Locale.ROOT);
+            if (!name.endsWith(".pdf") || !name.contains("공고")) continue;
+            try {
+                terms.addAll(new RentalTermsPdfParser().parse(documentClient.getBytes(URI.create(attachment.sourceUrl()))));
+            } catch (RuntimeException exception) {
+                org.slf4j.LoggerFactory.getLogger(GhHousingDetailSource.class)
+                        .warn("GH 공고문 임대조건 확인 실패: file={}, reason={}", name, exception.getMessage());
+            }
+        }
+        return units.stream().map(unit -> supplementRent(unit, terms)).toList();
+    }
+
+    static DetailedHousingUnit supplementRent(DetailedHousingUnit unit, List<RentalTermsPdfParser.Terms> terms) {
+        if (!StringUtils.hasText(unit.housingType())) return unit;
+        String type = unit.housingType().replaceAll("\\s+", "").toUpperCase(Locale.ROOT);
+        String target = unit.supplyType() == null ? "" : unit.supplyType().replaceAll("\\s+", "");
+        var matches = terms.stream().filter(term -> type.equals(term.housingType().replaceAll("\\s+", "")))
+                .filter(term -> target.isEmpty() || target.equals(term.target().replaceAll("\\s+", "")))
+                .distinct().toList();
+        if (matches.size() != 1) return unit;
+        var term = matches.getFirst();
+        if ((unit.rentDeposit() != null && unit.rentDeposit() != term.deposit())
+                || (unit.monthlyRent() != null && unit.monthlyRent() != term.monthlyRent())) return unit;
+        Map<String, Object> raw = new LinkedHashMap<>();
+        raw.put("previous", unit.rawPayload());
+        raw.put("verifiedRentalTerms", Map.of("page", term.page(), "evidence", term.evidence(),
+                "housingType", term.housingType(), "target", term.target()));
+        return new DetailedHousingUnit(unit.sourceUnitKey(), unit.complexName(), unit.provinceName(),
+                unit.districtName(), unit.address(), unit.buildingDong(), unit.unitNumber(), unit.floor(),
+                unit.exclusiveArea(), unit.roomCount(), unit.housingType(), unit.supplyType(),
+                unit.rentDeposit() == null ? term.deposit() : unit.rentDeposit(),
+                unit.monthlyRent() == null ? term.monthlyRent() : unit.monthlyRent(),
+                JSON_MAPPER.writeValueAsString(raw), unit.lotAddress(), unit.roadAddress(), unit.sourceRowNumber(),
+                unit.supplyStatus(), unit.nearbySubwayStation(), unit.subwayWalkDistanceKm(),
+                unit.elevatorAvailable(), unit.communityFacilityAvailable(), unit.totalParkingSpaces(),
+                unit.mechanicalParkingAvailable(), unit.mechanicalParkingSpaces(), unit.supplyCount(), unit.rentalConditions());
+    }
 
     private GhPdfResult supplementFromHousingPdf(
             NoticeResponse notice,

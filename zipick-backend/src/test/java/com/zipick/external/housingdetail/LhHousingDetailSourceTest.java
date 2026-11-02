@@ -13,6 +13,16 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class LhHousingDetailSourceTest {
 
     @Test
+    void 전세_원문에서_월임대료가_없다고_명시된_경우만_확인한다() {
+        assertThat(LhHousingDetailSource.isExplicitPureJeonse("든든전세주택 입주자 모집",
+                "든든전세주택은 보증부 월세가 아닌 월임대료가 없는 순수 전세주택으로서" )).isTrue();
+        assertThat(LhHousingDetailSource.isExplicitPureJeonse("든든전세주택 입주자 모집",
+                "월임대료는 공고문을 확인하세요" )).isFalse();
+        assertThat(LhHousingDetailSource.isExplicitPureJeonse("다른전세주택 입주자 모집",
+                "든든전세주택은 월임대료가 없는 순수 전세주택" )).isFalse();
+    }
+
+    @Test
     void 동의서만_있는_서식은_주택분석에서_제외하고_공고문이_포함되면_유지한다() {
         assertThat(LhHousingDetailSource.isConsentFormOnly("붙임1.개인정보 수집 이용 동의서.pdf")).isTrue();
         assertThat(LhHousingDetailSource.isConsentFormOnly("2-2.샘플_금융정보제공동의서.pdf")).isTrue();
@@ -287,6 +297,21 @@ class LhHousingDetailSourceTest {
     }
 
     @Test
+    void 주택목록_내부_표식_제거시_임대조건을_보존한다() {
+        var source = source(new StubDocumentClient("", null));
+        var condition = new DetailedRentalCondition("ELDERLY", "고령자", 16378000L, 75060L, "{}");
+        var unit = new DetailedHousingUnit("LH_PDF_LIST:1", null, null, null,
+                "경상북도 포항시 남구 동해면 블루동로2길 25", null, null, null,
+                null, null, "26B", null, null, null, "{}", null, null, 1, null, null,
+                null, null, null, null, null, null, 1L, List.of(condition));
+        var result = source.mergeAttachmentDetails(List.of(), List.of(unit));
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().sourceUnitKey()).isEqualTo("LH_PDF:1");
+        assertThat(result.getFirst().rentalConditions()).containsExactly(condition);
+        assertThat(result.getFirst().supplyCount()).isEqualTo(1L);
+    }
+
+    @Test
     void 같은_도로명과_호수라도_동이_다르면_병합하지_않는다() {
         var source = source(new StubDocumentClient("", null));
         var a = new DetailedHousingUnit("LH_DETAIL:1", null, null, null, "서울특별시 강남구 테헤란로 1 건물A",
@@ -294,6 +319,33 @@ class LhHousingDetailSourceTest {
         var b = new DetailedHousingUnit("LH_FILE:1", null, null, null, "서울특별시 강남구 테헤란로 1 건물B",
                 "102동", "403호", null, null, null, null, null, null, null, null);
         assertThat(source.mergeAttachmentDetails(List.of(a), List.of(b))).hasSize(2);
+    }
+
+    @Test
+    void 같은_주소에서_주택형이_다르면_금액을_서로_병합하지_않는다() {
+        var source = source(new StubDocumentClient("", null));
+        var a = new DetailedHousingUnit("LH_DETAIL:1", null, null, null, "경기도 화성시 동탄영천로 108-21",
+                null, null, null, null, null, "행복주택", "26A", null, null, null);
+        var b = new DetailedHousingUnit("LH_FILE:2", null, null, null, "경기도 화성시 동탄영천로 108-21",
+                null, null, null, null, null, "행복주택", "36A", 20000000L, 100000L, null);
+        var result = source.mergeAttachmentDetails(List.of(a), List.of(b));
+        assertThat(result).hasSize(2);
+        assertThat(result.getFirst().rentDeposit()).isNull();
+    }
+
+    @Test
+    void 같은_단지와_주택형의_조건만_동호수에_연결한다() {
+        var source = source(new StubDocumentClient("", null));
+        var target = new DetailedHousingUnit("unit", null, null, null, "경상북도 포항시 남구 동해면 블루동로2길 25",
+                "303동", "1105", null, null, null, "26B(주거약자형)", null, null, null, null);
+        var correct = new DetailedHousingUnit("term", null, null, null, "경상북도 포항시 남구 블루동로2길 25",
+                null, null, null, null, null, "26B(주거약자)", "고령자(주거약자용)", 16378000L, 75060L, "{}");
+        var differentType = new DetailedHousingUnit("other", null, null, null, "경상북도 포항시 남구 블루동로2길 25",
+                null, null, null, null, null, "26A", "청년", 14654000L, 67160L, "{}");
+        var result = source.linkTypeConditions(List.of(target, correct, differentType));
+        assertThat(result.getFirst().rentalConditions()).hasSize(1);
+        assertThat(result.getFirst().rentalConditions().getFirst().rentDeposit()).isEqualTo(16378000L);
+        assertThat(result.getFirst().rentDeposit()).isNull();
     }
 
     @Test

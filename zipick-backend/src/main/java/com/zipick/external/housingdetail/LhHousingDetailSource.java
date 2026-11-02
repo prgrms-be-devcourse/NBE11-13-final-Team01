@@ -313,7 +313,61 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 if (aiDocument != null) matchedAiRows.computeIfAbsent(aiDocument, ignored -> new java.util.HashSet<>()).add(matchingIndex);
             }
         }
-        return merged.stream().map(this::removeInternalTrustMarker).toList();
+        return linkTypeConditions(merged.stream().map(this::removeInternalTrustMarker).toList());
+    }
+
+    /* 같은 공고의 주택형별 계층 조건을 동·호 목록에 연결한다. */
+    List<DetailedHousingUnit> linkTypeConditions(List<DetailedHousingUnit> units) {
+        return units.stream().map(unit -> {
+            if (!StringUtils.hasText(unit.unitNumber())) return unit;
+            String type = explicitHousingType(unit);
+            String location = rentalLocationKey(unit.address());
+            if (type == null || location == null) return unit;
+            Map<String, DetailedRentalCondition> found = new LinkedHashMap<>();
+            for (DetailedHousingUnit row : units) {
+                if (StringUtils.hasText(row.unitNumber()) || row.rentDeposit() == null || row.monthlyRent() == null
+                        || !type.equals(explicitHousingType(row)) || !location.equals(rentalLocationKey(row.address()))
+                        || !StringUtils.hasText(row.supplyType()) || explicitType(row.supplyType()) != null) continue;
+                String name = row.supplyType().trim();
+                String code = "TARGET_" + shortHash(name.replaceAll("\\s+", ""));
+                DetailedRentalCondition candidate = new DetailedRentalCondition(code, name, row.rentDeposit(), row.monthlyRent(), row.rawPayload());
+                DetailedRentalCondition previous = found.putIfAbsent(code, candidate);
+                if (previous != null && (!java.util.Objects.equals(previous.rentDeposit(), candidate.rentDeposit())
+                        || !java.util.Objects.equals(previous.monthlyRent(), candidate.monthlyRent()))) return unit;
+            }
+            if (found.isEmpty()) return unit;
+            List<DetailedRentalCondition> conditions = new ArrayList<>(unit.rentalConditions());
+            for (DetailedRentalCondition condition : found.values()) {
+                if (conditions.stream().noneMatch(existing -> condition.conditionCode().equals(existing.conditionCode()))) conditions.add(condition);
+            }
+            return new DetailedHousingUnit(unit.sourceUnitKey(), unit.complexName(), unit.provinceName(), unit.districtName(),
+                    unit.address(), unit.buildingDong(), unit.unitNumber(), unit.floor(), unit.exclusiveArea(), unit.roomCount(),
+                    unit.housingType(), unit.supplyType(), unit.rentDeposit(), unit.monthlyRent(), unit.rawPayload(),
+                    unit.lotAddress(), unit.roadAddress(), unit.sourceRowNumber(), unit.supplyStatus(), unit.nearbySubwayStation(),
+                    unit.subwayWalkDistanceKm(), unit.elevatorAvailable(), unit.communityFacilityAvailable(), unit.totalParkingSpaces(),
+                    unit.mechanicalParkingAvailable(), unit.mechanicalParkingSpaces(), unit.supplyCount(), conditions);
+        }).toList();
+    }
+
+    private String explicitHousingType(DetailedHousingUnit unit) {
+        String housing = explicitType(unit.housingType());
+        String supply = explicitType(unit.supplyType());
+        if (housing != null && supply != null && !housing.equals(supply)) return null;
+        return housing != null ? housing : supply;
+    }
+
+    private String explicitType(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        Matcher matcher = Pattern.compile("^\\s*(\\d{1,3}[A-Za-z]\\d*)(?:\\s*\\([^)]*\\))?\\s*$").matcher(value);
+        return matcher.matches() ? matcher.group(1).toUpperCase(Locale.ROOT) : null;
+    }
+
+    private String rentalLocationKey(String address) {
+        if (!StringUtils.hasText(address)) return null;
+        Matcher area = Pattern.compile("^(\\S+)\\s+(\\S+(?:시|군))\\s+(\\S+구)\\s+").matcher(address.trim());
+        Matcher road = Pattern.compile("([가-힣0-9]+(?:대로|로|길)(?:\\s*\\d+번길)?\\s*\\d+(?:-\\d+)?)").matcher(address);
+        if (!area.find() || !road.find()) return null;
+        return (area.group(1) + area.group(2) + area.group(3) + road.group(1)).replaceAll("\\s+", "");
     }
 
     private String aiDocumentKey(String key) {
@@ -354,14 +408,20 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 unit.supplyType(),
                 unit.rentDeposit(),
                 unit.monthlyRent(),
-                unit.rawPayload()
+                unit.rawPayload(),
+                unit.lotAddress(), unit.roadAddress(), unit.sourceRowNumber(), unit.supplyStatus(),
+                unit.nearbySubwayStation(), unit.subwayWalkDistanceKm(), unit.elevatorAvailable(),
+                unit.communityFacilityAvailable(), unit.totalParkingSpaces(), unit.mechanicalParkingAvailable(),
+                unit.mechanicalParkingSpaces(), unit.supplyCount(), unit.rentalConditions()
         );
     }
 
     private int findMatchingUnitIndex(List<DetailedHousingUnit> existing, DetailedHousingUnit candidate) {
         String candidateKey = detailKey(candidate);
         for (int index = 0; index < existing.size(); index++) {
-            if (candidateKey.equals(detailKey(existing.get(index)))) {
+            if (candidateKey.equals(detailKey(existing.get(index)))
+                    && compatibleBuildingDong(existing.get(index).buildingDong(), candidate.buildingDong())
+                    && compatibleSupplyType(existing.get(index), candidate)) {
                 return index;
             }
         }
@@ -375,7 +435,8 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 DetailedHousingUnit current = existing.get(index);
                 if (road.equals(roadAddressKey(current.address()))
                         && unit.equals(normalizeUnitNumber(current.unitNumber()))
-                        && compatibleBuildingDong(current.buildingDong(), candidate.buildingDong())) {
+                        && compatibleBuildingDong(current.buildingDong(), candidate.buildingDong())
+                        && compatibleSupplyType(current, candidate)) {
                     matches.add(index);
                 }
             }
@@ -391,7 +452,9 @@ public class LhHousingDetailSource implements HousingDetailSource {
         }
         if (sameAddress.size() == 1) {
             DetailedHousingUnit only = existing.get(sameAddress.getFirst());
-            if (!StringUtils.hasText(only.unitNumber()) || !StringUtils.hasText(candidate.unitNumber())) {
+            if ((!StringUtils.hasText(only.unitNumber()) || !StringUtils.hasText(candidate.unitNumber()))
+                    && compatibleBuildingDong(only.buildingDong(), candidate.buildingDong())
+                    && compatibleSupplyType(only, candidate)) {
                 return sameAddress.getFirst();
             }
         }
@@ -408,6 +471,11 @@ public class LhHousingDetailSource implements HousingDetailSource {
     private boolean compatibleBuildingDong(String first, String second) {
         if (!StringUtils.hasText(first) || !StringUtils.hasText(second)) return true;
         return first.replaceAll("[\\s동]", "").equalsIgnoreCase(second.replaceAll("[\\s동]", ""));
+    }
+
+    private boolean compatibleSupplyType(DetailedHousingUnit first, DetailedHousingUnit second) {
+        if (!StringUtils.hasText(first.supplyType()) || !StringUtils.hasText(second.supplyType())) return true;
+        return first.supplyType().replaceAll("\\s+", "").equalsIgnoreCase(second.supplyType().replaceAll("\\s+", ""));
     }
 
     private DetailedHousingUnit mergeAttachmentDetail(
@@ -514,6 +582,7 @@ public class LhHousingDetailSource implements HousingDetailSource {
         List<com.zipick.notice.dto.ParseCheckpoint> checkpoints = new ArrayList<>();
         Map<String, List<Map<String, Object>>> documentAttributes = new LinkedHashMap<>();
         boolean skipped = false;
+        String verifiedNoMonthlyRentSource = null;
         List<LhAttachment> supported = attachments.stream()
                 .filter(this::isSupportedDocument)
                 .toList();
@@ -522,6 +591,17 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 try {
                     URI downloadUri = detailUri.resolve("/lhapply/lhFile.do?fileid=" + attachment.fileId());
                     byte[] bytes = documentClient.getBytes(downloadUri);
+                    String filename = attachment.fileName().toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+                    if ((filename.contains("qna") || filename.contains("q&a") || filename.contains("질의응답"))
+                            && (filename.endsWith(".hwpx") || filename.endsWith(".hwp"))) {
+                        try {
+                            if (isExplicitPureJeonse(notice.title(), hwpParser.extractText(bytes, filename))) {
+                                verifiedNoMonthlyRentSource = attachment.fileId();
+                            }
+                        } catch (Exception exception) {
+                            log.warn("임대조건 질의응답 확인 실패: fileId={}, reason={}", attachment.fileId(), exception.getMessage());
+                        }
+                    }
                     String key = "LH:" + shortHash(notice.noticeId() + ":" + attachment.fileId()) + ":"
                             + DocumentFingerprint.sha256(bytes);
                     boolean aiEnabled = geminiSupport != null && geminiSupport.enabled();
@@ -529,7 +609,7 @@ public class LhHousingDetailSource implements HousingDetailSource {
                     boolean cacheEnabled = historyRepository != null;
                     boolean spreadsheet = attachment.fileName().toLowerCase(Locale.ROOT).matches(".*\\.(xlsx|xls)$");
                     String parserVersion = aiEnabled && pdf ? "LH_" + geminiSupport.parserVersion()
-                            : spreadsheet ? "LH_SPREADSHEET_V3" : "LH_DOCUMENT_V4";
+                            : spreadsheet ? "LH_SPREADSHEET_V4" : "LH_DOCUMENT_V4";
                     if (!(aiEnabled && com.zipick.external.ai.AiReprocessingScope.includes(notice.noticeId()))
                             && cacheEnabled && historyRepository.findByDocumentKeyAndParserVersion(key, parserVersion)
                             .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent()) {
@@ -561,7 +641,36 @@ public class LhHousingDetailSource implements HousingDetailSource {
                 }
             }
         }
+        if (verifiedNoMonthlyRentSource != null) {
+            for (int i = 0; i < extracted.size(); i++) {
+                DetailedHousingUnit unit = extracted.get(i);
+                if (unit.monthlyRent() == null && unit.rentDeposit() != null && unit.sourceUnitKey().startsWith("LH_FILE:")) {
+                    extracted.set(i, withVerifiedZeroMonthlyRent(unit, verifiedNoMonthlyRentSource));
+                }
+            }
+        }
         return new AttachmentExtraction(List.copyOf(extracted), skipped, List.copyOf(checkpoints), Map.copyOf(documentAttributes));
+    }
+
+    static boolean isExplicitPureJeonse(String noticeTitle, String sourceText) {
+        if (noticeTitle == null || sourceText == null || !noticeTitle.contains("전세")) return false;
+        String compact = sourceText.replaceAll("[\\s\\u00a0]+", "");
+        String title = noticeTitle.replaceAll("[\\s\\u00a0]+", "");
+        Matcher proof = Pattern.compile("([가-힣]{1,12}전세주택)(?:은|는).{0,80}월임대료가없는순수전세주택")
+                .matcher(compact);
+        while (proof.find()) if (title.contains(proof.group(1))) return true;
+        return false;
+    }
+
+    private DetailedHousingUnit withVerifiedZeroMonthlyRent(DetailedHousingUnit u, String sourceId) {
+        String evidence = JSON_MAPPER.writeValueAsString(Map.of("verifiedNoMonthlyRent", Map.of(
+                "fileId", sourceId, "evidence", "월임대료가 없는 순수 전세주택")));
+        return new DetailedHousingUnit(u.sourceUnitKey(), u.complexName(), u.provinceName(), u.districtName(),
+                u.address(), u.buildingDong(), u.unitNumber(), u.floor(), u.exclusiveArea(), u.roomCount(),
+                u.housingType(), u.supplyType(), u.rentDeposit(), 0L, mergeRawPayload(u.rawPayload(), evidence),
+                u.lotAddress(), u.roadAddress(), u.sourceRowNumber(), u.supplyStatus(), u.nearbySubwayStation(),
+                u.subwayWalkDistanceKm(), u.elevatorAvailable(), u.communityFacilityAvailable(), u.totalParkingSpaces(),
+                u.mechanicalParkingAvailable(), u.mechanicalParkingSpaces(), u.supplyCount(), u.rentalConditions());
     }
 
     List<NoticeAttachmentResponse> preserveDocumentAttributes(List<NoticeAttachmentResponse> attachments,

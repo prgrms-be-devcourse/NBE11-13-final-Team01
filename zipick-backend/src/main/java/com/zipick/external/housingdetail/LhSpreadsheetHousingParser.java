@@ -98,10 +98,47 @@ public class LhSpreadsheetHousingParser {
                     ),
                     value(row, header.column("공급유형", "공급구분"), formatter, evaluator),
                     longValue(value(row, header.column("임대보증금", "보증금"), formatter, evaluator)),
-                    longValue(value(row, header.column("월임대료", "월임대료(원)", "임대료"), formatter, evaluator)),
-                    JSON_MAPPER.writeValueAsString(raw)
+                    effectiveMonthlyRent(row, header, formatter, evaluator),
+                    JSON_MAPPER.writeValueAsString(raw),
+                    rankConditions(row, header, formatter, evaluator)
             ));
         }
+    }
+
+    private List<DetailedRentalCondition> rankConditions(Row row, Header header,
+            DataFormatter formatter, FormulaEvaluator evaluator) {
+        Integer otherRank = header.column("2,3순위");
+        Integer otherGroup = header.column("그외");
+        if (otherRank == null && otherGroup == null) return List.of();
+        List<DetailedRentalCondition> result = new ArrayList<>();
+        Long baseDeposit = longValue(value(row, header.column("임대보증금", "보증금"), formatter, evaluator));
+        Long baseRent = effectiveMonthlyRent(row, header, formatter, evaluator);
+        if (baseDeposit != null && baseRent != null) {
+            String code = otherRank != null ? "RANK_1" : "PRIORITY_GROUP";
+            String name = otherRank != null ? "1순위" : "수급자·지원대상 한부모가족·차상위계층";
+            result.add(new DetailedRentalCondition(code, name, baseDeposit, baseRent,
+                    JSON_MAPPER.writeValueAsString(Map.of("source", "엑셀 " + name + " 임대조건"))));
+        }
+        Long deposit = longValue(value(row, otherRank != null ? otherRank : otherGroup, formatter, evaluator));
+        Long halfPrice = longValue(value(row, header.column("반값주택임대료#2"), formatter, evaluator));
+        Long thousandWon = longValue(value(row, header.column("천원주택임대료#2"), formatter, evaluator));
+        if (halfPrice != null && thousandWon != null && !halfPrice.equals(thousandWon)) return List.copyOf(result);
+        Long rent = halfPrice != null ? halfPrice : thousandWon;
+        if (deposit == null || rent == null) return List.copyOf(result);
+        String code = otherRank != null ? "RANK_2_3" : "OTHER_GROUP";
+        String name = otherRank != null ? "2·3순위" : "그 외";
+        result.add(new DetailedRentalCondition(code, name, deposit, rent,
+                JSON_MAPPER.writeValueAsString(Map.of("source", "엑셀 " + name + " 임대조건"))));
+        return List.copyOf(result);
+    }
+
+    private Long effectiveMonthlyRent(Row row, Header header, DataFormatter formatter, FormulaEvaluator evaluator) {
+        Long halfPrice = longValue(value(row, header.column("반값주택임대료"), formatter, evaluator));
+        Long thousandWon = longValue(value(row, header.column("천원주택임대료"), formatter, evaluator));
+        if (halfPrice != null && thousandWon != null && !halfPrice.equals(thousandWon)) return null;
+        if (halfPrice != null) return halfPrice;
+        if (thousandWon != null) return thousandWon;
+        return longValue(value(row, header.column("월임대료", "월임대료(원)", "임대료"), formatter, evaluator));
     }
 
     private Header findHeader(Sheet sheet, DataFormatter formatter, FormulaEvaluator evaluator) {
@@ -126,7 +163,10 @@ public class LhSpreadsheetHousingParser {
                     for (int columnIndex = 0; columnIndex < next.getLastCellNum(); columnIndex++) {
                         String label = normalizeHeader(value(next, columnIndex, formatter, evaluator));
                         if (StringUtils.hasText(label) && label.matches(".*[가-힣a-zA-Z].*")) {
-                            columns.putIfAbsent(label, columnIndex);
+                            if (columns.putIfAbsent(label, columnIndex) != null
+                                    && !columns.get(label).equals(columnIndex)) {
+                                columns.putIfAbsent(label + "#2", columnIndex);
+                            }
                         }
                     }
                 }

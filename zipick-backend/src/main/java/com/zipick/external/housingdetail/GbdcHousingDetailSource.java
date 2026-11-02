@@ -87,7 +87,9 @@ public class GbdcHousingDetailSource implements HousingDetailSource {
             try {
                 byte[] bytes = documentClient.getBytes(URI.create(attachment.downloadUrl()));
                 boolean aiEnabled = geminiSupport != null && geminiSupport.enabled() && "pdf".equals(attachment.extension());
-                String version = aiEnabled ? "GBDC_" + geminiSupport.parserVersion() : "GBDC_DOCUMENT_V3";
+                boolean spreadsheet = "xlsx".equals(attachment.extension()) || "xls".equals(attachment.extension());
+                String version = spreadsheet ? "GBDC_SPREADSHEET_V4"
+                        : aiEnabled ? "GBDC_" + geminiSupport.parserVersion() : "GBDC_DOCUMENT_V3";
                 String key = "GBDC:" + shortHash(notice.noticeId() + ":" + attachment.sourceKey())
                         + ":" + DocumentFingerprint.sha256(bytes);
                 if (historyRepository != null && historyRepository.findByDocumentKeyAndParserVersion(key, version)
