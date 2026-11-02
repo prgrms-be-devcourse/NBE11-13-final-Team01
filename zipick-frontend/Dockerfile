@@ -1,4 +1,4 @@
-# 프론트 이미지: 정적 파일을 빌드해 Caddy 로 서빙한다. /api 는 Caddy 가 백엔드로 넘긴다.
+# 프론트 이미지: 정적 파일을 빌드해 Caddy 로 서빙한다. /api 와 API 문서(Swagger)는 Caddy 가 백엔드로 넘긴다.
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
