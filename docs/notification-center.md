@@ -94,7 +94,7 @@ if (!s.channels().isEmpty())
 | 위치 | 역할 |
 | --- | --- |
 | `notification/domain/NotificationSetting` + `notification_settings` | 알림 on/off, 슬랙·이메일 주소, 마감 일수, 새 공고 여부, 광고 동의(+시각) |
-| `notification/service/NotificationService` | 설정 화면 뒷단. 테스트 발송은 저장된 주소로 `delivery: now`, 내역은 `tag=user:{id}` |
+| `notification/service/NotificationService` | 설정 화면 뒷단. 설정 저장·조회, 내역은 `tag=user:{id}` |
 | `notification/service/NotificationScheduler` | 마감·새 공고를 찾아 설정의 주소·채널로 요청 (dedupeKey 로 중복 없음) |
 | `notification/service/MarketingWindow` | 광고 21~08시 회피 (다음 08:00) |
 | `notification/campaign/*` + `campaigns` | 소식 메일 캠페인: 동의자 대상 선정 → 채널 조합별 묶음 요청 → 집계·취소. `/api/v1/admin/campaigns` (ROLE_ADMIN), 화면 `/admin/campaigns` |

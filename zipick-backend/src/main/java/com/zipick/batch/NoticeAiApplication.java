@@ -1,6 +1,9 @@
 package com.zipick.batch;
 
 import com.zipick.ZipickApplication;
+import com.zipick.admin.collection.CollectionJobType;
+import com.zipick.admin.collection.CollectionRun;
+import com.zipick.admin.collection.CollectionRunRecorder;
 import com.zipick.external.ai.NoticeAiEnrichmentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +13,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /** 기본 공고 수집과 분리하여 첨부문서 AI 보완만 한 번 실행합니다. */
 public final class NoticeAiApplication {
@@ -27,13 +31,28 @@ public final class NoticeAiApplication {
         try (LocalCollectorObservation observation = LocalCollectorObservation.start("ai");
              ConfigurableApplicationContext context = application.run(withAiEnabled(args))) {
             if (observation != null) observation.attachAfterStartup();
+            // 테스트의 가짜 컨텍스트는 이 빈을 주지 않으므로 null 이면 기록 없이 진행한다
+            CollectionRunRecorder recorder = context.getBean(CollectionRunRecorder.class);
+            CollectionRun run = recorder == null ? null : recorder.start(CollectionJobType.AI);
+            Map<String, Object> summary = CollectionRunRecorder.summary();
+            try {
             NoticeAiEnrichmentService service = context.getBean(NoticeAiEnrichmentService.class);
             NoticeAiEnrichmentService.Result result = service.enrichExistingNotices();
             log.info("AI 보조 수집 완료: 대상={}, 처리={}, 상세주택 반영={}, 실패={}, 정규화 후보={}",
                     result.candidates(), result.processed(), result.detailed(), result.failed(),
                     result.normalizationCandidates());
+            summary.put("candidates", result.candidates());
+            summary.put("processed", result.processed());
+            summary.put("detailed", result.detailed());
+            summary.put("failed", result.failed());
+            summary.put("normalizationCandidates", result.normalizationCandidates());
             // AI 보완으로 상세 주택이 새로 생길 수 있어 주변 인프라를 한 번 더 채운다 (대상이 없으면 SELECT 한 번)
-            InfraCollectionStep.run(context, "AI 보완 후");
+            summary.put("infra", InfraCollectionStep.summarize(InfraCollectionStep.run(context, "AI 보완 후")));
+            if (recorder != null) recorder.success(run, summary);
+            } catch (RuntimeException e) {
+                if (recorder != null) recorder.fail(run, e, summary);
+                throw e;
+            }
             if (observation != null) observation.success();
         }
     }

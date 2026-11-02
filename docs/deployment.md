@@ -64,7 +64,23 @@ Vite의 `VITE_*` 환경 변수는 프론트엔드 **빌드 시점** 값입니다
 
 수집기 둘은 compose `profiles: [batch]`라 평소엔 뜨지 않고, 실행할 때만 떴다가 지워집니다. 셋 다 `COLLECTOR_API_ENABLED=false`(수집 API 미등록)이고, 웹 서버는 `EXTERNAL_PROXY_ENABLED=false`(`/api/external/myhome/**` 미등록)입니다.
 
-실행은 `deploy/monitoring/run-daily-collection.sh`가 기본 → AI 순서로 이어서 부르고(`collect-notices-observed.sh basic|ai`, 같은 잠금이라 동시에 돌지 않음), 기본 수집만 지표 없이 돌릴 때는 `deploy/collect-notices.sh`를 씁니다. 예약 실행(cron)은 서버에서 따로 등록합니다.
+실행은 `deploy/monitoring/run-daily-collection.sh`가 기본 → AI 순서로 이어서 부르고(`collect-notices-observed.sh basic|ai|infra`, 같은 잠금이라 동시에 돌지 않음), 기본 수집만 지표 없이 돌릴 때는 `deploy/collect-notices.sh`를 씁니다. 예약 실행(cron)은 서버에서 따로 등록합니다.
+
+### 운영자 화면 (/admin)
+
+사이트 주소 뒤에 `/admin` 을 붙이면 들어갑니다 (서비스 화면과 분리된 독립 셸). 로그인은 `/admin/login` 에서 따로 하며, 서버의 `POST /api/auth/admin/login` 이 `users.role = 'ROLE_ADMIN'` 이 아닌 계정에는 비밀번호가 맞아도 토큰을 주지 않습니다(일반 로그인 실패와 같은 401). 수집 현황, AI 미완료 문서, 공고·주택, 회원, 알림 이력, 캠페인을 다룹니다. API 는 모두 `/api/v1/admin/**` 아래이고 `SecurityConfig` 가 `ROLE_ADMIN` 을 다시 요구합니다. 운영자로 만들려면 DB 에서 `update users set role='ROLE_ADMIN' where email=...`.
+
+- **테이블**: `zipick-backend/db/admin-init.sql` (`collection_run`, `collection_request`, `ai_document_issue`, `user_activity`). 모두 신규 테이블이라 운영 DB 에 그대로 적용하면 됩니다 (`ddl-auto: validate` 라 적용 전에는 서버가 뜨지 않습니다).
+- **사용자 행동**: 프론트(`components/ActivityTracker.tsx`)가 화면 진입·클릭을 5초마다 묶어 `POST /api/v1/activity` 로 보내고(비로그인 포함, 브라우저별 임의 id 로 묶음), 로그인은 서버가 직접 남깁니다. IP 는 Caddy 가 붙이는 `X-Forwarded-For` 의 첫 값입니다. 운영자 화면 "사용자 행동" 에서 누가 어떤 IP 로 어디까지 보고 눌렀는지 시간순으로 봅니다. 입력값은 기록하지 않고, 90일 지난 기록은 매일 04:20 에 지웁니다. IP·행동 기록은 개인정보이므로 개인정보처리방침에 수집 항목·보관 기간을 적어야 합니다.
+- **수집 현황**: 수집기 진입점이 실행마다 `collection_run` 에 시작·결과를 남깁니다 (`trigger_type` 은 cron 이면 `CRON`, 운영자 요청이면 `ADMIN`).
+- **수동 실행**: 화면은 `collection_request` 에 요청 행만 남기고, 앱 서버 cron 이 1분마다 집어 collector 컨테이너로 실행합니다. 웹 서버가 수집을 직접 돌리지 않는 이유는 위 프로세스 분리와 같습니다. 서버에 한 줄 등록합니다.
+
+  ```
+  * * * * * cd $HOME/zipick && bash monitoring/run-requested-collection.sh >> $HOME/zipick/logs/collector-admin.log 2>&1
+  ```
+
+  일일 수집과 같은 flock 을 쓰므로 겹치면 요청은 `PENDING` 으로 남았다가 다음 분에 다시 시도합니다. 종류는 `BASIC`·`AI`·`INFRA`(인프라만, `InfraCollectionApplication`)·`FULL`(기본 → AI).
+- **AI 미완료 문서**: Gemini PDF 추출이 미완료·빈 결과·예외로 끝난 첨부를 `ai_document_issue` 에 남깁니다 (문서당 한 행, 성공하면 삭제). 운영자가 "확인함" 으로 접을 수 있습니다.
 
 아래 표의 웹 스케줄러(기동·보정·일일 cron)는 `INFRA_COLLECTION_ENABLED=true`인 환경(로컬 기본값)에서만 실제로 수집합니다.
 

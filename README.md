@@ -30,10 +30,11 @@ psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/local-init.sql
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/notice-init.sql
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/infra-init.sql
 psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/guide-init.sql
+psql -U <DB_USERNAME> -d zipick -f zipick-backend/db/admin-init.sql
 ```
 
 **이미 쓰던 로컬 DB에 AI 신청 준비 가이드만 추가하는 경우에는 마지막 한 줄만** 실행하면 됩니다.
-`guide-init.sql`은 `DROP` 없이 `CREATE TABLE IF NOT EXISTS`만 쓰므로 여러 번 실행해도 기존 데이터가 지워지지 않습니다.
+`guide-init.sql`·`admin-init.sql`은 `DROP` 없이 `CREATE TABLE IF NOT EXISTS`만 쓰므로 여러 번 실행해도 기존 데이터가 지워지지 않습니다.
 다른 세 파일을 다시 실행할 필요는 없습니다.
 
 > **주의:** 위 네 파일 중 `guide-init.sql`을 제외한 세 개는 기존 테이블을 삭제하고 재생성합니다. **새 로컬 DB 초기화 전용**으로 사용하며, 배포 DB에는 실행하지 마세요. `notice-init.sql`이 공고·주택을 참조하는 관심 공고와 인프라 테이블도 먼저 삭제하므로, 반드시 위 세 파일을 순서대로 모두 실행해야 합니다. 상세 내용: [데이터베이스 설정](docs/database.md).

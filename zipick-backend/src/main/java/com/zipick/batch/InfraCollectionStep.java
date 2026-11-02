@@ -5,6 +5,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 
+import java.util.Map;
+import java.util.Optional;
+
 /**
  * 수집기 진입점이 공고 처리 직후에 주변 인프라 수집을 이어서 실행한다.
  *
@@ -19,11 +22,20 @@ final class InfraCollectionStep {
     private InfraCollectionStep() {
     }
 
-    static void run(ApplicationContext context, String trigger) {
+    /** 실행 기록(collection_run.summary)에 넣을 요약. 꺼져 있거나 실패하면 빈 Optional */
+    static Optional<HousingInfraCollectionService.CollectionSummary> run(ApplicationContext context, String trigger) {
         try {
-            context.getBean(HousingInfraCollectionService.class).collect(trigger);
+            return context.getBean(HousingInfraCollectionService.class).collect(trigger);
         } catch (RuntimeException e) {
             log.warn("주변 인프라 수집을 실행하지 못했습니다: {}", e.toString());
+            return Optional.empty();
         }
+    }
+
+    static Map<String, Object> summarize(Optional<HousingInfraCollectionService.CollectionSummary> summary) {
+        return summary.<Map<String, Object>>map(s -> Map.of(
+                "targets", s.targets(), "saved", s.saved(), "dataErrors", s.dataErrors(),
+                "apiErrors", s.apiErrors(), "apiCalls", s.apiCalls(), "aborted", s.aborted()
+        )).orElse(Map.of("skipped", true));
     }
 }

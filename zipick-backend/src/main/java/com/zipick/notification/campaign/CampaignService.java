@@ -38,6 +38,7 @@ public class CampaignService {
     private final CampaignRepository campaigns;
     private final NotificationSettingRepository settings;
     private final NotificationClient client;
+    private final com.zipick.notification.service.NotificationChannelPolicy policy;
     private final NotificationProperties props;
 
     @Transactional
@@ -58,7 +59,7 @@ public class CampaignService {
         // 알림센터가 지금 보낼 수 있는 채널만 (이메일이 꺼져 있으면 슬랙만)
         Map<String, List<NotificationSetting>> byChannels = new LinkedHashMap<>();
         for (NotificationSetting s : settings.findAllByEnabledTrueAndMarketingConsentTrue()) {
-            List<String> usable = client.usableChannels(s.channels());
+            List<String> usable = client.usableChannels(s.channels(policy.slackAllowed(s.getUserId())));
             if (usable.isEmpty()) continue;
             byChannels.computeIfAbsent(String.join(",", usable), k -> new ArrayList<>()).add(s);
         }
@@ -69,7 +70,7 @@ public class CampaignService {
         for (List<NotificationSetting> group : byChannels.values()) {
             List<BatchRequest.Recipient> list = group.stream().map(s -> new BatchRequest.Recipient(s.recipient(), variables(c),
                     "CAMPAIGN:" + c.getId() + ":" + s.getUserId(), Map.of(NotificationRequest.TAG_USER, String.valueOf(s.getUserId())))).toList();
-            BatchResponse b = client.createBatch(new BatchRequest(NotificationRequest.SOURCE, TEMPLATE, client.usableChannels(group.get(0).channels()), at,
+            BatchResponse b = client.createBatch(new BatchRequest(NotificationRequest.SOURCE, TEMPLATE, client.usableChannels(group.get(0).channels(policy.slackAllowed(group.get(0).getUserId()))), at,
                     Map.of(TAG_CAMPAIGN, String.valueOf(c.getId())), list));
             batchIds.add(b.id());
             recipients += list.size();

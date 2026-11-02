@@ -49,6 +49,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class NotificationSchedulerTest {
 
+    @org.junit.jupiter.api.BeforeEach
+    void slackAllowedByDefault() {
+        org.mockito.Mockito.lenient().when(policy.slackAllowed(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+    }
+
+
     private static final LocalDate TODAY = LocalDate.now(ZoneId.of("Asia/Seoul"));
 
     @Mock NotificationClient client;
@@ -57,6 +63,7 @@ class NotificationSchedulerTest {
     @Mock NoticeSummaryQueryRepository noticeRepository;
     @Mock NotificationCursorRepository cursorRepository;
     @Mock RecommendationService recommendationService;
+    @Mock NotificationChannelPolicy policy;
     @InjectMocks NotificationScheduler scheduler;
 
     @org.junit.jupiter.api.BeforeEach

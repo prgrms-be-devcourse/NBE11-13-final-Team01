@@ -146,6 +146,11 @@ zipick:
     normal-call-limit: 18
     timeout: 5m
 
+  collection:
+    # 수집기 실행 기록(collection_run)에 남길 실행 주체. cron 은 비워 두고(CRON),
+    # 운영자 요청 실행기(deploy/monitoring/run-requested-collection.sh)가 ADMIN 과 요청 id 를 넘긴다
+    trigger: ${COLLECTION_TRIGGER:CRON}
+    request-id: ${COLLECTION_REQUEST_ID:}
   # 공급주택 주변 생활 인프라 (카카오 로컬 카테고리 검색)
   infra:
     # 인프라는 자주 바뀌지 않아 길게 잡는다. 만료되면 배치가 다시 수집한다.
