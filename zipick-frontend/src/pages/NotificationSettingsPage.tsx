@@ -17,12 +17,20 @@ const deliveryText = (e: NotificationEvent) =>
   e.deliveries.map((d) => `${d.channel} ${d.status === 'SENT' ? '보냄' : d.status === 'FAILED' ? '실패' : '대기'}${d.lastError ? `(${d.lastError})` : ''}`).join(' · ');
 const errText = (e: unknown) => (e instanceof Error ? e.message : '요청에 실패했어요.');
 
-function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: React.ReactNode; disabled?: boolean }) {
+/**
+ * description 을 주면 한 줄을 다 차지하는 설정 행이 된다(글 왼쪽, 스위치 오른쪽).
+ * 안 주면 기존처럼 스위치 + 라벨이 붙은 인라인 형태다.
+ */
+function Switch({ checked, onChange, label, description, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: React.ReactNode; description?: React.ReactNode; disabled?: boolean }) {
   return (
-    <label className={styles.switch}>
+    <label className={`${styles.switch} ${description === undefined ? '' : styles.switchRow}`}>
+      {/* input + track 은 붙어 있어야 켜짐 상태 CSS가 먹는다. 순서는 order 로 뒤집는다. */}
       <input type="checkbox" role="switch" aria-checked={checked} checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span className={styles.track} aria-hidden="true"><span className={styles.knob} /></span>
-      <span className={styles.switchLabel}>{label}</span>
+      <span className={styles.switchText}>
+        <span className={styles.switchLabel}>{label}</span>
+        {description !== undefined && <span className={styles.switchDesc}>{description}</span>}
+      </span>
     </label>
   );
 }
@@ -98,74 +106,89 @@ export default function NotificationSettingsPage() {
       )}
 
       <fieldset className={styles.fields} disabled={!s}>
-        <section className={styles.panel}>
-          <div className={styles.rowBetween}>
-            <div>
-              <h2>알림 받기</h2>
-              <p className={styles.sub}>{enabled ? '켜져 있어요. 아래에서 무엇을 어디로 받을지 정해요.' : '꺼져 있어요. 켜면 아래 설정대로 보내 드려요.'}</p>
+        {/* 알림 받기 · 받는 곳 · 무엇을 받을까요는 한 설정 묶음이라 카드 하나에 담고 구분선으로만 나눈다. */}
+        <div className={styles.card}>
+          <section className={styles.block}>
+            <div className={styles.rowBetween}>
+              <div>
+                <h2>알림 받기</h2>
+                <p className={styles.sub}>{enabled ? '켜져 있어요. 아래에서 무엇을 어디로 받을지 정해요.' : '꺼져 있어요. 켜면 아래 설정대로 보내 드려요.'}</p>
+              </div>
+              <Switch checked={enabled} onChange={mark(setEnabled)} label={enabled ? '켜짐' : '꺼짐'} />
             </div>
-            <Switch checked={enabled} onChange={mark(setEnabled)} label={enabled ? '켜짐' : '꺼짐'} />
-          </div>
-        </section>
+          </section>
 
-        <section className={styles.panel}>
-          <h2>받는 곳</h2>
-          <label className={styles.field}>
-            <span>이메일 {s && !s.emailAvailable && <em className={styles.warn}>(알림센터에 이메일 발송 설정이 없어 지금은 보낼 수 없어요)</em>}</span>
-            <input type="email" placeholder={user?.email ?? 'me@example.com'} value={email} onChange={(e) => mark(setEmail)(e.target.value)} autoComplete="email" />
-            {!email.trim() && <small className={styles.hint}>받을 이메일이 없으면 알림이 가지 않아요.</small>}
-          </label>
+          <section className={styles.block}>
+            <h2>받는 곳</h2>
+            <label className={styles.field}>
+              <span>이메일 {s && !s.emailAvailable && <em className={styles.warn}>(알림센터에 이메일 발송 설정이 없어 지금은 보낼 수 없어요)</em>}</span>
+              <input type="email" placeholder={user?.email ?? 'me@example.com'} value={email} onChange={(e) => mark(setEmail)(e.target.value)} autoComplete="email" />
+              {!email.trim() && <small className={styles.hint}>받을 이메일이 없으면 알림이 가지 않아요.</small>}
+            </label>
 
-          {slackAllowed && (
-            <div className={styles.adminBox}>
-              <div className={styles.adminTag}>운영자 전용</div>
-              <label className={styles.field}>
-                <span>슬랙 웹훅 URL {s?.slackConfigured && <em className={styles.muted}>(저장됨 {s.slackWebhookMasked})</em>}</span>
-                <input
-                  type="text"
-                  placeholder={s?.slackConfigured ? '바꾸려면 새 주소를 넣으세요' : 'https://hooks.slack.com/services/…'}
-                  value={webhook}
-                  onChange={(e) => mark(setWebhook)(e.target.value)}
-                  autoComplete="off"
-                />
-              </label>
-              {s?.slackConfigured && (
-                <Switch checked={keepWebhook} onChange={mark(setKeepWebhook)} label="기존 웹훅 유지 (끄고 저장하면 삭제)" />
-              )}
-              <small className={styles.hint}>일반 회원에게는 이 항목이 보이지 않고, 서버도 운영자가 아니면 슬랙을 거부해요.</small>
+            {slackAllowed && (
+              <div className={styles.adminBox}>
+                <div className={styles.adminTag}>운영자 전용</div>
+                <label className={styles.field}>
+                  <span>슬랙 웹훅 URL {s?.slackConfigured && <em className={styles.muted}>(저장됨 {s.slackWebhookMasked})</em>}</span>
+                  <input
+                    type="text"
+                    placeholder={s?.slackConfigured ? '바꾸려면 새 주소를 넣으세요' : 'https://hooks.slack.com/services/…'}
+                    value={webhook}
+                    onChange={(e) => mark(setWebhook)(e.target.value)}
+                    autoComplete="off"
+                  />
+                </label>
+                {s?.slackConfigured && (
+                  <Switch checked={keepWebhook} onChange={mark(setKeepWebhook)} label="기존 웹훅 유지 (끄고 저장하면 삭제)" />
+                )}
+                <small className={styles.hint}>일반 회원에게는 이 항목이 보이지 않고, 서버도 운영자가 아니면 슬랙을 거부해요.</small>
+              </div>
+            )}
+          </section>
+
+          <section className={styles.block}>
+            <h2>무엇을 받을까요</h2>
+            <div className={styles.items}>
+              <div className={styles.item}>
+                <div className={styles.itemText}>
+                  <span className={styles.itemTitle}>관심 공고 접수 마감</span>
+                  <span className={styles.itemDesc}>마감 며칠 전에 알려드릴지 골라 주세요. 여러 개 고를 수 있어요.</span>
+                </div>
+                <div className={styles.chips}>
+                  {DEADLINE_OPTIONS.map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className={`${styles.chip} ${days.includes(d) ? styles.chipOn : ''}`}
+                      aria-pressed={days.includes(d)}
+                      onClick={() => toggleDay(d)}
+                    >
+                      {d === 0 ? '마감 당일 (D-day)' : `${d}일 전 (D-${d})`}
+                    </button>
+                  ))}
+                </div>
+                {days.length === 0 && <small className={styles.hint}>마감 알림을 받지 않아요.</small>}
+              </div>
+
+              <Switch
+                checked={newMatch}
+                onChange={mark(setNewMatch)}
+                label="내 조건에 맞는 새 공고"
+                description="저장한 조건과 맞는 공고가 새로 올라오면 바로 알려드려요."
+              />
+
+              <Switch
+                checked={marketing}
+                onChange={mark(setMarketing)}
+                label="(광고) 소식·이벤트 메일"
+                description={s?.marketingConsent && s.marketingConsentedAt
+                  ? `집픽 소식과 이벤트 안내를 받아요. · 동의 ${s.marketingConsentedAt.slice(0, 10)}`
+                  : '집픽 소식과 이벤트 안내를 받아요. 알림과 별개로 끄고 켜질 수 있어요.'}
+              />
             </div>
-          )}
-        </section>
-
-        <section className={styles.panel}>
-          <h2>무엇을 받을까요</h2>
-          <div className={styles.group}>
-            <div className={styles.groupTitle}>관심 공고 접수 마감</div>
-            <div className={styles.chips}>
-              {DEADLINE_OPTIONS.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  className={`${styles.chip} ${days.includes(d) ? styles.chipOn : ''}`}
-                  aria-pressed={days.includes(d)}
-                  onClick={() => toggleDay(d)}
-                >
-                  {d === 0 ? '마감 당일 (D-day)' : `${d}일 전 (D-${d})`}
-                </button>
-              ))}
-            </div>
-            {days.length === 0 && <small className={styles.hint}>마감 알림을 받지 않아요.</small>}
-          </div>
-          <Switch checked={newMatch} onChange={mark(setNewMatch)} label="내 조건에 맞는 새 공고가 올라오면 알림" />
-          <Switch
-            checked={marketing}
-            onChange={mark(setMarketing)}
-            label={<>
-              (광고) 소식·이벤트 메일 받기
-              {s?.marketingConsent && s.marketingConsentedAt && <em className={styles.muted}> · 동의 {s.marketingConsentedAt.slice(0, 10)}</em>}
-            </>}
-          />
-        </section>
+          </section>
+        </div>
 
         {save.isError && <div className={styles.error} role="alert">{errText(save.error)}</div>}
 

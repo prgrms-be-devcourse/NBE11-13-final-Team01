@@ -1,16 +1,23 @@
 /* 알림 설정 페이지. DESIGN.md 토큰을 이 루트(.zipick-theme)에서만 쓴다 */
 .page {
-  max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;
+  max-width: 720px; margin: 0 auto; padding-bottom: 32px; display: flex; flex-direction: column; gap: 20px;
   font-family: var(--zipick-font-family); font-size: 14px; line-height: 1.65; color: var(--zipick-ink);
 }
 .head h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.45; font-weight: 760; letter-spacing: -.5px; }
 .head p { margin: 0; color: var(--zipick-body); }
-.fields { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
-.panel {
+/* 저장 버튼은 위 카드에 딸린 것이라 페이지 간격(20px)보다 좀 붙여 둔다. */
+.fields { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.card, .panel {
   background: var(--zipick-white); border: 1px solid var(--zipick-line); border-radius: var(--zipick-radius-panel);
-  box-shadow: var(--zipick-shadow-panel); padding: 20px 24px; display: flex; flex-direction: column; gap: 14px;
+  box-shadow: var(--zipick-shadow-panel);
 }
-.panel h2 { margin: 0; font-size: 16px; font-weight: 700; }
+/* 구분선이 카드 가장자리까지 닿지 않도록 가로 여백은 카드가, 세로 여백은 각 묶음이 가진다. */
+.card { padding: 0 24px; }
+.block { display: flex; flex-direction: column; gap: 14px; padding: 20px 0; }
+.panel { display: flex; flex-direction: column; gap: 14px; padding: 20px 24px; }
+.block + .block { border-top: 1px solid var(--zipick-line); }
+/* 제목 위계: h1 22px > 묶음 제목 18px > 항목 제목 13.5px */
+.block h2, .panel h2 { margin: 0; font-size: 18px; font-weight: 750; line-height: 1.4; letter-spacing: -.3px; }
 .rowBetween { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .sub { margin: 4px 0 0; color: var(--zipick-body); font-size: 13px; }
 .muted { color: var(--zipick-soft); font-style: normal; font-size: 12.5px; }
@@ -25,8 +32,11 @@
 .adminBox { position: relative; margin-top: 4px; padding: 16px; border: 1px dashed #c9d6ee; border-radius: 12px; background: var(--zipick-blue-mist); display: flex; flex-direction: column; gap: 10px; }
 .adminTag { align-self: flex-start; padding: 2px 8px; border-radius: 6px; background: var(--zipick-navy); color: #fff; font-size: 11px; font-weight: 700; }
 
-.group { display: flex; flex-direction: column; gap: 8px; }
-.groupTitle { font-size: 13px; font-weight: 650; }
+.items { display: flex; flex-direction: column; gap: 18px; }
+.item { display: flex; flex-direction: column; gap: 10px; }
+.itemText { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.itemTitle { font-size: 13.5px; font-weight: 700; letter-spacing: -.1px; }
+.itemDesc { color: var(--zipick-body); font-size: 12.5px; line-height: 1.5; word-break: keep-all; }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip { border: 1px solid var(--zipick-line); background: var(--zipick-white); color: var(--zipick-body); border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer; }
 .chip:hover { border-color: #d6deea; }
@@ -42,6 +52,12 @@
 .switch input:focus-visible + .track { outline: 3px solid #2059d660; outline-offset: 2px; }
 .fields:disabled .track { opacity: .5; }
 .switchLabel { color: var(--zipick-ink); }
+/* 설명이 있는 스위치는 글이 왼쪽, 토글이 오른쪽에 오는 설정 행이 된다(알림 받기 행과 같은 모양). */
+.switchRow { display: flex; align-items: center; gap: 16px; width: 100%; }
+.switchRow .switchText { order: 1; flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.switchRow .track { order: 2; }
+.switchRow .switchLabel { font-size: 13.5px; font-weight: 700; letter-spacing: -.1px; }
+.switchDesc { color: var(--zipick-body); font-size: 12.5px; line-height: 1.5; word-break: keep-all; }
 
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .primary, .ghost {
@@ -66,6 +82,8 @@
 
 @media (max-width: 520px) {
   .panel { padding: 16px; }
+  .card { padding: 0 16px; }
+  .block { padding: 16px 0; }
   .rowBetween { flex-direction: column; align-items: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) { .track, .knob { transition: none; } }

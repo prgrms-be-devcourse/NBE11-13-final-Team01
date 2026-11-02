@@ -31,20 +31,20 @@ export default function CalendarPage() {
   return (
     <div className={`${styles.page} content calendar-page`}>
       <div className={styles.heading}>
-        <div>
-          <h1>관심 공고 · 일정</h1>
-          <p className="muted">저장한 공고와 신청 일정을 한곳에서 확인하세요.</p>
-          <p className={styles.counts}>
-            저장한 공고 {list.data ? `${list.data.length}건` : list.isError ? '조회 실패' : '확인 중'} · 일정{' '}
-            {schedule.data ? `${schedule.data.length}건` : schedule.isError ? '조회 실패' : '확인 중'}
-          </p>
-        </div>
-        <Link className="btn btn--ghost" to="/recommendations">추천 목록으로</Link>
+        <p className={styles.eyebrow}>신청 시기를 놓치지 않도록</p>
+        <h1>관심 공고 · 일정</h1>
+        <p className={styles.description}>저장한 공고와 신청 일정을 한곳에서 확인하세요.</p>
       </div>
 
       <div className={styles.scheduleLayout}>
         <section className="panel" aria-label="관심 공고 캘린더">
-          <h2 className="panel__title">공고 캘린더</h2>
+          <h2 className="panel__title">
+            공고 캘린더
+            <span className={styles.counts}>
+              저장한 공고 {list.data ? `${list.data.length}건` : list.isError ? '조회 실패' : '확인 중'} · 일정{' '}
+              {schedule.data ? `${schedule.data.length}건` : schedule.isError ? '조회 실패' : '확인 중'}
+            </span>
+          </h2>
           {schedule.isPending && <p className={styles.state} role="status">일정을 불러오는 중이에요…</p>}
           {schedule.isError && <div className="error" role="alert">일정을 불러오지 못했어요. <button className="btn btn--ghost btn--small" onClick={() => schedule.refetch()}>다시 시도</button></div>}
           {schedule.data && schedule.data.length === 0 && <p className={styles.state}>표시할 일정이 없어요. 관심 공고를 저장하면 공고의 일정이 표시돼요.</p>}
@@ -104,8 +104,16 @@ export default function CalendarPage() {
               </div>
               <h3 className="card__title">{s.notice.title}</h3>
               <p className="card__addr">
-                {s.notice.regions.join(', ')}
-                {s.notice.housingCount > 0 && ` · 주택 ${s.notice.housingCount}곳`}
+                <span className={styles.addrItem}>
+                  <PinIcon />
+                  {s.notice.regions.join(', ')}
+                </span>
+                {s.notice.housingCount > 0 && (
+                  <span className={styles.addrItem}>
+                    <HouseIcon />
+                    주택 {s.notice.housingCount}곳
+                  </span>
+                )}
               </p>
               <dl className="card__facts">
                 <div><dt>공고</dt><dd>{s.notice.announcedAt ?? '—'}</dd></div>
@@ -141,5 +149,25 @@ export default function CalendarPage() {
       </section>
       <DeadlineAlertPrompt />
     </div>
+  );
+}
+
+/** 지역 표시용 핀. HousingDetail의 주소 아이콘과 같은 모양이다. */
+function PinIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
+  );
+}
+
+/** 주택 수 표시용. */
+function HouseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m3 10 9-7 9 7v11H3V10Z" />
+      <path d="M9 21v-8h6v8" />
+    </svg>
   );
 }
