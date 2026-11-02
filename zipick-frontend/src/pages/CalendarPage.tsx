@@ -31,20 +31,20 @@ export default function CalendarPage() {
   return (
     <div className={`${styles.page} content calendar-page`}>
       <div className={styles.heading}>
-        <div>
-          <h1>관심 공고 · 일정</h1>
-          <p className="muted">저장한 공고와 신청 일정을 한곳에서 확인하세요.</p>
-          <p className={styles.counts}>
-            저장한 공고 {list.data ? `${list.data.length}건` : list.isError ? '조회 실패' : '확인 중'} · 일정{' '}
-            {schedule.data ? `${schedule.data.length}건` : schedule.isError ? '조회 실패' : '확인 중'}
-          </p>
-        </div>
-        <Link className="btn btn--ghost" to="/recommendations">추천 목록으로</Link>
+        <p className={styles.eyebrow}>신청 시기를 놓치지 않도록</p>
+        <h1>관심 공고 · 일정</h1>
+        <p className={styles.description}>저장한 공고와 신청 일정을 한곳에서 확인하세요.</p>
       </div>
 
       <div className={styles.scheduleLayout}>
         <section className="panel" aria-label="관심 공고 캘린더">
-          <h2 className="panel__title">공고 캘린더</h2>
+          <h2 className="panel__title">
+            공고 캘린더
+            <span className={styles.counts}>
+              저장한 공고 {list.data ? `${list.data.length}건` : list.isError ? '조회 실패' : '확인 중'} · 일정{' '}
+              {schedule.data ? `${schedule.data.length}건` : schedule.isError ? '조회 실패' : '확인 중'}
+            </span>
+          </h2>
           {schedule.isPending && <p className={styles.state} role="status">일정을 불러오는 중이에요…</p>}
           {schedule.isError && <div className="error" role="alert">일정을 불러오지 못했어요. <button className="btn btn--ghost btn--small" onClick={() => schedule.refetch()}>다시 시도</button></div>}
           {schedule.data && schedule.data.length === 0 && <p className={styles.state}>표시할 일정이 없어요. 관심 공고를 저장하면 공고의 일정이 표시돼요.</p>}
