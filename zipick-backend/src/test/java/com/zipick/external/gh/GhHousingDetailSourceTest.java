@@ -12,6 +12,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GhHousingDetailSourceTest {
 
     @Test
+    void 주택형과_대상이_유일한_임대조건만_연결한다() {
+        var unit = new com.zipick.external.housingdetail.DetailedHousingUnit("u", "단지", null, null,
+                "경기도 연천군 주소", null, null, null, null, null, "25A", "기업체기숙사", null, null, null);
+        var match = new com.zipick.external.housingdetail.RentalTermsPdfParser.Terms(
+                "25A", "기업체기숙사", 21200000, 128960, 2, "25A 기업체기숙사 21,200 1,000 20,200 128,960");
+        var other = new com.zipick.external.housingdetail.RentalTermsPdfParser.Terms(
+                "25A", "청년", 18000000, 100000, 2, "25A 청년");
+        var matched = GhHousingDetailSource.supplementRent(unit, List.of(match, other));
+        assertThat(matched.rentDeposit()).isEqualTo(21200000L);
+        assertThat(matched.monthlyRent()).isEqualTo(128960L);
+        assertThat(matched.rawPayload()).contains("verifiedRentalTerms");
+        var noTarget = new com.zipick.external.housingdetail.DetailedHousingUnit("u", "단지", null, null,
+                "경기도 연천군 주소", null, null, null, null, null, "25A", null, null, null, null);
+        assertThat(GhHousingDetailSource.supplementRent(noTarget, List.of(match, other)).monthlyRent()).isNull();
+        var conflicting = new com.zipick.external.housingdetail.DetailedHousingUnit("u", "단지", null, null,
+                "경기도 연천군 주소", null, null, null, null, null, "25A", "기업체기숙사", 1L, null, null);
+        assertThat(GhHousingDetailSource.supplementRent(conflicting, List.of(match)).monthlyRent()).isNull();
+    }
+
+    @Test
     void GH_AI_성공한_PDF와_HTML이_모두_변경없을때만_건너뛴다() {
         String html = "<a href='/selectFileDown?id=1'>공급주택목록.pdf</a><div id='tab1'></div>";
         byte[] bytes = {1, 2, 3};

@@ -56,7 +56,7 @@ public class HousingDetailEnricher {
                 if (!result.housings().isEmpty() || !result.attachments().isEmpty() || result.preservesExistingHousings()) {
                     List<String> partialFields = HousingDetailCompleteness.partialCoreFields(result.housings());
                     if (!partialFields.isEmpty()) {
-                        log.warn("상세 주택 핵심 필드가 일부 행에서 누락되었습니다: noticeId={}, source={}, fields={}",
+                        log.warn("상세 주택 핵심 필드가 확인되지 않아 원문 대조가 필요합니다: noticeId={}, source={}, fields={}",
                                 notice.noticeId(), source.getClass().getSimpleName(), partialFields);
                     }
                     log.info("상세 주택 자료 처리 완료: noticeId={}, units={}, attachments={}",

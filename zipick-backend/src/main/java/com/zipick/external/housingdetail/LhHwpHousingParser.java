@@ -24,12 +24,17 @@ public class LhHwpHousingParser {
     }
 
     List<DetailedHousingUnit> parse(byte[] bytes, LhAttachment attachment, String sourcePrefix) {
-        try (ByteArrayInputStream input = new ByteArrayInputStream(bytes)) {
-            String text = attachment.fileName().toLowerCase(java.util.Locale.ROOT).endsWith(".hwpx")
-                    ? extractHwpxText(bytes) : tika.parseToString(input);
-            return textHousingParser.parseText(text, attachment, sourcePrefix);
+        try {
+            return textHousingParser.parseText(extractText(bytes, attachment.fileName()), attachment, sourcePrefix);
         } catch (Exception exception) {
             throw new IllegalStateException("LH 공급주택 HWP를 읽지 못했습니다: " + attachment.fileName(), exception);
+        }
+    }
+
+    String extractText(byte[] bytes, String fileName) throws Exception {
+        if (fileName.toLowerCase(java.util.Locale.ROOT).endsWith(".hwpx")) return extractHwpxText(bytes);
+        try (ByteArrayInputStream input = new ByteArrayInputStream(bytes)) {
+            return tika.parseToString(input);
         }
     }
 

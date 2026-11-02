@@ -42,7 +42,7 @@ public class ShHousingDetailSource implements HousingDetailSource {
 
     private static final Logger log = LoggerFactory.getLogger(ShHousingDetailSource.class);
     private static final JsonMapper JSON_MAPPER = JsonMapper.builder().build();
-    private static final String PARSER_VERSION = "SH_DOCUMENT_V1";
+    private static final String PARSER_VERSION = "SH_DOCUMENT_V2";
     private static final String MEDIA_LINK_PARSER_VERSION = "SH_MEDIA_LINK_V1";
     private static final Pattern ATTACHMENTS = Pattern.compile(
             "initParam\\.downList\\s*=\\s*(?<json>\\[.*?])\\s*;", Pattern.DOTALL
@@ -180,7 +180,11 @@ public class ShHousingDetailSource implements HousingDetailSource {
         if (name.endsWith(".pdf")) {
             List<DetailedHousingUnit> fallback = com.zipick.external.ai.GeminiPdfStageTiming.measureBasicParser(() -> {
                 List<DetailedHousingUnit> structured = shPdfParser.parse(bytes, attachment);
-                return structured.isEmpty() ? fallbackPdfParser.parse(bytes, compatible) : structured;
+                List<DetailedHousingUnit> basic = structured.isEmpty() ? fallbackPdfParser.parse(bytes, compatible) : structured;
+                if (basic.size() == 1 && (basic.getFirst().rentDeposit() == null || basic.getFirst().monthlyRent() == null)) {
+                    return new com.zipick.external.housingdetail.RentalTermsPdfParser().supplementSingleUnits(bytes, basic);
+                }
+                return basic;
             });
             if (geminiSupport == null || !geminiSupport.enabled()) {
                 return new ParsedAttachment(fallback, true);

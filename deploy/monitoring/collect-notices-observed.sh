@@ -12,8 +12,34 @@ deploy_dir="$(cd "$script_dir/.." && pwd)"
 metrics_dir="${ZIPICK_METRICS_DIR:-/var/lib/zipick/metrics}"
 metrics_file="$metrics_dir/zipick_collector_${job_type}.prom"
 running_file="$metrics_dir/zipick_collector_${job_type}_running.prom"
+# root 로 실행되면(sudo bash ... 등) 지표 디렉터리 소유자 계정으로 바꿔 다시 실행한다.
+# root 가 만든 잠금·지표 파일 때문에 이후 일반 계정 실행이 실패하는 것을 막는다.
+# 디렉터리가 아직 없으면 ZIPICK_COLLECTOR_USER(기본 ubuntu)로 실행한다.
+if [ "$(id -u)" -eq 0 ]; then
+  if [ -d "$metrics_dir" ]; then
+    run_as="$(stat -c %U "$metrics_dir")"
+  else
+    run_as="${ZIPICK_COLLECTOR_USER:-ubuntu}"
+  fi
+  if [ "$run_as" = root ]; then
+    echo "지표 디렉터리($metrics_dir)가 root 소유라 실행 계정을 정할 수 없습니다." >&2
+    echo "sudo chown -R ubuntu:ubuntu $(dirname "$metrics_dir") 후 다시 실행하세요." >&2
+    exit 1
+  fi
+  if ! id "$run_as" >/dev/null 2>&1; then
+    echo "실행 계정 $run_as 을(를) 찾을 수 없습니다." >&2
+    exit 1
+  fi
+  echo "root 로 실행되어 $run_as 계정으로 바꿔 실행합니다." >&2
+  cd / || exit 1
+  runuser -u "$run_as" -- env ZIPICK_METRICS_DIR="$metrics_dir" bash "$script_dir/$(basename "$0")" "$job_type"
+  exit $?
+fi
 umask 077
 mkdir -p "$metrics_dir" || exit 1
+# umask 077 로 새로 만들어지면 700 이 되어 node-exporter(nobody)가 읽지 못하므로 디렉터리는 열어 둔다.
+# 잠금·임시 로그 파일은 umask 대로 소유자 전용(600)으로 남는다.
+chmod 755 "$metrics_dir" 2>/dev/null || echo "지표 디렉터리 권한을 755로 바꾸지 못했습니다: $metrics_dir" >&2
 # 기본 수집과 AI 수집은 같은 DB를 다루므로 관측 스크립트를 통한 중복 실행을 막는다.
 if ! command -v flock >/dev/null 2>&1; then
   echo '수집기 중복 실행 방지에 필요한 flock을 찾을 수 없습니다.' >&2

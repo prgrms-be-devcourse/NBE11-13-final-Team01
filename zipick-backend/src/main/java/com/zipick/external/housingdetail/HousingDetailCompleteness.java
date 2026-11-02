@@ -4,14 +4,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
-/** 같은 문서의 공급 행 중 일부에만 핵심 값이 있는 경우를 탐지한다. */
+/** 공급 행에서 핵심 값이 확인되지 않은 비율을 기록한다. 원문의 공란 여부는 별도 대조가 필요하다. */
 public final class HousingDetailCompleteness {
 
     private HousingDetailCompleteness() {
     }
 
     public static List<String> partialCoreFields(List<DetailedHousingUnit> units) {
-        if (units == null || units.size() < 2) return List.of();
+        if (units == null || units.isEmpty()) return List.of();
         List<String> result = new ArrayList<>();
         addIfPartial(result, "rentDeposit", units, HousingDetailCompleteness::hasDeposit);
         addIfPartial(result, "monthlyRent", units, HousingDetailCompleteness::hasMonthlyRent);
@@ -36,7 +36,7 @@ public final class HousingDetailCompleteness {
             Predicate<DetailedHousingUnit> present
     ) {
         long count = units.stream().filter(present).count();
-        if (count > 0 && count < units.size()) {
+        if (count < units.size()) {
             result.add(field + "=" + count + "/" + units.size());
         }
     }

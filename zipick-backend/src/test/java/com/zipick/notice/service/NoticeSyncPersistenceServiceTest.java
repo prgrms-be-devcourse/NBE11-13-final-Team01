@@ -62,15 +62,12 @@ class NoticeSyncPersistenceServiceTest {
     }
 
     @Test
-    void 원문확인한_기숙사비와_일치할때만_기존_잘못된_월세를_비운다() {
-        var supply = new HousingSupply(mock(Housing.class), "GEMINI:test", null);
-        ReflectionTestUtils.setField(supply, "monthlyRent", 120000L);
-        assertThat(NoticeSyncPersistenceService.verifiedDormitoryFee("{\"verifiedDormitoryFee\":{\"amount\":120000,\"page\":5,\"evidence\":\"기숙사 - - 120,000원\"}}")).isEqualTo(120000L);
+    void 원문확인한_기숙사비는_월세가_없을때_월주거비로_저장한다() {
+        String verified = "{\"verifiedDormitoryFee\":{\"amount\":120000,\"page\":5,\"evidence\":\"기숙사 - - 120,000원\"}}";
+        assertThat(NoticeSyncPersistenceService.monthlyCost(null, verified)).isEqualTo(120000L);
+        assertThat(NoticeSyncPersistenceService.monthlyCost(90900L, verified)).isEqualTo(90900L);
+        assertThat(NoticeSyncPersistenceService.monthlyCost(null, null)).isNull();
         assertThat(NoticeSyncPersistenceService.verifiedDormitoryFee("{\"verifiedDormitoryFee\":{\"amount\":120000}}" )).isNull();
-        supply.clearMonthlyRentIfEqualTo(90000L);
-        assertThat(supply.getMonthlyRent()).isEqualTo(120000L);
-        supply.clearMonthlyRentIfEqualTo(120000L);
-        assertThat(supply.getMonthlyRent()).isNull();
     }
 
     private final AgencyRepository agencies = mock(AgencyRepository.class);

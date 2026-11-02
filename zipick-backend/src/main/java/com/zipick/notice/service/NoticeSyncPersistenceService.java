@@ -439,10 +439,6 @@ public class NoticeSyncPersistenceService {
             if (supply == null) {
                 supply = new HousingSupply(housing, sourceSupply.sourceSupplyKey(), sourceSupply.externalHouseId());
             }
-            if (sourceSupply.monthlyRent() == null && sourceSupply.sourceSupplyKey().startsWith("GEMINI:")) {
-                Long fee = verifiedDormitoryFee(sourceSupply.rawPayload());
-                supply.clearMonthlyRentIfEqualTo(fee);
-            }
             if (sourceSupply.unitNumber() == null && sourceSupply.sourceSupplyKey().startsWith("GEMINI:")
                     && hasVerifiedNoUnitNumber(sourceSupply.rawPayload())) supply.clearUnitNumber();
             if (sourceSupply.supplyCount() == null && sourceSupply.sourceSupplyKey().startsWith("GEMINI:")
@@ -463,7 +459,7 @@ public class NoticeSyncPersistenceService {
                     sourceSupply.contractDeposit(),
                     sourceSupply.interimPayment(),
                     sourceSupply.balance(),
-                    sourceSupply.monthlyRent(),
+                    monthlyCost(sourceSupply.monthlyRent(), sourceSupply.rawPayload()),
                     sourceSupply.supplyStatus(),
                     sourceSupply.nearbySubwayStation(),
                     sourceSupply.subwayWalkDistanceKm(),
@@ -489,12 +485,17 @@ public class NoticeSyncPersistenceService {
         }
     }
 
+    static Long monthlyCost(Long rent, String payload) {
+        return rent != null ? rent : verifiedDormitoryFee(payload);
+    }
+
     static Long verifiedDormitoryFee(String payload) {
         if (payload == null || payload.isBlank()) return null;
         try {
             var fee = JSON.readTree(payload).path("verifiedDormitoryFee");
             return fee.path("page").asInt(0) > 0 && !fee.path("evidence").asText("").isBlank()
-                    && fee.path("amount").isNumber() ? fee.path("amount").asLong() : null;
+                    && fee.path("amount").isNumber() && fee.path("amount").asLong() >= 0
+                    ? fee.path("amount").asLong() : null;
         } catch (RuntimeException exception) {
             return null;
         }

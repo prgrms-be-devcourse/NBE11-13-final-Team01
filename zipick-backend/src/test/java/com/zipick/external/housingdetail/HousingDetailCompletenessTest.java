@@ -19,10 +19,12 @@ class HousingDetailCompletenessTest {
     }
 
     @Test
-    void doesNotReportAFieldThatTheDocumentDoesNotProvideAtAll() {
+    void reportsFieldsMissingFromAllRowsWithoutClaimingSourceHasValues() {
         assertThat(HousingDetailCompleteness.partialCoreFields(List.of(
                 unit(null, null, null), unit(null, null, null)
-        ))).isEmpty();
+        ))).containsExactly("rentDeposit=0/2", "monthlyRent=0/2", "exclusiveArea=0/2");
+        assertThat(HousingDetailCompleteness.partialCoreFields(List.of(unit(0L, 0L, null))))
+                .containsExactly("exclusiveArea=0/1");
     }
 
     private DetailedHousingUnit unit(Long deposit, Long rent, BigDecimal area) {

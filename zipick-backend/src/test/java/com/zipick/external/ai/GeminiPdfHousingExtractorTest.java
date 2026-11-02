@@ -34,6 +34,14 @@ class GeminiPdfHousingExtractorTest {
     Path temporary;
 
     @Test
+    void 원문에서_기숙사별_보증금이_없다고_명시한_경우만_확인한다() {
+        var pages = Map.of(5, "내발산 공공기숙사의 경우 별도의 임대보증금 및 임대료가 없으며, 기숙사비를 납부합니다.");
+        assertThat(GeminiPdfHousingExtractor.verifiedNoDormitoryDeposit("내발산 공공기숙사", pages)).isTrue();
+        assertThat(GeminiPdfHousingExtractor.verifiedNoDormitoryDeposit("다른 공공기숙사", pages)).isFalse();
+        assertThat(GeminiPdfHousingExtractor.verifiedNoDormitoryDeposit("내발산 공공기숙사", Map.of(5, "임대보증금 미기재"))).isFalse();
+    }
+
+    @Test
     void 텍스트에서_주택형_숫자를_면적으로_추정하지_않는다() {
         var area = new java.math.BigDecimal("16.00");
         assertThat(GeminiPdfHousingExtractor.explicitAreaInEvidence("16A 382세대", area)).isFalse();
