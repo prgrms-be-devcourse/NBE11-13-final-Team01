@@ -19,13 +19,7 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
-// TODO(account-management):
-// 닉네임 변경, 비밀번호 변경/재설정, 회원 탈퇴 기능은 현재 구현 범위에서 제외.
-// 향후 실제 기능 도입 여부가 확정되면 이 메뉴를 연결한다.
-// 해당 기능들을 최종적으로 제공하지 않기로 결정하면
-// "내 정보 관리" 준비 중 항목을 프로필 메뉴에서 제거한다.
 const upcomingItems = [
-  { icon: 'user', title: '내 정보 관리', description: '계정 정보 관리 기능은 추후 제공' },
   { icon: 'bell', title: '알림 설정', description: '계정 메뉴 연동은 추후 제공' },
   { icon: 'shield', title: '약관·개인정보 동의 관리', description: '동의 내역 관리 기능은 추후 제공' },
 ] as const;
