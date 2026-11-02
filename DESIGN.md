@@ -17,7 +17,7 @@
 
 ## 토큰과 컬러
 
-실제 선언: `zipick-frontend/src/design-system/tokens.css`. `:root`가 아니라 **`.zipick-theme` 아래에서만** 적용된다. 파일을 import하는 것만으로 테마가 켜지지 않는다.
+색상·패널 토큰의 실제 선언은 `zipick-frontend/src/design-system/tokens.css`이며 **`.zipick-theme` 아래에서만** 적용된다. 파일을 import하는 것만으로 테마가 켜지지 않는다. 폰트 토큰만 `src/design-system/fonts.css`의 `:root`에 선언해 모든 경로에서 공유한다.
 
 | CSS 변수 | 현재 값 | 용도 |
 | --- | --- | --- |
@@ -34,7 +34,7 @@
 | `--zipick-white` | `#fff` | 카드·패널 표면 |
 | `--zipick-green` | `#128463` | 긍정 상태 강조 |
 | `--zipick-shadow` | `0 22px 72px rgba(30,64,116,.11),0 5px 14px rgba(42,72,110,.045)` | 랜딩 지도 목업 그림자 |
-| `--zipick-font-family` | `'Noto Sans CJK KR', 'NanumSquare', 'Pretendard', system-ui, -apple-system, sans-serif` | 서비스 폰트 스택 |
+| `--zipick-font-family` | `'Pretendard Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif` | 전역 공통 웹폰트 스택 |
 | `--zipick-radius-control` | `10px` | 서비스 버튼·컨트롤 |
 | `--zipick-radius-panel` | `16px` | 지도·서비스 패널 |
 | `--zipick-shadow-panel` | `0 4px 18px rgba(30, 64, 116, .06)` | 절제된 서비스 패널 그림자 |
@@ -45,7 +45,9 @@
 
 ## 타이포그래피
 
-랜딩은 위 폰트 스택을 자체 CSS에 동일하게 선언하고, 지도 Layout은 폰트 토큰을 참조한다. 폰트 스택은 폰트 설치·다운로드를 보장하지 않는다. 환경별 대체 글꼴과 굵기 렌더링 차이가 있으므로 비교 시 브라우저·뷰포트·폰트 환경을 맞춘다.
+전역 본문·랜딩·서비스 Layout·헤더·인증 화면은 같은 폰트 토큰을 참조한다. `main.tsx`가 `design-system/fonts.css`를 한 번 불러오며, 공식 Pretendard v1.3.9의 원본 가변 WOFF2(2,057,688바이트)를 `public/fonts/pretendard/`에 포함한다. 같은 폴더의 LICENSE와 README에 라이선스·출처·버전·SHA-256을 기록한다.
+
+`@font-face`는 `Pretendard Variable`·normal·굵기 `45 920`·`font-display:swap`으로 선언하며 `url()`만 사용한다. 로컬 설치 폰트가 우선하지 않고 같은 출처에서 제공하는 파일을 사용한다. `index.html`은 동일한 폰트 URL을 `crossorigin`으로 preload한다. 별도 CDN·폰트 패키지 의존성은 없으며 배포 빌드에도 폰트와 라이선스를 복사한다. 기존 글자 크기·굵기·행간은 유지하지만 가변 폰트가 실제 지정 굵기를 표현하므로 이전 설치 폰트의 가장 가까운 고정 굵기와 미세하게 다를 수 있다. 다운로드 실패 시 시스템 폰트로 대체하며 OS·브라우저별 미세한 렌더링 차이는 남을 수 있다. Kakao 지도 타일의 자체 지명과 SVG 이미지 내부 숫자는 제공자/이미지의 기존 글꼴 처리를 유지한다.
 
 | 요소 | 현재 선언 |
 | --- | --- |
@@ -117,9 +119,10 @@
 ## 헤더·내비게이션
 
 - 랜딩: `LandingHeader`, 데스크톱 sticky 헤더 `76px`·모바일 `68px`. 서비스 소개·이용 방법은 섹션 앵커, 지도·로그인·집 찾기는 기존 라우트로 연결한다. 모바일은 소개 메뉴와 로그인 링크를 숨기고 집 찾기는 유지한다.
+- 랜딩 헤더도 `useAuth`의 현재 사용자 상태를 구독한다. 로그인한 사용자는 로그인 링크 대신 기존 `AccountMenu`의 내 계정·내 조건 확인/수정·로그아웃을 사용하며 모바일에서도 계정 메뉴를 표시한다. 비회원 로그인은 `/landing` 복귀 state를 유지한다. 랜딩에서 로그아웃하면 기존 인증 모듈로 세션을 정리하고 쿼리를 초기화하며 공개 랜딩에 머문다. 메뉴 패널은 랜딩 우측 행동 영역 끝에 맞춰 좁은 화면의 잘림을 방지한다.
 - 공통 서비스 헤더: 모든 `Layout` 경로에서 헤더 자체에 ZIPICK 테마와 `Header.module.css`를 적용한다. 랜딩 기준으로 데스크톱 높이 `76px`, 로고–메뉴 간격 `54px`, 메뉴 `15px/550/1.65`·자간 normal·항목 간격 `28px`이다. 980px 이하에서는 두 간격을 `24px`로 줄인다. 링크를 행 높이까지 늘려 기존 2px 활성 테두리가 헤더 하단 구분선과 맞닿게 한다. 각 메뉴의 17px 선형 SVG(핀·달력·슬라이더)는 텍스트와 8px 간격으로 수직 중앙 정렬하고 currentColor로 활성·hover 색을 함께 따른다. 장식 아이콘은 접근성 트리에서 제외한다. 720px 이하에서는 기존 두 번째 줄·가로 스크롤을 유지하며 스크롤 막대만 숨겨 헤더 높이를 보존한다. 본문 테마 적용 범위는 계속 `/map`, `/calendar`, `/onboarding`, `/tune`뿐이다.
 - 서비스 메뉴는 지도 탐색 / 관심 공고·일정 / 취향 찾기다. 로그인한 사용자의 우측 `내 계정`에서 실제 인증 이메일·내 조건 확인·수정(`/onboarding`)·로그아웃을 표시한다. 비로그인 상태의 로그인·가입 링크와 복귀 state를 보존한다.
-- `AccountMenu`는 HTML account-menu v2의 사용자 요약·조건 링크·준비 중 목록·로그아웃 구조를 CSS Module로 격리한다. 패널은 최대 352px·화면 좌우 여백 32px, panel 반경·그림자 토큰을 사용하고 낮은 화면에서는 내부 스크롤한다. 현재 인증 데이터에는 이름·닉네임이 없어 `집픽 사용자`를 표시하며 이메일이 없으면 이메일 행을 생략한다. 내 정보 관리·알림 설정·약관·개인정보 동의 관리는 클릭/포커스가 없는 준비 중 목록이다. 네이티브 버튼·링크의 disclosure로 Enter/Space·Tab/Shift+Tab을 지원하고 외부 pointer·영역 밖 포커스·ESC·항목 선택·계정/URL 변경 시 닫는다. ESC는 트리거로 포커스를 돌려주며 기존 헤더 focus-visible·모션 감소 규칙을 따른다.
+- `AccountMenu`는 HTML account-menu v2의 사용자 요약·조건 링크·준비 중 목록·로그아웃 구조를 CSS Module로 격리한다. 패널은 최대 352px·화면 좌우 여백 32px, panel 반경·그림자 토큰을 사용하고 낮은 화면에서는 내부 스크롤한다. 현재 인증 데이터에는 이름·닉네임이 없어 `집픽 사용자`를 표시하며 이메일이 없으면 이메일 행을 생략한다. 사용자 요청으로 내 정보 관리 항목은 제거했으며, 알림 설정·약관·개인정보 동의 관리만 클릭/포커스가 없는 준비 중 목록으로 표시한다. 네이티브 버튼·링크의 disclosure로 Enter/Space·Tab/Shift+Tab을 지원하고 외부 pointer·영역 밖 포커스·ESC·항목 선택·계정/URL 변경 시 닫는다. ESC는 트리거로 포커스를 돌려주며 기존 헤더 focus-visible·모션 감소 규칙을 따른다.
 - 랜딩·서비스·인증 헤더는 `HeaderInner`와 `Header.module.css`의 공통 내부 컨테이너를 쓴다. `width:100%`, `max-width:none`을 유지하고 기본 패딩은 `max(32px, (뷰포트 너비 - 1440px) / 2)`이다. 1440px에서는 32px, 1536px에서는 48px로, 지도·캘린더 본문과 같거나 더 바깥쪽에 둔다. 980px 이하 `22px`, 720px 이하 `16px`, 420px 이하 `14px`는 유지한다. 본문 폭·스크롤 정책은 그대로 두고, ResizeObserver와 resize에서 실제 뷰포트 너비와 예약된 스크롤바 너비를 측정해 헤더 우측 패딩에서만 차감한다(최소 0px). 인증 화면의 stable gutter까지 같은 뷰포트 우측 기준에 맞추기 위한 보정이며 고정 폭·left 보정은 사용하지 않는다.
 - Primary·Secondary 버튼은 데스크톱 높이 `44px`, 반경 `10px`, 패딩 `0 20px`, `15px/650/1.65`로 통일한다. 랜딩의 로그인 링크도 흰 Secondary 버튼으로 표시한다. 서비스·인증은 720px 이하, 랜딩은 기존 모바일 정책대로 680px 이하에서 높이 `38px`·패딩 `0 13px`·`12px`를 사용한다. 랜딩·인증 모바일 헤더는 `68px`, 서비스 모바일 헤더는 기존 2행/가로 스크롤에 맞춰 자동 높이다. 인증 본문은 헤더 높이 차감 값만 `76px`/모바일 `68px`로 맞추며 카드와 본문 패딩은 유지한다.
 - 헤더에만 `.15s` 배경·글자·테두리·transform 전환을 적용한다. 보조 행동 hover는 blue-light/blue, 주요 행동은 blue-strong, 내비게이션은 blue-mist/blue이며 활성 밑줄을 보존한다. focus-visible은 `3px solid #2059d660`, offset `3px`이고 스크롤 내비게이션 링크만 `-3px`로 안쪽에 표시한다. prefers-reduced-motion에서는 전환을 끈다. 전역 버튼·링크 규칙은 변경하지 않는다.
@@ -206,6 +209,7 @@
 | 파일·폴더 | 역할 |
 | --- | --- |
 | `zipick-frontend/src/design-system/tokens.css` | 테마 토큰 |
+| `zipick-frontend/src/design-system/fonts.css`, `public/fonts/pretendard/` | 전역 폰트 토큰·프로젝트에서 제공하는 Pretendard 가변 웹폰트·원본 라이선스/출처 |
 | `zipick-frontend/src/pages/LandingPage.tsx` | 독립 랜딩 루트·섹션 조립 |
 | `zipick-frontend/src/features/landing/Landing.module.css` | 랜딩 전용 스타일 |
 | `zipick-frontend/src/features/landing/` | LandingHeader/Hero/Confidence/Features/Journey/FinalCta/Footer 컴포넌트와 목업 |
@@ -248,7 +252,7 @@
 - 공급 정보는 기존 필드를 모두 유지하고, 인프라는 응답에 포함된 카테고리만 카드로 표시한다. 평면도 UI는 아래 2차 작업 기준을 따른다.
 - 공급 조건 카드는 주택 아이콘과 유형 제목, 연한 블루 배경의 보증금·월 임대료, 면적·동호·층·방 순으로 구분한다. 금액은 16px 굵은 블루, 나머지 실제 값은 13px을 사용하며, 누락 필드 숨김과 숫자 0 표시는 유지한다.
 - 공급 조건 카드 패딩은 12px, 카드 간격은 8px로 조밀하게 유지한다. 제목 아래 10px, 금액 영역 패딩 8px 10px, 금액과 상세 사이 구분선 전후 10px을 사용한다.
-- 공급 조건의 보증금·월 임대료는 원 단위 API 값을 10,000으로 나눠 `만원`으로 표시한다. 원 단위 정밀도는 소수점 최대 4자리로 보존하고 0은 `0만원`으로 표시한다.
+- 공급 조건의 보증금·월 임대료는 원 단위 API 값을 10,000으로 나누고 소수점 이하를 버려 `만원`으로 표시한다(반올림 없음). 0과 1만원 미만은 `0만원`으로 표시하며 누락 값은 기존처럼 숨긴다. 원본 API 값·필터 판정·추천 계산은 변경하지 않는다.
 
 ### 지도 평면도 UI 2차 (2026-11-01)
 
