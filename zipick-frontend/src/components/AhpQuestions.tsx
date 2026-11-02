@@ -1,115 +1,183 @@
-import { useEffect, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useRef, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { tuningApi } from '../api/tuning';
-import { SCORE_ITEMS, type AhpComparison, type AhpResult, type ScoreItem } from '../types';
+import { SCORE_ITEMS, type AhpComparison } from '../types';
 import { ITEM_LABEL } from '../utils/format';
-import PriorityBars from './PriorityBars';
+import styles from '../features/onboarding/OnboardingPage.module.css';
 
-/** 질문 3개 = 비용·지역·인프라 세 항목의 모든 쌍. 서로 맞물려 있어 답이 엇갈리면 알아챌 수 있다. */
-const QUESTIONS: { left: ScoreItem; right: ScoreItem }[] = [
+/** API의 비교 방향과 질문 순서를 유지한다. 양수는 왼쪽, 음수는 오른쪽 우선이다. */
+const QUESTIONS = [
   { left: 'cost', right: 'region' },
   { left: 'region', right: 'infra' },
   { left: 'cost', right: 'infra' },
-];
+] as const;
+const LABEL = { cost: '월 비용', region: '희망 지역', infra: '주변 인프라' };
+const ITEMS = ['cost', 'region', 'infra'] as const;
+const VALUES: AhpComparison['value'][] = [2, 1, 0, -1, -2];
 
-/** 질문에 쓰는 말. 항목 이름보다 실제 고민에 가깝게 */
-const PHRASE: Record<ScoreItem, string> = {
-  cost: '월 비용이 싼 집',
-  region: '원하는 동네',
-  area: '넓은 집',
-  rooms: '방이 많은 집',
-  infra: '역·편의시설이 가까운 집',
-  age: '새로 지은 집',
-  type: '원하는 주택 유형',
-};
-
-const SCALE: { value: AhpComparison['value']; label: (l: string, r: string) => string }[] = [
-  { value: 2, label: (l) => `${l} 훨씬` },
-  { value: 1, label: (l) => `${l} 조금 더` },
-  { value: 0, label: () => '비슷해요' },
-  { value: -1, label: (_, r) => `${r} 조금 더` },
-  { value: -2, label: (_, r) => `${r} 훨씬` },
-];
-
-interface Props {
-  onDone: () => void;
-  onSkip: () => void;
+function answerText(question: typeof QUESTIONS[number], value: AhpComparison['value'] | null) {
+  if (value === null) return '선택 전';
+  if (value === 0) return '두 조건이 비슷해요';
+  const item = value > 0 ? question.left : question.right;
+  return `${LABEL[item]}${item === 'infra' ? '를' : '을'} ${Math.abs(value) === 2 ? '훨씬' : '조금'} 더 우선해요`;
 }
 
-/** 온보딩 3단계: AHP 쌍대 비교 질문 3개로 추천 우선순위의 첫 값을 정한다. */
-export default function AhpQuestions({ onDone, onSkip }: Props) {
+interface Props {
+  onBack: () => void;
+  onDone: () => void;
+  onSkip: () => void;
+  onSavingChange: (saving: boolean) => void;
+}
+
+/** 온보딩 3단계. 중앙에 있는 초기 손잡이와 실제 중앙 응답(0)을 구별한다. */
+export default function AhpQuestions({ onBack, onDone, onSkip, onSavingChange }: Props) {
   const [answers, setAnswers] = useState<(AhpComparison['value'] | null)[]>(QUESTIONS.map(() => null));
-  const [preview, setPreview] = useState<AhpResult | null>(null);
-  const complete = answers.every((a) => a !== null);
-  const comparisons = (): AhpComparison[] =>
-    QUESTIONS.map((q, i) => ({ left: q.left, right: q.right, value: answers[i]! }));
+  const actionInFlight = useRef(false);
+  const count = answers.filter((answer) => answer !== null).length;
+  const complete = count === QUESTIONS.length;
+  const comparisons: AhpComparison[] = QUESTIONS.map((question, index) => ({ ...question, value: answers[index]! }));
 
-  // 세 문항에 다 답하면 저장하지 않고 결과만 미리 계산한다
-  const previewMut = useMutation({ mutationFn: () => tuningApi.ahp(comparisons(), false), onSuccess: setPreview });
-  useEffect(() => {
-    if (complete) previewMut.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [answers]);
+  // 답변별 쿼리로 요청을 분리한다. 늦게 도착한 이전 응답이 현재 답변의 미리보기를 덮지 못한다.
+  const preview = useQuery({
+    queryKey: ['ahp-preview', answers],
+    queryFn: () => tuningApi.ahp(comparisons, false),
+    enabled: complete,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const save = useMutation({
+    mutationFn: (snapshot: AhpComparison[]) => tuningApi.ahp(snapshot, true),
+    onSuccess: onDone,
+    onError: () => {
+      actionInFlight.current = false;
+      onSavingChange(false);
+    },
+  });
 
-  const save = useMutation({ mutationFn: () => tuningApi.ahp(comparisons(), true), onSuccess: onDone });
+  function select(index: number, position: number) {
+    if (actionInFlight.current) return;
+    const value = VALUES[position];
+    setAnswers((current) => current[index] === value ? current : current.map((answer, i) => i === index ? value : answer));
+    if (save.isError) save.reset();
+  }
+
+  function leave(action: () => void) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    action();
+  }
 
   return (
-    <div className="form">
-      <h1>무엇이 더 중요해요?</h1>
-      <p className="muted">둘 중 하나를 고르면 추천 점수의 우선순위를 정해 드려요. 나중에 언제든 바꿀 수 있어요.</p>
-
-      {QUESTIONS.map((q, i) => {
-        const l = PHRASE[q.left];
-        const r = PHRASE[q.right];
-        return (
-          <fieldset key={i} className="ahp">
-            <legend>
-              {i + 1}. <strong>{l}</strong> vs <strong>{r}</strong>
-            </legend>
-            <div className="ahp__scale" role="radiogroup">
-              {SCALE.map((s) => (
-                <button
-                  key={s.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={answers[i] === s.value}
-                  className={`ahp__opt ${answers[i] === s.value ? 'ahp__opt--on' : ''} ${s.value === 0 ? 'ahp__opt--mid' : ''}`}
-                  onClick={() => setAnswers(answers.map((a, j) => (j === i ? s.value : a)))}
-                >
-                  {s.label(l, r)}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-        );
-      })}
-
-      {preview && complete && (
-        <div className="ahp__result">
-          <h2>이렇게 정해져요</h2>
-          <PriorityBars priorities={preview.priorities} highlight={['cost', 'region', 'infra']} />
-          {!preview.consistent && (
-            <p className="warn">
-              답의 순서가 서로 맞지 않아요. 예를 들어 {ITEM_LABEL.cost}이 {ITEM_LABEL.region}보다, {ITEM_LABEL.region}이{' '}
-              {ITEM_LABEL.infra}보다 중요하면 보통 {ITEM_LABEL.cost}이 {ITEM_LABEL.infra}보다도 중요해요. 엇갈린 항목은 비슷하게
-              매겨져요. 그대로 저장해도 돼요.
-            </p>
-          )}
-          <small className="hint">
-            {SCORE_ITEMS.filter((i) => !['cost', 'region', 'infra'].includes(i)).map((i) => ITEM_LABEL[i]).join('·')}은 지금 값을
-            유지해요.
-          </small>
-        </div>
-      )}
-
-      <div className="form__actions">
-        <button className="btn btn--ghost" type="button" onClick={onSkip}>
-          건너뛰기
-        </button>
-        <button className="btn" type="button" disabled={!complete || save.isPending} onClick={() => save.mutate()}>
-          저장하고 추천 보기
-        </button>
+    <section className={`${styles.profilePanel} ${styles.priorityPanel}`} aria-labelledby="priority-title" aria-busy={save.isPending}>
+      <div className={styles.heading}>
+        <h2 id="priority-title">우선순위</h2>
+        <p>집을 고를 때 어떤 조건이 더 중요한지 알려 주세요. 이 단계는 건너뛰어도 돼요.</p>
       </div>
-    </div>
+      <div className={`${styles.fieldFrame} ${styles.priorityFrame}`}>
+        <div className={styles.priorityHeader}>
+          <h3 id="priority-questions-title">중요한 조건 비교 <span className={styles.requirement}>선택</span></h3>
+          <span className={styles.regionCount} role="status" aria-live="polite" aria-label={`${count} / 3문항 응답`}><strong>{count}</strong> / 3</span>
+        </div>
+        <p className={styles.priorityDescription}>두 조건 중 더 중요한 쪽으로 슬라이더를 움직여 주세요.</p>
+        <div role="group" aria-labelledby="priority-questions-title">
+          {QUESTIONS.map((question, index) => {
+            const answer = answers[index];
+            const position = answer === null ? 2 : 2 - answer;
+            const percent = position * 25;
+            const id = `priority-slider-${index + 1}`;
+            const response = answerText(question, answer);
+            return (
+              <section key={id} className={`${styles.priorityQuestion} ${answer !== null ? styles.priorityAnswered : ''}`} aria-labelledby={`${id}-title`}>
+                <div className={styles.questionHeading}>
+                  <div className={styles.questionTitle}>
+                    <span className={styles.questionNumber} aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                    <h4 id={`${id}-title`}>{LABEL[question.left]} vs {LABEL[question.right]}</h4>
+                  </div>
+                  <output className={styles.questionResponse} id={`${id}-response`} htmlFor={id} aria-live="polite">{response}</output>
+                </div>
+                <div className={styles.sliderLine}>
+                  <div className={styles.sliderTrack} aria-hidden="true">
+                    <span className={styles.sliderHighlight} style={{ left: `${Math.min(50, percent)}%`, width: `${Math.abs(percent - 50)}%` }} />
+                    {VALUES.map((value, i) => <span key={value} className={styles.sliderTick} style={{ left: `${i * 25}%` }} />)}
+                  </div>
+                  <input
+                    className={styles.prioritySlider}
+                    id={id}
+                    type="range" min={0} max={4} step={1} value={position}
+                    disabled={save.isPending}
+                    aria-labelledby={`${id}-title`}
+                    aria-describedby={`${id}-response`}
+                    aria-valuetext={response}
+                    onChange={(event) => select(index, Number(event.currentTarget.value))}
+                    // 같은 중앙 위치 클릭은 change가 발생하지 않으므로 명시적으로 응답한다.
+                    onPointerUp={(event) => select(index, Number(event.currentTarget.value))}
+                    onClick={(event) => select(index, Number(event.currentTarget.value))}
+                    onKeyDown={(event) => {
+                      const next: Record<string, number> = {
+                        ArrowLeft: Math.max(0, position - 1), ArrowDown: Math.max(0, position - 1),
+                        ArrowRight: Math.min(4, position + 1), ArrowUp: Math.min(4, position + 1),
+                        Home: 0, End: 4, ' ': position, Enter: position,
+                      };
+                      if (event.key in next) {
+                        event.preventDefault();
+                        select(index, next[event.key]);
+                      }
+                    }}
+                  />
+                </div>
+                <div className={styles.sliderLabels} aria-hidden="true"><span>{LABEL[question.left]}</span><span>비슷해요</span><span>{LABEL[question.right]}</span></div>
+              </section>
+            );
+          })}
+        </div>
+
+        {complete && (
+          <section className={styles.priorityResult} aria-labelledby="priority-result-title" aria-busy={preview.isFetching}>
+            <h4 id="priority-result-title">내 우선순위 미리보기</h4>
+            {preview.isFetching ? <p role="status">우선순위를 계산하는 중이에요…</p> : preview.isError ? (
+              <div className={styles.previewError} role="alert">
+                <p>미리보기를 불러오지 못했어요. 다시 시도해 주세요.</p>
+                <button className={styles.secondaryButton} type="button" disabled={save.isPending} onClick={() => void preview.refetch()}>다시 시도</button>
+              </div>
+            ) : preview.data && (
+              <>
+                <p>세 번의 선택을 바탕으로 중요도를 비교했어요.</p>
+                <div className={styles.priorityBars}>
+                  {ITEMS.map((item) => {
+                    const percent = (preview.data.weights[item] ?? 0) * 100;
+                    return (
+                      <div className={styles.priorityBarRow} key={item}>
+                        <div className={styles.barLabel}><span>{LABEL[item]}</span><span>중요도 {preview.data.priorities[item]} / 5 <strong>{Math.round(percent)}%</strong></span></div>
+                        <div className={styles.barTrack} role="meter" aria-label={`${LABEL[item]} 중요도 비율`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext={`${Math.round(percent)}%, 중요도 ${preview.data.priorities[item]} / 5`}>
+                          <div className={styles.barFill} style={{ width: `${percent}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {!preview.data.consistent && <p className={styles.priorityWarning} role="status">선택한 우선순위가 일부 엇갈려요. 엇갈린 항목은 비슷하게 매겨져요. 그대로 진행하거나 다시 조정할 수 있어요.</p>}
+                <p className={styles.priorityResultNote}>{SCORE_ITEMS.filter((item) => !ITEMS.some((compared) => compared === item)).map((item) => ITEM_LABEL[item]).join('·')}은 지금 값을 유지해요.</p>
+              </>
+            )}
+          </section>
+        )}
+      </div>
+
+      {save.isError && <p className={styles.prioritySaveError} role="alert">우선순위를 저장하지 못했어요. 다시 저장해 주세요.</p>}
+      <div className={styles.priorityActions}>
+        <button className={styles.preferenceBack} type="button" disabled={save.isPending} onClick={() => leave(onBack)}>← 희망 주거 조건</button>
+        <div className={styles.priorityRightActions}>
+          <button className={styles.prioritySkip} type="button" disabled={save.isPending} onClick={() => leave(onSkip)}>건너뛰기</button>
+          <button className={styles.preferenceNext} type="button" disabled={!complete || save.isPending} onClick={() => {
+            if (!complete || actionInFlight.current) return;
+            // React 렌더 전의 연속 클릭도 막고, 저장할 답변을 요청 시점에 고정한다.
+            actionInFlight.current = true;
+            onSavingChange(true);
+            save.mutate(comparisons);
+          }}>{save.isPending ? '저장 중…' : '저장하고 추천 보기'}</button>
+        </div>
+      </div>
+      <p className={styles.priorityFooterNote}>건너뛰면 우선순위는 변경되지 않아요.</p>
+    </section>
   );
 }

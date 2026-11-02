@@ -4,15 +4,17 @@
 
 ## 백엔드 인증·인가 (한채희)
 
-이메일 + 비밀번호 로그인, JWT 기반 인증. 소셜 로그인은 쓰지 않는다.
+이메일 + 비밀번호 로그인과 **카카오 소셜 로그인**, JWT 기반 인증.
 
 | Method | URI | 인증 | 설명 |
 | --- | --- | --- | --- |
 | POST | /api/auth/signup | X | 회원가입 (201) |
 | POST | /api/auth/login | X | 로그인. Access Token 은 응답 바디, Refresh Token 은 HttpOnly 쿠키 |
+| GET | /api/auth/kakao/authorize | X | 카카오 동의 화면 주소 발급 + state 쿠키 |
+| POST | /api/auth/kakao/login | X | 인가 코드로 로그인 완료. 응답 형식은 `/login` 과 동일 |
 | POST | /api/auth/reissue | 쿠키 | Access Token 재발급 (Rotation) |
 | POST | /api/auth/logout | O | 로그아웃 (204). 저장된 Refresh Token 삭제 + 쿠키 만료 |
-| GET | /api/users/me | O | 내 계정 정보 |
+| GET | /api/users/me | O | 내 계정 정보 (`userId` · `email` · `provider`) |
 
 ### 토큰 정책
 
@@ -40,6 +42,62 @@ Refresh Token  7일,    HttpOnly 쿠키로 전달, refresh_token 테이블에 �
 
 `HttpOnly` 는 항상 켠다. CORS 는 `SecurityConfig` 의 `CorsConfigurationSource` 한 곳에서만 관리한다.
 
+## 카카오 소셜 로그인 (한채희)
+
+카카오 로그인으로 들어와도 **계정이 만들어진 뒤로는 이메일 회원과 완전히 같다.** `TokenService.issueToken()`
+을 그대로 쓰므로 토큰 정책(Access 1시간 / Refresh 7일 / Rotation / 사용자당 1개)·재발급·로그아웃이 동일하다.
+
+### 흐름
+
+```
+① 프론트 "카카오로 시작하기"
+     GET /api/auth/kakao/authorize
+②   서버가 state 난수 생성 → HttpOnly 쿠키(kakaoOauthState, 5분) + authorizeUrl 응답
+③ 브라우저가 kauth.kakao.com 동의 화면으로 이동  ← SPA 가 통째로 언로드된다
+④ 카카오가 {origin}/oauth/kakao/callback?code=..&state=.. 로 되돌려 보냄
+⑤ 콜백 화면이 POST /api/auth/kakao/login { code, state }
+⑥   쿠키 state 대조 → 쿠키 폐기 → kauth 토큰 교환 → kapi 사용자 조회 → 계정 조회·생성
+⑦   200 { accessToken } + refreshToken 쿠키   ← /api/auth/login 과 같은 형식
+```
+
+- **state 와 인가 코드는 모두 1회용**이다. state 쿠키는 성공·실패와 무관하게 한 번 쓰면 지운다.
+- 카카오 Access Token 은 사용자 조회 1회에만 쓰고 **저장하지 않는다.**
+- 콜백 화면은 처리한 인가 코드를 모듈 범위에 기록해 StrictMode 이중 실행·뒤로가기 재진입에서
+  같은 코드를 두 번 보내지 않는다. 처리 후 `navigate(..., { replace: true })` 로 주소에서 코드를 지운다.
+
+### 계정 정책
+
+| 상황 | 동작 |
+| --- | --- |
+| 카카오 최초 로그인 | 자동 가입 (`provider = KAKAO`, `provider_id` = 카카오 회원번호) |
+| 재로그인 | **이메일이 아니라 `provider_id` 로 조회**한다. 카카오에서 이메일을 바꿔도 같은 계정이다 |
+| 카카오가 이메일을 안 줌 | `users.email = NULL` 로 가입한다. **가짜 이메일을 만들지 않는다** |
+| 미인증·무효 이메일 | 신뢰하지 않고 `NULL` 로 저장한다 (`is_email_valid` + `is_email_verified` 둘 다 true 일 때만 사용) |
+| 검증된 카카오 이메일 = 기존 계정 이메일 | 자동 연결하지 않고 409 `SOCIAL_EMAIL_ALREADY_REGISTERED`. 기존 이메일 로그인을 쓰도록 안내 |
+| 카카오 회원이 비밀번호 로그인 시도 | 409 `SOCIAL_ACCOUNT_LOGIN` ("카카오로 가입한 계정입니다") |
+| 동시 최초 로그인 | `uk_users_provider` UNIQUE 로 막고, 먼저 저장된 행을 다시 읽어 쓴다 |
+
+**LOCAL 과 KAKAO 는 독립된 계정이다.** 자동·수동 계정 연동은 제공하지 않는다.
+
+### 설정
+
+지도·주소 검색용 `kakao.local.*` 과 **용도가 다르다.** 호스트도 다르다.
+
+| 호스트 | 용도 | 설정 |
+| --- | --- | --- |
+| `kauth.kakao.com` | 인가·토큰 교환 | `kakao.oauth.*` |
+| `kapi.kakao.com` | 사용자 정보 조회 | `kakao.oauth.*` |
+| `dapi.kakao.com` | 주소·카테고리 검색 | `kakao.local.rest-api-key` |
+| Kakao Maps JS SDK | 지도 렌더링 | 프론트 `VITE_KAKAO_MAP_KEY` (JavaScript 키) |
+
+같은 카카오 앱을 쓰면 `kakao.oauth.client-id` 는 `kakao.local.rest-api-key` 와 **같은 값**이다.
+⚠️ 로그인에 쓰는 **카카오 앱을 나중에 바꾸면 회원번호가 전부 달라져 기존 소셜 계정이 끊긴다.**
+
+- 로컬: `zipick-backend/config/application-secret.yml` 의 `kakao.oauth.client-id` / `client-secret`
+- 운영: `deploy/.env.prod` 의 `KAKAO_OAUTH_CLIENT_ID` / `KAKAO_OAUTH_CLIENT_SECRET`
+  (Redirect URI 는 `APP_ORIGIN` 에서 자동 생성)
+- 키가 비어 있으면 **카카오 로그인만** 503 `OAUTH_NOT_CONFIGURED` 로 꺼지고 이메일 로그인은 정상 동작한다.
+
 ## 프론트엔드 인증 연동 (2026-10-16 기준)
 
 임시 인증(`X-User-Id` 헤더)은 **백엔드·프론트 모두 JWT 인증으로 교체 완료**되었다.
@@ -58,6 +116,8 @@ Refresh Token  7일,    HttpOnly 쿠키로 전달, refresh_token 테이블에 �
 | `hooks/useAuth.ts` | Access Token(메모리) · 로그인 사용자 상태. `useAuth()` 로 구독 |
 | `api/client.ts` | 공용 axios. Bearer 주입 / `withCredentials` / 401 → 재발급 후 1회 재시도 |
 | `api/auth.ts` | `login` · `logout` · `bootstrapAuth`. 정식 로그인 화면을 만들 때 그대로 재사용 |
+| `api/kakaoAuth.ts` | 카카오 로그인 시작·완료. 왕복 동안 복귀 경로·보류 작업을 sessionStorage 에 보관 |
+| `pages/OAuthCallbackPage.tsx` | 카카오 콜백 경유 화면 (`/oauth/kakao/callback`) |
 
 - Access Token 은 **메모리에만** 둔다 (localStorage 저장 안 함). 새로고침 시 `main.tsx` 가
   `bootstrapAuth()` 로 `POST /api/auth/reissue` 를 한 번 호출해 되살린다.

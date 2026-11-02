@@ -6,6 +6,9 @@ import { login } from '../api/auth';
 import PasswordField from '../components/PasswordField';
 import { useAuth } from '../hooks/useAuth';
 import { closeGate } from '../hooks/useAuthGate';
+import { AuthFooter, AuthHeading } from '../components/AuthCard';
+import KakaoLoginButton from '../components/KakaoLoginButton';
+import styles from '../features/auth/AuthPage.module.css';
 
 /** 로그인 팝업·헤더·가입 화면이 넘겨 주는 값 */
 export interface AuthNavState {
@@ -13,7 +16,7 @@ export interface AuthNavState {
   from?: string;
   /** 가입 직후 자동 로그인만 실패했을 때 이메일을 채워 준다 */
   email?: string;
-  notice?: 'SIGNED_UP';
+  notice?: 'SIGNED_UP' | 'KAKAO_CANCELED';
 }
 
 /** 복귀할 곳이 없으면 비회원도 볼 수 있는 지도 탐색 화면으로 보낸다. */
@@ -59,54 +62,58 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="auth-page">
-      <form className="auth-card" onSubmit={submit}>
-        <Link to="/map" className="auth-card__logo">
-          ZIPICK
-        </Link>
-        <h1 className="auth-card__title">로그인</h1>
-        <p className="auth-card__lead">집픽과 함께 나에게 맞는 주택을 찾아보세요.</p>
+    <form className={styles.panel} onSubmit={submit} aria-busy={busy}>
+      <AuthHeading title="로그인" description="집픽에서 나에게 맞는 공공임대주택을 찾아보세요." />
 
-        {state?.notice === 'SIGNED_UP' && (
-          <p className="auth-notice">가입이 완료됐어요. 방금 만든 계정으로 로그인해 주세요.</p>
-        )}
+      {state?.notice === 'SIGNED_UP' && (
+        <p className={styles.notice} role="status">가입이 완료됐어요. 방금 만든 계정으로 로그인해 주세요.</p>
+      )}
+      {state?.notice === 'KAKAO_CANCELED' && (
+        <p className={styles.notice} role="status">카카오 로그인이 취소됐어요. 다시 시도하거나 이메일로 로그인해 주세요.</p>
+      )}
 
-        <label>
+      <div className={styles.fields}>
+        <label className={styles.field}>
           이메일
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="username"
-            placeholder="이메일을 입력하세요"
+            placeholder="이메일을 입력해 주세요"
+            aria-invalid={!!fields.email}
+            aria-describedby={fields.email ? 'login-email-error' : undefined}
             required
             autoFocus={!state?.email}
           />
-          {fields.email && <small className="auth-error">{fields.email}</small>}
+          {fields.email && <small id="login-email-error" className={styles.fieldError}>{fields.email}</small>}
         </label>
 
         <PasswordField
           label="비밀번호"
           value={password}
           onChange={setPassword}
-          placeholder="비밀번호를 입력하세요"
+          placeholder="비밀번호를 입력해 주세요"
           autoComplete="current-password"
           error={fields.password}
         />
+      </div>
 
-        {error && <div className="error">{error}</div>}
+      {error && <div className={styles.errorNotice} role="alert">{error}</div>}
 
-        <button className="btn auth-card__submit" type="submit" disabled={busy}>
-          {busy ? '로그인 중…' : '로그인'}
-        </button>
+      <button className={styles.submit} type="submit" disabled={busy}>
+        {busy ? '로그인 중…' : '로그인'}
+      </button>
 
-        <p className="auth-alt">
-          아직 계정이 없으신가요?{' '}
-          <Link to="/signup" state={state?.from ? { from: state.from } : undefined}>
-            회원가입
-          </Link>
-        </p>
-      </form>
-    </div>
+      <KakaoLoginButton disabled={busy} />
+
+      <p className={styles.alternative}>
+        아직 계정이 없으신가요?{' '}
+        <Link to="/signup" state={state?.from ? { from: state.from } : undefined}>
+          회원가입
+        </Link>
+      </p>
+      <AuthFooter />
+    </form>
   );
 }

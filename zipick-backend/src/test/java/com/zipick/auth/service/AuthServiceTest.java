@@ -15,6 +15,8 @@ import com.zipick.auth.userdetails.CustomUserDetails;
 import com.zipick.global.error.BusinessException;
 import com.zipick.global.error.ErrorCode;
 import com.zipick.user.entity.Role;
+import com.zipick.auth.userdetails.SocialAccountLoginException;
+import com.zipick.user.entity.AuthProvider;
 import com.zipick.user.entity.User;
 import com.zipick.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -173,6 +175,21 @@ class AuthServiceTest {
             assertThatThrownBy(() -> authService.login(new LoginRequest("none@example.com", RAW_PASSWORD)))
                     .isInstanceOf(BusinessException.class)
                     .hasMessageContaining("이메일 또는 비밀번호가 올바르지 않습니다.");
+        }
+
+        @Test
+        @DisplayName("카카오로 가입한 계정이면 카카오 로그인을 쓰라고 안내한다")
+        void socialAccount() {
+            // 비밀번호를 몇 번 다시 쳐도 성공할 수 없는 경우라 일반 실패와 구분해 알린다.
+            willThrow(new SocialAccountLoginException(AuthProvider.KAKAO))
+                    .given(authenticationManager).authenticate(any(Authentication.class));
+
+            assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, RAW_PASSWORD)))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.SOCIAL_ACCOUNT_LOGIN);
+
+            verify(tokenService, never()).issueToken(any(User.class));
         }
     }
 }

@@ -8,6 +8,7 @@ import com.zipick.auth.jwt.JwtProvider;
 import com.zipick.auth.jwt.JwtProviderFixture;
 import com.zipick.global.config.CorsProperties;
 import com.zipick.global.config.SecurityConfig;
+import com.zipick.user.entity.AuthProvider;
 import com.zipick.user.entity.Role;
 import com.zipick.user.entity.User;
 import java.util.List;
@@ -63,7 +64,22 @@ class UserControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.userId").value(1))
-                .andExpect(jsonPath("$.data.email").value("test@example.com"));
+                .andExpect(jsonPath("$.data.email").value("test@example.com"))
+                .andExpect(jsonPath("$.data.provider").value("LOCAL"));
+    }
+
+    @Test
+    @DisplayName("이메일이 없는 카카오 회원은 email이 null이고 provider가 KAKAO로 내려간다")
+    void getMyInfoForKakaoUserWithoutEmail() throws Exception {
+        // 프론트 계정 메뉴가 이 두 값으로 '카카오 가입자 / 카카오 계정으로 로그인' 표시를 정한다.
+        User kakaoUser = User.of(2L, null, null, Role.ROLE_USER, AuthProvider.KAKAO, "4071234567");
+
+        mockMvc.perform(get("/api/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtProvider.createAccessToken(kakaoUser)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(2))
+                .andExpect(jsonPath("$.data.email").doesNotExist())
+                .andExpect(jsonPath("$.data.provider").value("KAKAO"));
     }
 
     @Test

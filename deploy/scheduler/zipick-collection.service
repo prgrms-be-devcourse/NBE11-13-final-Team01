@@ -1,0 +1,10 @@
+[Unit]
+Description=ZIPICK daily notice and AI collection
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/zipick/collector.env
+ExecStart=/bin/bash -c 'exec /bin/bash "$ZIPICK_DEPLOY_DIR/monitoring/run-daily-collection.sh"'
+TimeoutStartSec=infinity

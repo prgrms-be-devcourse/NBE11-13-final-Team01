@@ -97,13 +97,17 @@ export interface MapHousingList {
 /**
  * 지도에 찍을 공급주택. 공고 예정 + 접수 중을 주택 단위로 돌려준다.
  *
- * 필터는 전체 공급주택 목록과 같은 파라미터를 쓴다. 서버가 지도 전용 정책을 덧씌우므로
- * - 마감·취소 공고는 statuses 로 요청해도 나오지 않고
+ * 모집 상태는 보내지 않고 서버의 공개 기본 범위를 사용한다. 나머지 필터는 기존 매핑을 쓴다.
+ * 서버의 지도 전용 정책에 따라
+ * - 마감·취소 공고는 표시하지 않고
  * - 고른 공급 조건의 값이 없는 호실은 조건 불충족으로 보며(includeUnknown 으로 우회 불가)
  * - 보증금·면적 같은 공급 조건은 **같은 활성 호실 하나**가 모두 만족해야 주택이 포함된다.
  */
 export function getMapHousings(filter: HouseFilter) {
-  return unwrap(api.get('/api/v1/map/housings', { params: filterToParams(filter) })) as Promise<MapHousingList>;
+  const params = filterToParams(filter);
+  // 모집 상태 선택은 제거했다. 서버의 기존 공개 기본 범위(UPCOMING+OPEN)를 사용한다.
+  delete params.statuses;
+  return unwrap(api.get('/api/v1/map/housings', { params })) as Promise<MapHousingList>;
 }
 
 export function getMapHousingDetail(housingId: number) {

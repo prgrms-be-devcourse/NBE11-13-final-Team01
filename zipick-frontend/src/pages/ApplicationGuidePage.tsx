@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
+import styles from './ApplicationGuidePage.module.css';
+import '../design-system/tokens.css';
 import {
   applicationGuideApi,
   CAUTION_KIND_LABEL,
@@ -73,9 +75,11 @@ export default function ApplicationGuidePage() {
   // 생성 직후에는 mutation 결과가 더 최신이다
   const current = generate.data ?? data;
   const generateError = generate.error as ApiError | null;
+  // 생성 전·중·실패와 성공 화면의 스타일 적용 범위를 분리한다.
+  const useStateDesign = generate.isPending || current.status !== 'READY' || !current.guide;
 
   return (
-    <div className="detail guide-page">
+    <div className={useStateDesign ? `detail guide-page zipick-theme ${styles.page}` : `detail guide-page zipick-theme ${styles.success}`}>
       <Link to="/calendar" className="back">
         ← 관심 공고로
       </Link>
@@ -100,7 +104,11 @@ export default function ApplicationGuidePage() {
         <GuideNotGenerated onGenerate={() => generate.mutate()} busy={generate.isPending} />
       )}
 
-      <GuideFooter data={current} />
+      {useStateDesign ? (
+        <GuideStateFooter data={current} showSource={generate.isPending || current.status !== 'UNAVAILABLE'} />
+      ) : (
+        <GuideFooter data={current} />
+      )}
     </div>
   );
 }
@@ -108,16 +116,26 @@ export default function ApplicationGuidePage() {
 /** 아직 만든 적이 없는 상태. 여기서 자동으로 AI 를 부르지 않는다 */
 function GuideNotGenerated({ onGenerate, busy }: { onGenerate: () => void; busy: boolean }) {
   return (
-    <section className="empty">
-      <h2>아직 생성된 신청 준비 가이드가 없어요</h2>
-      <p>
-        공고문과 지금 입력한 내 정보를 바탕으로 제출서류와 확인사항을 정리해 드려요.
-        <br />
-        모집공고 원문을 직접 뒤지지 않아도 되도록 돕는 참고 자료예요.
+    <section className={styles.card} aria-labelledby="guide-before-title">
+      <div className={styles.icon}>
+        <GuideStateIcon kind="document" size={31} />
+      </div>
+      <h2 id="guide-before-title" className={styles.title}>복잡한 공고문, 핵심부터 확인해 보세요</h2>
+      <p className={styles.description}>
+        AI가 공고문을 살펴보고 신청 자격, 준비 서류, 꼭 확인할 내용을 항목별로 정리해 드려요.
       </p>
-      <button type="button" className="btn" onClick={onGenerate} disabled={busy}>
-        AI 신청 준비 가이드 만들기
-      </button>
+      <div className={styles.actions}>
+        <button type="button" className={styles.primary} onClick={onGenerate} disabled={busy}>
+          <GuideStateIcon kind="sparkle" size={17} />
+          <span>AI 신청 준비 가이드 만들기</span>
+          <GuideStateIcon kind="arrow" size={17} />
+        </button>
+      </div>
+      <ul className={styles.features}>
+        {['지원 조건 확인', '제출 서류 체크리스트', '신청 전 주의사항'].map((label) => (
+          <li key={label}><GuideStateIcon kind="check" size={15} />{label}</li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -128,20 +146,20 @@ function GuideNotGenerated({ onGenerate, busy }: { onGenerate: () => void; busy:
  */
 function GuideLoading() {
   return (
-    <section className="panel guide-loading" aria-live="polite" aria-busy="true">
+    <section className={`${styles.card} ${styles.loading}`} aria-live="polite" aria-busy="true">
       {/* 몇 초 동안 화면이 멈춘 것처럼 보이지 않도록 진행 중이라는 신호를 둔다 */}
-      <span className="guide-loading__dots" aria-hidden="true">
+      <span className={`guide-loading__dots ${styles.dots}`} aria-hidden="true">
         <i /><i /><i />
       </span>
-      <p className="guide-loading__title">공고문을 분석하고 있어요.</p>
-      <p className="muted small">
-        모집공고문에서 신청 자격·제출서류·유의사항을 찾아 내 정보에 맞춰 정리하는 중이에요.
+      <h2 className={`guide-loading__title ${styles.title}`}>공고문을 분석하고 있어요.</h2>
+      <p className={styles.description}>
+        신청 자격과 제출 서류, 놓치기 쉬운 주의사항을 정리하고 있어요.
       </p>
     </section>
   );
 }
 
-/** 만들지 못한 상태. 이때도 원문 링크는 아래 푸터에 그대로 남는다 */
+/** 만들지 못한 상태. 원문 링크와 기존 재시도 정책을 유지한다. */
 function GuideUnavailable({
   data,
   onRetry,
@@ -151,24 +169,73 @@ function GuideUnavailable({
   onRetry: () => void;
   busy: boolean;
 }) {
-  const message =
-    data.reasonMessage ?? (data.reason ? UNAVAILABLE_MESSAGE[data.reason] : '가이드를 만들지 못했어요.');
+  const message = data.reason === 'NO_DOCUMENT'
+    ? '이 공고에서 분석할 수 있는 모집공고 파일을 찾지 못했어요.'
+    : data.reasonMessage ?? (data.reason ? UNAVAILABLE_MESSAGE[data.reason] : '가이드를 만들지 못했어요.');
   // 공고문 자체를 읽을 수 없는 경우는 다시 눌러도 결과가 같다
   // (이미지 문서 / 분석할 파일 없음 / 지원하지 않는 형식)
   const NOT_RETRIABLE = ['SCANNED_DOCUMENT', 'NO_DOCUMENT', 'UNSUPPORTED_DOCUMENT_FORMAT'];
   const retriable = !data.reason || !NOT_RETRIABLE.includes(data.reason);
 
   return (
-    <section className="empty">
-      <h2>신청 준비 가이드를 만들지 못했어요</h2>
-      <p>{message}</p>
-      <p className="muted small">공고 원문은 아래에서 계속 확인할 수 있어요.</p>
-      {retriable && (
-        <button type="button" className="btn btn--ghost" onClick={onRetry} disabled={busy}>
-          다시 시도
-        </button>
-      )}
+    <section className={`${styles.card} ${styles.failure}`} aria-labelledby="guide-failure-title">
+      <div className={`${styles.icon} ${styles.failureIcon}`}>
+        <GuideStateIcon kind="failure" size={31} />
+      </div>
+      <h2 id="guide-failure-title" className={styles.title}>신청 준비 가이드를 만들지 못했어요</h2>
+      <p className={styles.description}>
+        {message}
+        <br />
+        신청 자격과 접수 방법은 공고 원문에서 직접 확인해 주세요.
+      </p>
+      <div className={styles.actions}>
+        {data.noticeDetailUrl && <GuideSourceLink url={data.noticeDetailUrl} primary />}
+        <Link to="/calendar" className={styles.secondary}>관심 공고로 돌아가기</Link>
+        {retriable && (
+          <button type="button" className={styles.secondary} onClick={onRetry} disabled={busy}>
+            다시 시도
+          </button>
+        )}
+      </div>
     </section>
+  );
+}
+
+/** 세 상태에서만 사용하는 장식 아이콘. 성공 화면과 공통 헤더에는 적용하지 않는다. */
+function GuideStateIcon({ kind, size }: {
+  kind: 'document' | 'failure' | 'sparkle' | 'arrow' | 'check' | 'external' | 'info';
+  size: number;
+}) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      {kind === 'document' && <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h7M14 2v6h6m-6-6 6 6" /><circle cx="17" cy="17" r="3" /><path d="m19.2 19.2 2.2 2.2M8 12h5M8 16h3" /></>}
+      {kind === 'failure' && <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8l-8-6ZM14 2v6h8M12 12v4m0 3h.01" /></>}
+      {kind === 'sparkle' && <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Zm7 13 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16ZM4 2l.7 1.8L6.5 4.5l-1.8.7L4 7l-.7-1.8L1.5 4.5l1.8-.7L4 2Z" />}
+      {kind === 'arrow' && <path d="M4 12h16m-7-7 7 7-7 7" />}
+      {kind === 'check' && <><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></>}
+      {kind === 'external' && <path d="M13 5h6v6m0-6-8 8M19 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5" />}
+      {kind === 'info' && <><circle cx="12" cy="12" r="9" /><path d="M12 11v5m0-8h.01" /></>}
+    </svg>
+  );
+}
+
+function GuideSourceLink({ url, primary = false }: { url: string; primary?: boolean }) {
+  return (
+    <a className={primary ? styles.primary : styles.secondary} href={url} target="_blank" rel="noreferrer">
+      <span>공고 원문 보기</span><GuideStateIcon kind="external" size={15} />
+    </a>
+  );
+}
+
+function GuideStateFooter({ data, showSource }: { data: ApplicationGuide; showSource: boolean }) {
+  return (
+    <footer className={styles.footer}>
+      {showSource && data.noticeDetailUrl && <GuideSourceLink url={data.noticeDetailUrl} />}
+      <p className={styles.disclaimer}>
+        AI 안내는 신청 준비를 돕기 위한 참고정보예요. 최종 자격과 제출서류는 모집공고 원문을 확인해 주세요.
+        {data.generatedAt && ` (${data.generatedAt.slice(0, 10)} 생성)`}
+      </p>
+    </footer>
   );
 }
 
@@ -181,7 +248,7 @@ function GuideResultView({ data }: { data: ApplicationGuide }) {
   return (
     <>
       <section className="panel guide-section">
-        <h2 className="panel__title">① 신청 준비 핵심</h2>
+        <h2 className="panel__title"><span className={styles.sectionNumber}>1</span> 신청 준비 핵심</h2>
         <p className="guide-summary">{guide.summary}</p>
         {sourceFile && (
           <p className="guide-source-file">
@@ -192,7 +259,7 @@ function GuideResultView({ data }: { data: ApplicationGuide }) {
 
       {guide.personalChecks.length > 0 && (
         <section className="panel guide-section">
-          <h2 className="panel__title">② 내 정보 기준 확인사항</h2>
+          <h2 className="panel__title"><span className={styles.sectionNumber}>2</span> 내 정보 기준 확인사항</h2>
           <ul className="guide-checks">
             {guide.personalChecks.map((check, index) => (
               <li key={`${check.title}-${index}`} className={`guide-check reason--${CHECK_STATUS_TONE[check.status]}`}>
@@ -213,7 +280,7 @@ function GuideResultView({ data }: { data: ApplicationGuide }) {
 
       {guide.documents.length > 0 && (
         <section className="panel guide-section">
-          <h2 className="panel__title">③ 준비할 서류</h2>
+          <h2 className="panel__title"><span className={styles.sectionNumber}>3</span> 준비할 서류</h2>
           {DOCUMENT_CATEGORY_ORDER.map((category) => {
             const items = guide.documents.filter((document) => document.category === category);
             if (items.length === 0) return null;
@@ -243,10 +310,10 @@ function GuideResultView({ data }: { data: ApplicationGuide }) {
 
       {guide.cautions.length > 0 && (
         <section className="panel guide-section">
-          <h2 className="panel__title">④ 꼭 확인하세요</h2>
+          <h2 className="panel__title"><span className={styles.sectionNumber}>4</span> 꼭 확인하세요</h2>
           <ul className="guide-cautions">
             {guide.cautions.map((caution, index) => (
-              <li key={`${caution.kind}-${index}`} className="guide-caution">
+              <li key={`${caution.kind}-${index}`} className="guide-caution" data-kind={caution.kind}>
                 <span className={`badge badge--${caution.kind === 'MANUAL' ? 'check' : 'notice'}`}>
                   {CAUTION_KIND_LABEL[caution.kind]}
                 </span>

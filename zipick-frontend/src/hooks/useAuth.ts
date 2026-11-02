@@ -1,8 +1,16 @@
 import { useSyncExternalStore } from 'react';
 
+/** 인증 수단. 계정 메뉴의 가입 유형·이메일 표시를 여기에 맞춘다. */
+export type AuthProvider = 'LOCAL' | 'KAKAO';
+
 export interface AuthUser {
   userId: number;
-  email: string;
+  /**
+   * 가입 이메일. 카카오가 검증된 이메일을 주지 않으면 null 이다.
+   * 서버가 가짜 이메일을 만들지 않으므로 화면에서 없는 경우를 직접 다뤄야 한다.
+   */
+  email: string | null;
+  provider: AuthProvider;
   /** 운영자용 항목(슬랙 알림 등)을 보일지만 정한다. 권한 검사는 서버가 한다 */
   role?: 'ROLE_USER' | 'ROLE_ADMIN';
 }

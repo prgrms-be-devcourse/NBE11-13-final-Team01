@@ -27,7 +27,7 @@ public record GeminiPdfParserProperties(
         baseUrl = baseUrl == null || baseUrl.isBlank()
                 ? "https://generativelanguage.googleapis.com" : baseUrl.trim();
         model = model == null || model.isBlank() ? "gemini-3.5-flash-lite" : model;
-        maxFileBytes = maxFileBytes <= 0 ? 20 * 1024 * 1024L : maxFileBytes;
+        maxFileBytes = maxFileBytes <= 0 ? 40 * 1024 * 1024L : maxFileBytes;
         maxOutputTokens = maxOutputTokens <= 0 ? 65_536 : Math.min(maxOutputTokens, 65_536);
         thinkingLevel = thinkingLevel == null || thinkingLevel.isBlank() ? "medium" : thinkingLevel;
         timeout = timeout == null ? Duration.ofMinutes(5) : timeout;

@@ -133,19 +133,27 @@ public class GhHousingDetailSource implements HousingDetailSource {
                 }
             }
         }
-        List<DetailedHousingUnit> completed = supplementFromHousingPdf(notice, attachments, units);
+        GhPdfResult pdfResult = supplementFromHousingPdf(notice, attachments, units, key);
+        if (pdfResult.skipped()) {
+            return new HousingDetailResult(List.of(), attachments, Map.of(), true);
+        }
+        List<DetailedHousingUnit> completed = pdfResult.units();
         var checkpoints = cacheEnabled && !completed.isEmpty()
                 ? List.of(new com.zipick.notice.dto.ParseCheckpoint(key, "GH_HTML_V2", htmlBytes.length, completed.size()))
-                : List.<com.zipick.notice.dto.ParseCheckpoint>of();
+                : pdfResult.checkpoints();
         return new HousingDetailResult(completed, attachments, mediaByUnit, false, checkpoints);
     }
 
-    private List<DetailedHousingUnit> supplementFromHousingPdf(
+    private record GhPdfResult(List<DetailedHousingUnit> units, boolean skipped,
+                               List<com.zipick.notice.dto.ParseCheckpoint> checkpoints) { }
+
+    private GhPdfResult supplementFromHousingPdf(
             NoticeResponse notice,
             List<NoticeAttachmentResponse> attachments,
-            List<DetailedHousingUnit> fallback
+            List<DetailedHousingUnit> fallback,
+            String htmlKey
     ) {
-        if (geminiSupport == null || !geminiSupport.enabled()) return List.copyOf(fallback);
+        if (geminiSupport == null || !geminiSupport.enabled()) return new GhPdfResult(List.copyOf(fallback), false, List.of());
         for (NoticeAttachmentResponse attachment : attachments) {
             String fileName = attachment.fileName() == null ? "" : attachment.fileName();
             if (!fileName.toLowerCase(Locale.ROOT).endsWith(".pdf")
@@ -154,14 +162,24 @@ public class GhHousingDetailSource implements HousingDetailSource {
             }
             try {
                 byte[] bytes = documentClient.getBytes(URI.create(attachment.sourceUrl()));
-                return geminiSupport.supplement(
-                        bytes, attachment.sourceKey(), "GH", notice.title(), fileName, fallback
-                );
+                String key = htmlKey + ":" + com.zipick.external.housingdetail.DocumentFingerprint.sha256(bytes);
+                String version = "GH_" + geminiSupport.parserVersion();
+                if (historyRepository != null && historyRepository.findByDocumentKeyAndParserVersion(key, version)
+                        .filter(com.zipick.notice.domain.DocumentParseHistory::isSuccess).isPresent()) {
+                    return new GhPdfResult(List.of(), true, List.of());
+                }
+                var result = geminiSupport.supplementWithStatus(
+                        bytes, attachment.sourceKey(), "GH", notice.title(), fileName, fallback);
+                var checkpoints = historyRepository != null && result.aiApplied() && result.aiComplete()
+                        && !result.units().isEmpty()
+                        ? List.of(new com.zipick.notice.dto.ParseCheckpoint(key, version, bytes.length, result.units().size()))
+                        : List.<com.zipick.notice.dto.ParseCheckpoint>of();
+                return new GhPdfResult(result.units(), false, checkpoints);
             } catch (RuntimeException ignored) {
-                // 기존 HTML 파싱 결과를 유지한다.
+                // 기존 HTML 파싱 결과를 유지하고 AI 성공 이력은 남기지 않는다.
             }
         }
-        return List.copyOf(fallback);
+        return new GhPdfResult(List.copyOf(fallback), false, List.of());
     }
 
     List<NoticeAttachmentResponse> attachments(Document document, String noticeId) {

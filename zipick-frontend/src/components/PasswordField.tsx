@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 interface Props {
   label: string;
@@ -8,6 +8,7 @@ interface Props {
   /** 'current-password' | 'new-password' */
   autoComplete: string;
   error?: string | null;
+  describedBy?: string;
 }
 
 /** 눈 아이콘. 보임 상태에서는 사선을 덧그린다. */
@@ -22,18 +23,23 @@ function EyeIcon({ off }: { off: boolean }) {
 }
 
 /** 비밀번호 입력 + 표시/숨기기. 가입 규칙이 영문·숫자 혼합이라 오타가 잦아 토글을 둔다. */
-export default function PasswordField({ label, value, onChange, placeholder, autoComplete, error }: Props) {
+export default function PasswordField({ label, value, onChange, placeholder, autoComplete, error, describedBy }: Props) {
   const [visible, setVisible] = useState(false);
+  const id = useId();
+  const errorId = `${id}-error`;
   return (
-    <label>
-      {label}
+    <div className="auth-password-field">
+      <label htmlFor={id}>{label}</label>
       <span className="auth-password">
         <input
+          id={id}
           type={visible ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           autoComplete={autoComplete}
+          aria-invalid={!!error}
+          aria-describedby={[describedBy, error ? errorId : undefined].filter(Boolean).join(' ') || undefined}
           required
         />
         <button
@@ -47,7 +53,7 @@ export default function PasswordField({ label, value, onChange, placeholder, aut
           <EyeIcon off={visible} />
         </button>
       </span>
-      {error && <small className="auth-error">{error}</small>}
-    </label>
+      {error && <small id={errorId} className="auth-error">{error}</small>}
+    </div>
   );
 }

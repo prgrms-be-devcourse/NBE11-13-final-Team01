@@ -1,0 +1,13 @@
+/* Bundled Pretendard v1.3.9; see public/fonts/pretendard/LICENSE. */
+@font-face {
+  font-family: 'Pretendard Variable';
+  src: url('/fonts/pretendard/PretendardVariable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 45 920;
+  font-display: swap;
+}
+
+/* Typography is shared by every route; color/layout tokens remain theme scoped. */
+:root {
+  --zipick-font-family: 'Pretendard Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
+}

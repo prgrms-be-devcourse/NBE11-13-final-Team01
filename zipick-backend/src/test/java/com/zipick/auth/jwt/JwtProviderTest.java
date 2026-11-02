@@ -3,6 +3,7 @@ package com.zipick.auth.jwt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.zipick.user.entity.AuthProvider;
 import com.zipick.user.entity.Role;
 import com.zipick.user.entity.User;
 import io.jsonwebtoken.Jwts;
@@ -208,6 +209,53 @@ class JwtProviderTest {
 
             assertThat(jwtProvider.getUserId(token)).isEqualTo(USER_ID);
             assertThat(jwtProvider.getTokenDetails(token).getEmail()).isEqualTo(EMAIL);
+        }
+    }
+
+    @Nested
+    @DisplayName("소셜 계정")
+    class Social {
+
+        private static final User KAKAO_USER =
+                User.of(2L, null, null, Role.ROLE_USER, AuthProvider.KAKAO, "4071234567");
+
+        @Test
+        @DisplayName("이메일이 없어도 토큰을 발급하고 되읽을 수 있다")
+        void emailCanBeNull() {
+            // sub 클레임 자체가 들어가지 않는다. 이 경로가 깨지면 카카오 로그인 전체가 막힌다.
+            String token = jwtProvider.createAccessToken(KAKAO_USER);
+
+            assertThat(jwtProvider.validateToken(token, TokenType.ACCESS)).isEqualTo(TokenStatus.VALID);
+            assertThat(jwtProvider.getUserId(token)).isEqualTo(2L);
+            assertThat(jwtProvider.getTokenDetails(token).getEmail()).isNull();
+        }
+
+        @Test
+        @DisplayName("provider 클레임으로 가입 유형을 복구한다")
+        void providerClaimIsRestored() {
+            assertThat(jwtProvider.getTokenDetails(jwtProvider.createAccessToken(KAKAO_USER)).getProvider())
+                    .isEqualTo(AuthProvider.KAKAO);
+            assertThat(jwtProvider.getTokenDetails(jwtProvider.createAccessToken(USER)).getProvider())
+                    .isEqualTo(AuthProvider.LOCAL);
+        }
+
+        @Test
+        @DisplayName("카카오 로그인 도입 전에 발급된 토큰(provider 클레임 없음)은 LOCAL로 본다")
+        void legacyTokenWithoutProviderClaim() {
+            // 배포 직후 만료되지 않은 기존 토큰이 그대로 돌아다닌다. 여기서 터지면 전원이 로그아웃된다.
+            String legacy = Jwts.builder()
+                    .issuer(ISSUER)
+                    .subject(EMAIL)
+                    .claim("id", USER_ID)
+                    .claim("role", Role.ROLE_USER.name())
+                    .claim("type", TokenType.ACCESS.name())
+                    .issuedAt(Date.from(Instant.now()))
+                    .expiration(Date.from(Instant.now().plus(Duration.ofHours(1))))
+                    .signWith(Keys.hmacShaKeyFor(Base64.getDecoder().decode(SECRET)), Jwts.SIG.HS256)
+                    .compact();
+
+            assertThat(jwtProvider.validateToken(legacy, TokenType.ACCESS)).isEqualTo(TokenStatus.VALID);
+            assertThat(jwtProvider.getTokenDetails(legacy).getProvider()).isEqualTo(AuthProvider.LOCAL);
         }
     }
 }

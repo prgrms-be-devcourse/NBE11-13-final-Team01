@@ -9,6 +9,7 @@ interface Props {
   saving: boolean;
   onSave: () => void;
   onReset: () => void;
+  showTuneLink?: boolean;
 }
 
 const PRESETS: Record<string, Record<ScoreItem, number>> = {
@@ -19,7 +20,7 @@ const PRESETS: Record<string, Record<ScoreItem, number>> = {
 };
 
 /** 항목별 우선순위 1~5. 움직이면 즉시 목록이 다시 계산되고, "적용"을 눌러야 저장된다. */
-export default function PrioritySliders({ priorities, onChange, dirty, saving, onSave, onReset }: Props) {
+export default function PrioritySliders({ priorities, onChange, dirty, saving, onSave, onReset, showTuneLink = true }: Props) {
   return (
     <section className="panel">
       <h2 className="panel__title">우선순위</h2>
@@ -53,9 +54,9 @@ export default function PrioritySliders({ priorities, onChange, dirty, saving, o
         </button>
       </div>
       {dirty && <small className="hint">저장 전에도 목록에 바로 반영돼요.</small>}
-      <Link to="/tune" className="tune-link">
+      {showTuneLink && <Link to="/tune" className="tune-link">
         뭘 올려야 할지 모르겠다면? 두 집 비교로 찾기 →
-      </Link>
+      </Link>}
     </section>
   );
 }

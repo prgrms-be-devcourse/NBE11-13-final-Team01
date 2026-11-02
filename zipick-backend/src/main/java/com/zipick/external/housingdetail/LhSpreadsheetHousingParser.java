@@ -120,6 +120,16 @@ public class LhSpreadsheetHousingParser {
             }
             Integer addressColumn = find(columns, "주소", "소재지", "도로명주소", "주택주소");
             if (addressColumn != null) {
+                // 면적·임대조건처럼 병합된 상위 제목 아래에 세부 열이 있는 표를 지원합니다.
+                Row next = sheet.getRow(rowIndex + 1);
+                if (next != null && !StringUtils.hasText(value(next, addressColumn, formatter, evaluator))) {
+                    for (int columnIndex = 0; columnIndex < next.getLastCellNum(); columnIndex++) {
+                        String label = normalizeHeader(value(next, columnIndex, formatter, evaluator));
+                        if (StringUtils.hasText(label) && label.matches(".*[가-힣a-zA-Z].*")) {
+                            columns.putIfAbsent(label, columnIndex);
+                        }
+                    }
+                }
                 return new Header(rowIndex, addressColumn, columns);
             }
         }

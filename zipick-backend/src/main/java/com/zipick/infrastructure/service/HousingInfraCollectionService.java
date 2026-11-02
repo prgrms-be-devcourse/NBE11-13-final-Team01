@@ -28,8 +28,6 @@ import java.util.concurrent.locks.ReentrantLock;
  * <ul>
  *   <li><b>수집기 프로세스</b>(NoticeCollectionApplication·NoticeAiApplication) — 공고 수집이 끝난 직후 같은 프로세스에서 한 번.
  *       좌표는 공고 수집의 마지막 단계에서 생기므로, 바로 이어서 돌리면 새 주택을 그 자리에서 채운다. 운영 기본 경로다.</li>
- *   <li><b>웹 서버 스케줄러</b>({@link HousingInfraCollectionScheduler}) — 기동·보정·일일 cron.
- *       운영에서는 INFRA_COLLECTION_ENABLED=false 로 꺼서 웹 프로세스가 카카오 호출과 긴 수집을 떠안지 않게 한다.
  *       로컬처럼 수집기를 따로 돌리지 않는 환경에서만 켠다.</li>
  * </ul>
  * 어느 쪽이든 같은 {@link #drain()} 을 쓰고 같은 락으로 직렬화된다(같은 JVM 안에서).

@@ -24,7 +24,7 @@ public class LhPdfHousingParser {
             + "(?:\\s*\\d+(?:번길|길))?|[가-힣A-Za-z0-9·.\\-]+\\s*\\d+(?:번길|길))";
     private static final Pattern ROAD_ADDRESS = Pattern.compile(
             "(?<address>" + PROVINCE + ADMIN
-                    + "\\s+" + ROAD_NAME + "\\s+\\d+(?:-\\d+)?(?:\\s*\\([^)]*\\))?)"
+                    + "\\s+" + ROAD_NAME + "\\s*\\d+(?:-\\d+)?(?!\\d|\\s*(?:번길|길))(?:\\s*\\([^)]*\\))?)"
     );
     private static final Pattern LOT_ADDRESS = Pattern.compile(
             "(?<address>" + PROVINCE + ADMIN
@@ -65,14 +65,29 @@ public class LhPdfHousingParser {
     }
 
     List<DetailedHousingUnit> parseText(String text, LhAttachment attachment, String sourcePrefix) {
+        // 전세주택을 추후 직접 찾거나 공급주소를 별도 안내하는 공고의 문의처를 주택으로 저장하지 않습니다.
+        if (hasDeferredHousingDetails(text) && !SUPPLY_NAME.matcher(text).find()
+                && !attachment.fileName().replaceAll("\\s+", "").matches(".*주택(?:목록|내역|명세).*")) {
+            return List.of();
+        }
         List<DetailedHousingUnit> units = new ArrayList<>();
         Set<String> seenAddresses = new LinkedHashSet<>();
         String provinceHint = findSingleProvince(text);
         int rowNumber = 0;
-        for (String line : text.split("\\R")) {
+        String[] lines = text.split("\\R");
+        for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            String line = lines[lineIndex];
             if (NON_HOUSING_CONTEXT.matcher(line).find()) {
                 continue;
             }
+            String compact = line.replaceAll("\\s+", "");
+            boolean addressLabel = compact.matches("^[⊙○•·▪-]?(?:주소|소재지)[:：]?.*");
+            String previous = lineIndex > 0 ? lines[lineIndex - 1] : "";
+            String previousTwo = lineIndex > 1 ? lines[lineIndex - 2] : "";
+            String next = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : "";
+            if (line.trim().startsWith("(") && NON_HOUSING_CONTEXT.matcher(previous + " " + previousTwo).find()) continue;
+            if (addressLabel && (NON_HOUSING_CONTEXT.matcher(previous).find()
+                    || next.matches(".*(?:1600-1004|LH\\s*홈페이지|LH청약플러스).*"))) continue;
             String complexName = null;
             Matcher nameMatcher = SUPPLY_NAME.matcher(line);
             if (nameMatcher.find()) {
@@ -107,10 +122,18 @@ public class LhPdfHousingParser {
         return List.copyOf(units);
     }
 
+    static boolean hasDeferredHousingDetails(String text) {
+        if (text == null) return false;
+        String compact = text.replaceAll("\\s+", "");
+        return compact.matches("(?s).*입주대상자로선정된이후주택을물색.*")
+                || compact.matches("(?s).*공급대상주택내역은동호지정및계약체결시별도안내.*");
+    }
+
     private List<String> findAddresses(String line) {
         Matcher multiLot = MULTI_LOT_ADDRESS.matcher(line);
         if (multiLot.find()) {
             String base = multiLot.group("base").trim().replaceAll("\\s+", " ");
+            if (base.matches(".*\\d+개동$")) return List.of();
             List<String> addresses = new ArrayList<>();
             for (String lot : multiLot.group("lots").split("\\s*,\\s*")) {
                 addresses.add(base + " " + lot);
