@@ -17,7 +17,7 @@
 
 ## 토큰과 컬러
 
-실제 선언: `zipick-frontend/src/design-system/tokens.css`. `:root`가 아니라 **`.zipick-theme` 아래에서만** 적용된다. 파일을 import하는 것만으로 테마가 켜지지 않는다.
+색상·패널 토큰의 실제 선언은 `zipick-frontend/src/design-system/tokens.css`이며 **`.zipick-theme` 아래에서만** 적용된다. 파일을 import하는 것만으로 테마가 켜지지 않는다. 폰트 토큰만 `src/design-system/fonts.css`의 `:root`에 선언해 모든 경로에서 공유한다.
 
 | CSS 변수 | 현재 값 | 용도 |
 | --- | --- | --- |
@@ -34,7 +34,7 @@
 | `--zipick-white` | `#fff` | 카드·패널 표면 |
 | `--zipick-green` | `#128463` | 긍정 상태 강조 |
 | `--zipick-shadow` | `0 22px 72px rgba(30,64,116,.11),0 5px 14px rgba(42,72,110,.045)` | 랜딩 지도 목업 그림자 |
-| `--zipick-font-family` | `'Noto Sans CJK KR', 'NanumSquare', 'Pretendard', system-ui, -apple-system, sans-serif` | 서비스 폰트 스택 |
+| `--zipick-font-family` | `'Pretendard Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif` | 전역 공통 웹폰트 스택 |
 | `--zipick-radius-control` | `10px` | 서비스 버튼·컨트롤 |
 | `--zipick-radius-panel` | `16px` | 지도·서비스 패널 |
 | `--zipick-shadow-panel` | `0 4px 18px rgba(30, 64, 116, .06)` | 절제된 서비스 패널 그림자 |
@@ -45,7 +45,9 @@
 
 ## 타이포그래피
 
-랜딩은 위 폰트 스택을 자체 CSS에 동일하게 선언하고, 지도 Layout은 폰트 토큰을 참조한다. 폰트 스택은 폰트 설치·다운로드를 보장하지 않는다. 환경별 대체 글꼴과 굵기 렌더링 차이가 있으므로 비교 시 브라우저·뷰포트·폰트 환경을 맞춘다.
+전역 본문·랜딩·서비스 Layout·헤더·인증 화면은 같은 폰트 토큰을 참조한다. `main.tsx`가 `design-system/fonts.css`를 한 번 불러오며, 공식 Pretendard v1.3.9의 원본 가변 WOFF2(2,057,688바이트)를 `public/fonts/pretendard/`에 포함한다. 같은 폴더의 LICENSE와 README에 라이선스·출처·버전·SHA-256을 기록한다.
+
+`@font-face`는 `Pretendard Variable`·normal·굵기 `45 920`·`font-display:swap`으로 선언하며 `url()`만 사용한다. 로컬 설치 폰트가 우선하지 않고 같은 출처에서 제공하는 파일을 사용한다. `index.html`은 동일한 폰트 URL을 `crossorigin`으로 preload한다. 별도 CDN·폰트 패키지 의존성은 없으며 배포 빌드에도 폰트와 라이선스를 복사한다. 기존 글자 크기·굵기·행간은 유지하지만 가변 폰트가 실제 지정 굵기를 표현하므로 이전 설치 폰트의 가장 가까운 고정 굵기와 미세하게 다를 수 있다. 다운로드 실패 시 시스템 폰트로 대체하며 OS·브라우저별 미세한 렌더링 차이는 남을 수 있다. Kakao 지도 타일의 자체 지명과 SVG 이미지 내부 숫자는 제공자/이미지의 기존 글꼴 처리를 유지한다.
 
 | 요소 | 현재 선언 |
 | --- | --- |
@@ -207,6 +209,7 @@
 | 파일·폴더 | 역할 |
 | --- | --- |
 | `zipick-frontend/src/design-system/tokens.css` | 테마 토큰 |
+| `zipick-frontend/src/design-system/fonts.css`, `public/fonts/pretendard/` | 전역 폰트 토큰·프로젝트에서 제공하는 Pretendard 가변 웹폰트·원본 라이선스/출처 |
 | `zipick-frontend/src/pages/LandingPage.tsx` | 독립 랜딩 루트·섹션 조립 |
 | `zipick-frontend/src/features/landing/Landing.module.css` | 랜딩 전용 스타일 |
 | `zipick-frontend/src/features/landing/` | LandingHeader/Hero/Confidence/Features/Journey/FinalCta/Footer 컴포넌트와 목업 |

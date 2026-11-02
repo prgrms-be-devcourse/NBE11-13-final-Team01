@@ -16,7 +16,7 @@
 html, body, #root { margin: 0; height: 100%; }
 html:has([data-stable-scrollbar]) { scrollbar-gutter: stable; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif;
+  font-family: var(--zipick-font-family);
   color: var(--ink);
   background: var(--bg);
   font-size: 14px;
