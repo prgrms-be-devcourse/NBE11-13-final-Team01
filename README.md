@@ -14,30 +14,29 @@
 ## 시스템 구성도
 
 ```mermaid
-flowchart LR
-    user(["사용자 브라우저"])
-    admin(["운영자 /admin"])
+flowchart TB
+    user(["사용자 · 운영자 브라우저"])
+    gh["GitHub Actions → GHCR<br/>ARM64 이미지 빌드·보관"]
 
-    subgraph GH["GitHub"]
-        actions["GitHub Actions<br/>verify → build → deploy"]
-        ghcr[("GHCR<br/>ARM64 이미지 3종")]
-        actions --> ghcr
-    end
+    subgraph AWS["AWS (ap-northeast-2)"]
+        direction TB
+        ssm["AWS SSM Run Command<br/>(SSH 없이 배포 명령 전달)"]
 
-    subgraph AWS["AWS VPC (ap-northeast-2)"]
-        ssm["AWS SSM<br/>Run Command"]
-
-        subgraph APP["앱 EC2 · 퍼블릭 (80/443만 공개)"]
-            web["web · Caddy<br/>React 정적 파일 + /api·Swagger 프록시"]
-            backend["backend · Spring Boot<br/>인증·추천·관심 공고·운영자 API"]
-            collector["collector / ai-collector<br/>공고·주택 수집, AI 보조 수집"]
-            timer["systemd timer 09:30<br/>+ 운영자 요청 cron(1분)"]
+        subgraph APP["앱 EC2 — 바깥에는 80/443 만 공개"]
+            direction TB
+            web["web · Caddy<br/>React 정적 파일 + /api 프록시"]
+            backend["backend · Spring Boot<br/>인증 · 추천 · 관심 공고 · 운영자 API"]
             mq[("RabbitMQ")]
-            notif["notification · Go<br/>아웃박스·재시도·채널 발송"]
-            exp["node · cAdvisor ·<br/>blackbox · postgres exporter"]
+            notif["notification · Go<br/>아웃박스 · 재시도 · 채널 발송"]
+            timer["systemd timer 매일 09:30<br/>+ 운영자 수집 요청 cron"]
+            collector["collector · ai-collector<br/>공고 · 주택 · AI 보조 수집"]
+            exp["exporters<br/>node · cAdvisor · blackbox · postgres"]
+            web --> backend
+            backend -- 알림 요청 --> mq --> notif
+            timer --> collector
         end
 
-        subgraph DBS["DB EC2 · 프라이빗"]
+        subgraph DBS["DB EC2 — 프라이빗"]
             pg[("PostgreSQL 16")]
         end
 
@@ -50,35 +49,24 @@ flowchart LR
     end
 
     subgraph EXT["외부 서비스"]
-        myhome["공공데이터포털<br/>마이홈 API (LH)"]
-        orgs["SH · GH · HUG<br/>공고 페이지"]
+        direction LR
+        myhome["마이홈 API (LH)"]
+        orgs["SH · GH · HUG 공고"]
         kakao["Kakao<br/>Local · Maps · OAuth"]
         gemini["Google Gemini"]
         slack["Slack"]
     end
 
     user -- HTTP --> web
-    admin -- HTTP --> web
-    web -- /api --> backend
+    gh -- 배포 --> ssm --> APP
     backend --> pg
-    backend -- 알림 요청 --> mq --> notif
-    backend -- 내역·묶음 HTTP --> notif
-    notif --> ses
-    notif --> slack
-    timer --> collector
     collector --> pg
-    collector --> myhome
-    collector --> orgs
-    collector --> gemini
-    collector --> kakao
-    backend --> kakao
-    backend --> gemini
-    user -. 지도 SDK .-> kakao
-
-    actions -- 배포 명령 --> ssm -- remote-deploy.sh --> APP
-    APP -. 이미지 pull .-> ghcr
+    collector -- 공고 수집 --> myhome & orgs
+    collector -- PDF 파싱 · 좌표 --> gemini & kakao
+    backend -- 로그인 · AI 가이드 --> kakao & gemini
+    notif -- 메일 --> ses
+    notif -- 운영 알림 --> slack
     prom -. 사설 IP 수집 .-> exp
-    am -. 경보 .-> slack
 ```
 
 | 구성 요소 | 역할 |
