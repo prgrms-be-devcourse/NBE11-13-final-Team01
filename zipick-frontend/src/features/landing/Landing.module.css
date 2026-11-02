@@ -12,6 +12,11 @@
 
 .landing{background:#fff;min-height:100%;} .landing section[id]{scroll-margin-top:88px;}
 
+/* Anchor the shared account panel to the full action area, including the CTA. */
+.head-actions{position:relative}
+.account-menu > div{position:static}
+@media(max-width:680px){.head-actions:has(.account-menu){gap:10px}.account-menu{font-size:12px}}
+
 /* Static mockups from zipick_landing_refined_mockups.html. */
 .map-frame.real-map-preview{background:#eef4f5}
 .real-map-preview .map-art,.feature-map-preview .map-art{pointer-events:none}
