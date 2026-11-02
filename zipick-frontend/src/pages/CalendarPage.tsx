@@ -104,8 +104,16 @@ export default function CalendarPage() {
               </div>
               <h3 className="card__title">{s.notice.title}</h3>
               <p className="card__addr">
-                {s.notice.regions.join(', ')}
-                {s.notice.housingCount > 0 && ` · 주택 ${s.notice.housingCount}곳`}
+                <span className={styles.addrItem}>
+                  <PinIcon />
+                  {s.notice.regions.join(', ')}
+                </span>
+                {s.notice.housingCount > 0 && (
+                  <span className={styles.addrItem}>
+                    <HouseIcon />
+                    주택 {s.notice.housingCount}곳
+                  </span>
+                )}
               </p>
               <dl className="card__facts">
                 <div><dt>공고</dt><dd>{s.notice.announcedAt ?? '—'}</dd></div>
@@ -141,5 +149,25 @@ export default function CalendarPage() {
       </section>
       <DeadlineAlertPrompt />
     </div>
+  );
+}
+
+/** 지역 표시용 핀. HousingDetail의 주소 아이콘과 같은 모양이다. */
+function PinIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
+  );
+}
+
+/** 주택 수 표시용. */
+function HouseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m3 10 9-7 9 7v11H3V10Z" />
+      <path d="M9 21v-8h6v8" />
+    </svg>
   );
 }

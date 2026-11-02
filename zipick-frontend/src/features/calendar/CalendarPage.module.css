@@ -14,6 +14,8 @@
   font-size: 14px;
   line-height: 1.55;
   min-width: 0;
+  /* 마지막 알림 설정 박스 아래 여백을 취향찾기 페이지와 같은 정도로 맞춘다. */
+  padding-bottom: 16px;
 }
 .page :where(button, input, summary) { font: inherit; }
 .page :where(h1, h2, h3) { color: var(--zipick-ink); word-break: keep-all; }
@@ -71,7 +73,10 @@
 .page :global(.card__head) { margin: 0; }
 .page :global(.card__agency) { overflow-wrap: anywhere; }
 .page :global(.card__title) { font-size: 16px; font-weight: 700; line-height: 1.5; letter-spacing: -.02em; margin: 0; overflow-wrap: anywhere; }
-.page :global(.card__addr) { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+/* 지역과 주택 수를 각각 아이콘과 묶어 한 줄에 둔다. 자리가 좁으면 줄바꿈된다. */
+.page :global(.card__addr) { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.addrItem { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.addrItem > svg { flex: none; color: var(--zipick-soft); }
 .page :global(.card__facts) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin: 0; padding: 16px 0; border-top: 1px solid var(--zipick-line); }
 .page :global(.card__facts) div { min-width: 0; flex-wrap: wrap; gap: 4px 8px; font-size: 13px; }
 .page :global(.card__facts) dt { font-size: 12px; color: var(--zipick-body); }
