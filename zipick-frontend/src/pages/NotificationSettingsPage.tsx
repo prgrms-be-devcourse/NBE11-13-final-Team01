@@ -79,11 +79,9 @@ export default function NotificationSettingsPage() {
       qc.invalidateQueries({ queryKey: ['notification-history'] });
     },
   });
-  const test = useMutation({ mutationFn: notificationApi.test, onSuccess: () => qc.invalidateQueries({ queryKey: ['notification-history'] }) });
 
   const mark = <T,>(set: (v: T) => void) => (v: T) => { set(v); setDirty(true); };
   const toggleDay = (d: number) => mark(setDays)(days.includes(d) ? days.filter((x) => x !== d) : [...days, d]);
-  const canTest = !!s && (!!s.email || (slackAllowed && s.slackConfigured));
 
   return (
     <div className={`zipick-theme ${styles.page}`}>
@@ -170,17 +168,8 @@ export default function NotificationSettingsPage() {
         </section>
 
         {save.isError && <div className={styles.error} role="alert">{errText(save.error)}</div>}
-        {test.isError && <div className={styles.error} role="alert">{errText(test.error)}</div>}
-        {test.isSuccess && (
-          <p className={styles.ok}>
-            테스트 알림: <b>{STATUS_LABEL[test.data.status]}</b>{test.data.deliveries.length > 0 && ` — ${deliveryText(test.data)}`}
-          </p>
-        )}
 
         <div className={styles.actions}>
-          <button type="button" className={styles.ghost} onClick={() => test.mutate()} disabled={test.isPending || !canTest || dirty} title={dirty ? '먼저 저장해 주세요' : undefined}>
-            테스트 발송
-          </button>
           <button type="button" className={styles.primary} onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
             {save.isPending ? '저장 중…' : save.isSuccess && !dirty ? '저장됨' : '저장'}
           </button>
