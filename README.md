@@ -4,8 +4,26 @@
 
 | 구성 | 기술 스택 |
 | --- | --- |
-| Backend | Java 25 · Spring Boot 4.1.1 · Spring Security · JPA · PostgreSQL |
-| Frontend | React · TypeScript · Vite |
+| Backend · 수집기 | Java 25 · Spring Boot 4.1.1 · Spring Security · JPA · PostgreSQL 16 |
+| Frontend | React 18 · TypeScript · Vite · TanStack Query · Kakao Maps |
+| 알림센터 | Go 1.25 · RabbitMQ 4.1 · Slack webhook · Amazon SES |
+| AI | Gemini (공고 PDF 파싱·정규화 검수, AI 신청 준비 가이드) |
+| 인프라 | AWS EC2(ARM64) 3대 · Docker Compose · Caddy · GitHub Actions + GHCR + AWS SSM · systemd timer |
+| 모니터링 | Prometheus · Grafana · Alertmanager · node-exporter · cAdvisor · blackbox · postgres-exporter |
+
+## 시스템 구성도
+
+![ZIPICK 시스템 구성도](docs/images/architecture.png)
+
+| 구성 요소 | 역할 |
+| --- | --- |
+| **web (Caddy)** | 빌드된 React 정적 파일을 서빙하고 `/api`·Swagger 요청을 backend 로 넘깁니다. 바깥에 열린 유일한 포트(80/443)입니다 |
+| **backend** | 인증(JWT·카카오 로그인), 지도·필터, 추천(AHP), 관심 공고·일정, AI 신청 준비 가이드, 운영자 화면 API. 주변 인프라는 기동 후 자동 수집합니다 |
+| **collector / ai-collector** | backend 와 같은 이미지를 배치 모드로 실행합니다. 평소엔 떠 있지 않고 systemd 타이머(매일 09:30)나 운영자 화면의 "수집 실행" 요청 때만 실행됩니다 |
+| **notification (알림센터)** | 판단 없이 "보내기만" 하는 별도 Go 앱. RabbitMQ 로 받은 요청을 아웃박스에 적고 Email(SES)·Slack 으로 발송·재시도합니다 |
+| **DB 서버** | PostgreSQL 16. 프라이빗 서브넷에 두고 앱 서버 보안 그룹에서만 접근합니다 |
+| **모니터링 서버** | Prometheus 가 앱 서버 exporter 를 사설 IP 로 수집하고, Grafana 대시보드와 Alertmanager 경보를 제공합니다 |
+| **CD** | GitHub Actions 에서 ARM64 이미지를 빌드해 GHCR 에 올리고, SSH 대신 AWS SSM 으로 서버에 배포 명령을 보냅니다. 버튼으로 실행(`workflow_dispatch`)합니다 |
 
 ## 로컬 개발 환경 실행
 
@@ -112,7 +130,7 @@ npm run dev
 
 ## 배포 및 운영 시 확인 사항
 
-현재 `application-prod.yml`은 `SPRING_PROFILES_ACTIVE=prod` 사용을 전제로 DB 환경 변수를 읽고, **운영 CORS 주소는 아직 TODO 상태**입니다. 배포 담당자는 실제 프론트엔드 URL·백엔드 접근 경로를 기준으로 설정을 확인해야 합니다.
+운영은 위 구성도대로 앱·DB·모니터링 EC2 3대에서 돌고 있습니다. `application-prod.yml`은 `SPRING_PROFILES_ACTIVE=prod`를 전제로 DB 환경 변수를 읽고, 운영 CORS 주소는 compose 가 서버 `.env`의 `APP_ORIGIN`으로 넣습니다(`CORS_ALLOWEDORIGINS`). 주소가 바뀌면(도메인·HTTPS 적용 등) `APP_ORIGIN`과 카카오 Redirect URI 를 함께 바꿔야 합니다.
 
 | 필수 확인 | 내용 |
 | --- | --- |
@@ -127,7 +145,7 @@ npm run dev
 
 배포 방식과 환경 변수 전달, 쿠키·CORS 검증 항목: **[배포·운영 체크리스트](docs/deployment.md)**
 
-별도 EC2 모니터링 구성·수집기 스케줄 연결·AWS 검증 절차: **[모니터링 README](deploy/monitoring/README.md)**. 현재 AWS 적용 및 운영 검증 전입니다.
+별도 EC2 모니터링 구성·수집기 스케줄 연결·AWS 검증 절차: **[모니터링 README](deploy/monitoring/README.md)**. 매일 수집 예약(systemd timer) 설치·확인: **[수집 예약 README](deploy/scheduler/README.md)**.
 
 ### 주변 인프라 수집
 
