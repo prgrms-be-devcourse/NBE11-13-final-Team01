@@ -9,23 +9,19 @@ import static org.mockito.Mockito.when;
 
 import com.zipick.global.error.BusinessException;
 import com.zipick.notification.client.NotificationClient;
-import com.zipick.notification.client.NotificationRequest;
 import com.zipick.notification.domain.NotificationSetting;
-import com.zipick.notification.dto.NotificationEventResponse;
 import com.zipick.notification.dto.NotificationSettingRequest;
 import com.zipick.notification.dto.NotificationSettingResponse;
 import com.zipick.notification.repository.NotificationSettingRepository;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/** 알림 설정은 메인 DB 에, 발송은 알림센터에. 테스트 발송은 저장된 주소로 delivery=now */
+/** 알림 설정은 메인 DB 에, 발송은 알림센터에 */
 @ExtendWith(MockitoExtension.class)
 class NotificationServiceTest {
 
@@ -88,61 +84,6 @@ class NotificationServiceTest {
         assertThat(r.slackConfigured()).isFalse();
         assertThat(r.marketingConsent()).isFalse();
         assertThat(r.marketingConsentedAt()).isNull();
-    }
-
-    @Test
-    void 테스트_발송은_저장된_주소로_바로_보내고_결과를_받는다() {
-        NotificationSetting s = NotificationSetting.defaults(1L);
-        s.apply(req("https://hooks.slack.com/services/x", "a@b.co", null), LocalDateTime.now());
-        when(settings.findById(1L)).thenReturn(Optional.of(s));
-        when(client.usableChannels(List.of("email", "slack"))).thenReturn(List.of("email", "slack"));
-        NotificationEventResponse sent = new NotificationEventResponse(7L, "main", "MAIN_TEST", null, List.of("email", "slack"), "t", "SENT",
-                List.of(), List.of(), java.util.Map.of("user", "1"), LocalDateTime.now(), LocalDateTime.now(), false);
-        when(client.enqueue(any())).thenReturn(sent);
-
-        assertThat(service.sendTest(1L)).isSameAs(sent);
-
-        ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
-        verify(client).enqueue(captor.capture());
-        NotificationRequest r = captor.getValue();
-        assertThat(r.templateCode()).isEqualTo("MAIN_TEST");
-        assertThat(r.channels()).containsExactly("email", "slack");
-        assertThat(r.to().email()).isEqualTo("a@b.co");
-        assertThat(r.delivery()).isEqualTo("now");
-        assertThat(r.variables()).containsEntry("deadlineDays", "3, 1, 0");
-        assertThat(r.tags()).containsEntry("user", "1");
-    }
-
-    @Test
-    void 알림센터가_보낼_수_있는_채널만_고른다() {
-        NotificationSetting s = NotificationSetting.defaults(1L);
-        s.apply(req("https://hooks.slack.com/services/x", "a@b.co", null), LocalDateTime.now());
-        when(settings.findById(1L)).thenReturn(Optional.of(s));
-        when(client.usableChannels(List.of("email", "slack"))).thenReturn(List.of("slack"));   // 이메일 provider=none
-        when(client.enqueue(any())).thenAnswer(inv -> null);
-
-        service.sendTest(1L);
-
-        ArgumentCaptor<NotificationRequest> captor = ArgumentCaptor.forClass(NotificationRequest.class);
-        verify(client).enqueue(captor.capture());
-        assertThat(captor.getValue().channels()).containsExactly("slack");
-    }
-
-    @Test
-    void 보낼_수_있는_채널이_없으면_거부한다() {
-        NotificationSetting s = NotificationSetting.defaults(1L);
-        s.apply(req(null, "a@b.co", null), LocalDateTime.now());
-        when(settings.findById(1L)).thenReturn(Optional.of(s));
-        when(client.usableChannels(List.of("email"))).thenReturn(List.of());
-        assertThatThrownBy(() -> service.sendTest(1L)).isInstanceOf(BusinessException.class).hasMessageContaining("보낼 수 있는 채널");
-        verify(client, never()).enqueue(any());
-    }
-
-    @Test
-    void 주소가_없으면_테스트_발송을_거부한다() {
-        when(settings.findById(1L)).thenReturn(Optional.of(NotificationSetting.defaults(1L)));
-        assertThatThrownBy(() -> service.sendTest(1L)).isInstanceOf(BusinessException.class).hasMessageContaining("먼저 저장");
-        verify(client, never()).enqueue(any());
     }
 
     @Test

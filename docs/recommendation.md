@@ -91,7 +91,6 @@ P(왼쪽) = σ(β·d)                          ← Bradley-Terry = 차이에 대
 | DELETE | /api/v1/interest-notices/{noticeId} | 저장 해제 |
 | GET | /api/v1/interest-notices/schedule | 관심 공고의 일정(공고·접수 시작·접수 마감·당첨 발표). `from`·`to`(YYYY-MM-DD)로 기간 지정 |
 | GET, PUT | /api/v1/notifications/settings | 알림 설정 (슬랙 웹훅·이메일·광고 수신 동의·마감 D-day 목록·새 공고 알림). 알림센터로 넘긴다. 웹훅은 끝 6자만 돌려준다 |
-| POST | /api/v1/notifications/test | 테스트 알림 바로 보내기 |
 | GET | /api/v1/notifications | 알림 내역 (최근 50건) |
 
 프론트는 `preview=true`로 받은 항목별 점수로 가중치 슬라이더를 움직일 때 서버 없이 즉시 다시 순위를 매긴다(`src/utils/score.ts`, 서버와 같은 공식).

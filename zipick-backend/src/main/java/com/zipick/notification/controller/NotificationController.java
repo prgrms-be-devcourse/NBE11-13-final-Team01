@@ -12,7 +12,6 @@ import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,12 +35,6 @@ public class NotificationController {
     @PutMapping("/settings")
     public ApiResponse<NotificationSettingResponse> put(@CurrentUser Long userId, @Valid @RequestBody NotificationSettingRequest request) {
         return ApiResponse.ok(service.saveSetting(userId, request));
-    }
-
-    @Operation(summary = "테스트 알림 바로 보내기")
-    @PostMapping("/test")
-    public ApiResponse<NotificationEventResponse> test(@CurrentUser Long userId) {
-        return ApiResponse.ok(service.sendTest(userId));
     }
 
     @Operation(summary = "알림 내역 (최근 50건)")
