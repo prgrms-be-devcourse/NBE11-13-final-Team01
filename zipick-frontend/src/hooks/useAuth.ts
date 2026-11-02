@@ -11,7 +11,7 @@ export interface AuthUser {
    */
   email: string | null;
   provider: AuthProvider;
-  /** 운영자 메뉴를 보일지만 정한다. 권한 검사는 서버가 한다 */
+  /** 운영자용 항목(슬랙 알림 등)을 보일지만 정한다. 권한 검사는 서버가 한다 */
   role?: 'ROLE_USER' | 'ROLE_ADMIN';
 }
 

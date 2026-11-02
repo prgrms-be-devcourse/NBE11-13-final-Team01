@@ -1,0 +1,54 @@
+/* 오른쪽 아래 알림 버튼 + 카드. DESIGN.md 토큰을 이 루트(.zipick-theme)에서만 쓴다 */
+.root {
+  position: fixed; right: 20px; bottom: 20px; z-index: 60;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  font-family: var(--zipick-font-family); font-size: 13px; line-height: 1.55; color: var(--zipick-ink);
+}
+.fab {
+  width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--zipick-line); cursor: pointer;
+  background: var(--zipick-white); color: var(--zipick-body);
+  box-shadow: 0 6px 20px rgba(30, 64, 116, .14); position: relative;
+  display: grid; place-items: center; transition: transform .12s ease, box-shadow .12s ease;
+}
+.fab:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(30, 64, 116, .18); }
+.fab:focus-visible { outline: 3px solid #2059d660; outline-offset: 3px; }
+.fabOn { background: var(--zipick-blue); border-color: var(--zipick-blue); color: #fff; }
+.dot { position: absolute; top: 10px; right: 11px; width: 9px; height: 9px; border-radius: 50%; background: #c9d2df; border: 2px solid var(--zipick-white); }
+.dotOn { background: var(--zipick-green); border-color: var(--zipick-blue); }
+
+.card {
+  width: 320px; max-width: calc(100vw - 40px);
+  background: var(--zipick-white); border: 1px solid var(--zipick-line); border-radius: var(--zipick-radius-panel);
+  box-shadow: 0 12px 40px rgba(30, 64, 116, .16); padding: 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.head { display: flex; align-items: center; justify-content: space-between; font-size: 15px; }
+.summary { margin: 0; color: var(--zipick-body); }
+.summary b { color: var(--zipick-ink); }
+.muted { margin: 0; color: var(--zipick-soft); }
+.error { margin: 0; color: #c0392b; font-size: 12.5px; }
+.list { list-style: none; margin: 0; padding: 10px 0 0; border-top: 1px solid var(--zipick-line); display: flex; flex-direction: column; gap: 6px; }
+.list li { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.type { flex: 0 0 auto; font-size: 11px; padding: 2px 6px; border-radius: 6px; background: var(--zipick-blue-light); color: var(--zipick-blue); }
+.title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.time { flex: 0 0 auto; color: var(--zipick-soft); font-size: 11px; font-variant-numeric: tabular-nums; }
+.more { align-self: flex-end; color: var(--zipick-blue); font-weight: 650; text-decoration: none; }
+.more:hover { text-decoration: underline; }
+
+/* 스위치 */
+.switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; color: var(--zipick-body); }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.track { width: 38px; height: 22px; border-radius: 999px; background: #d4dbe6; position: relative; transition: background .15s ease; }
+.knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform .15s ease; }
+.switch input:checked + .track { background: var(--zipick-blue); }
+.switch input:checked + .track .knob { transform: translateX(16px); }
+.switch input:focus-visible + .track { outline: 3px solid #2059d660; outline-offset: 2px; }
+.switch input:disabled + .track { opacity: .5; }
+.switchText { min-width: 28px; }
+
+@media (max-width: 680px) {
+  .root { right: 14px; bottom: 14px; }
+  .fab { width: 48px; height: 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fab, .track, .knob { transition: none; }
+}

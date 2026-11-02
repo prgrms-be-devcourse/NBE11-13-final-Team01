@@ -8,7 +8,7 @@ import com.zipick.user.entity.User;
  *
  * email 은 null 일 수 있다 (카카오가 검증된 이메일을 주지 않은 경우).
  * 프론트는 provider 와 email 을 함께 보고 계정 메뉴 표시를 정한다.
- * role 은 프론트가 운영자 메뉴를 보일지 정할 때만 쓴다. 권한 검사는 서버(SecurityConfig)가 한다.
+ * role 은 프론트가 운영자용 항목(슬랙 알림 등)을 보일지 정할 때만 쓴다. 권한 검사는 서버가 한다.
  */
 public record UserInfoResponse(
         Long userId,

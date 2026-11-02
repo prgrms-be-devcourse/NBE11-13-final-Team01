@@ -19,6 +19,8 @@ import AdminAiDocumentsPage from './pages/admin/AdminAiDocumentsPage';
 import AdminNoticesPage from './pages/admin/AdminNoticesPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminNotificationsPage from './pages/admin/AdminNotificationsPage';
+import NotificationSettingsPage from './pages/NotificationSettingsPage';
+import NotificationWidget from './components/NotificationWidget';
 import OAuthCallbackPage from './pages/OAuthCallbackPage';
 
 /**
@@ -50,6 +52,8 @@ export default function App() {
     <>
     {/* 화면 진입·클릭 기록 (운영자 화면 '사용자 행동'). /admin 은 기록하지 않는다 */}
     <ActivityTracker />
+    {/* 오른쪽 아래 알림 버튼. 모든 화면에서 알림을 켜고 끈다 (운영자 화면 제외) */}
+    <NotificationWidget />
     <Routes>
       <Route path="/landing" element={<LandingPage />} />
       {/*
@@ -96,6 +100,15 @@ export default function App() {
           element={
             <AccessGate need="LOGIN">
               <CalendarPage />
+            </AccessGate>
+          }
+        />
+        {/* 알림 설정. 관심 공고·일정 화면에 있던 설정 패널을 따로 뺐다 */}
+        <Route
+          path="/notifications"
+          element={
+            <AccessGate need="LOGIN">
+              <NotificationSettingsPage />
             </AccessGate>
           }
         />

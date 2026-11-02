@@ -11,7 +11,8 @@ public record NotificationSettingRequest(
         @Email @Size(max = 255) String email,
         /** 광고성 정보 수신 동의. null 이면 그대로 */
         Boolean marketingConsent,
-        @Pattern(regexp = "^\\s*$|^\\d+(\\s*,\\s*\\d+)*$", message = "마감 알림 일수는 숫자를 쉼표로 구분해 적어 주세요 (예: 3,1,0)")
+        /** 접수 마감 며칠 전에 알릴지 "3,1,0". null=그대로, ""=마감 알림 끔. 0~30일 */
+        @Pattern(regexp = "^\\s*$|^\\s*([12]?\\d|30)(\\s*,\\s*([12]?\\d|30))*\\s*$", message = "마감 알림은 0~30일 전을 쉼표로 구분해 적어 주세요 (예: 3,1,0)")
         String deadlineDays,
         boolean newMatchEnabled
 ) {}

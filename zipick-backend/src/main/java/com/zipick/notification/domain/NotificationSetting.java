@@ -59,12 +59,15 @@ public class NotificationSetting extends BaseTimeEntity {
         return s;
     }
 
-    /** 화면에서 저장. 주소는 null=유지, ""=삭제. 광고 동의는 null=유지, 켜질 때 시각을 남기고 꺼지면 지운다 */
+    /**
+     * 화면에서 저장. 주소는 null=유지, ""=삭제. 광고 동의는 null=유지, 켜질 때 시각을 남기고 꺼지면 지운다.
+     * 마감 알림 일수도 null=유지, ""=마감 알림 끔(D-3·D-1·D-day 를 모두 끈 경우).
+     */
     public void apply(NotificationSettingRequest r, LocalDateTime now) {
         this.enabled = r.enabled();
         if (r.slackWebhookUrl() != null) this.slackWebhookUrl = blankToNull(r.slackWebhookUrl());
         if (r.email() != null) this.email = blankToNull(r.email());
-        if (r.deadlineDays() != null && !r.deadlineDays().isBlank()) this.deadlineDays = r.deadlineDays().replace(" ", "");
+        if (r.deadlineDays() != null) this.deadlineDays = normalizeDays(r.deadlineDays());
         this.newMatchEnabled = r.newMatchEnabled();
         if (r.marketingConsent() != null && r.marketingConsent() != this.marketingConsent) {
             this.marketingConsent = r.marketingConsent();
@@ -75,18 +78,34 @@ public class NotificationSetting extends BaseTimeEntity {
     public boolean slackConfigured() { return slackWebhookUrl != null; }
     public boolean hasEmail() { return email != null; }
 
-    /** 주소가 있는 채널. 비어 있으면 보낼 곳이 없다 */
-    public List<String> channels() {
+    /**
+     * 주소가 있는 채널. 비어 있으면 보낼 곳이 없다.
+     * 슬랙은 운영자만 쓴다(NotificationChannelPolicy). 일반 사용자는 웹훅이 남아 있어도 이메일로만 보낸다.
+     */
+    public List<String> channels(boolean slackAllowed) {
         List<String> out = new ArrayList<>(2);
         if (hasEmail()) out.add("email");
-        if (slackConfigured()) out.add("slack");
+        if (slackAllowed && slackConfigured()) out.add("slack");
         return out;
     }
 
+    /** 운영자가 아니게 된 계정의 웹훅을 지울 때 */
+    public void clearSlack() { this.slackWebhookUrl = null; }
+
     public NotificationRequest.Recipient recipient() { return new NotificationRequest.Recipient(email, slackWebhookUrl); }
 
+    /** 마감 며칠 전에 알릴지. 비어 있으면 마감 알림을 보내지 않는다 */
     public List<Integer> deadlineDayList() {
         return Arrays.stream(deadlineDays.split(",")).map(String::trim).filter(x -> !x.isEmpty()).map(Integer::parseInt).toList();
+    }
+
+    public boolean deadlineEnabled() { return !deadlineDayList().isEmpty(); }
+
+    /** " 1, 3,0,3 " → "3,1,0" — 공백 제거, 중복 제거, 큰 수(이른 알림)부터 */
+    static String normalizeDays(String raw) {
+        return Arrays.stream(raw.split(",")).map(String::trim).filter(x -> !x.isEmpty())
+                .map(Integer::parseInt).distinct().sorted(java.util.Comparator.reverseOrder())
+                .map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
     }
 
     public String slackWebhookMasked() {

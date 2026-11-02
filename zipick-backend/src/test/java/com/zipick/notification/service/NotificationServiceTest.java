@@ -29,8 +29,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class NotificationServiceTest {
 
+    @org.junit.jupiter.api.BeforeEach
+    void slackAllowedByDefault() {
+        org.mockito.Mockito.lenient().when(policy.slackAllowed(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+    }
+
+
     @Mock NotificationSettingRepository settings;
     @Mock NotificationClient client;
+    @Mock NotificationChannelPolicy policy;
     @InjectMocks NotificationService service;
 
     private static NotificationSettingRequest req(String webhook, String email, Boolean marketing) {
